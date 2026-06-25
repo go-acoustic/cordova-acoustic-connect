@@ -1,0 +1,138 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+Copyright (C) 2026 Acoustic, L.P. All rights reserved.
+
+NOTICE: This file contains material that is confidential and proprietary to
+Acoustic, L.P. and/or other developers. No license is granted under any intellectual or
+industrial property rights of Acoustic, L.P. except as may be provided in an agreement with
+Acoustic, L.P. Any unauthorized copying or distribution of content from this file is prohibited.
+-->
+<plugin xmlns="http://apache.org/cordova/ns/plugins/1.0"
+        id="co.acoustic.connect.push"
+        version="0.1.5">
+
+    <name>Acoustic Connect Cordova Plugin</name>
+    <author>Acoustic</author>
+    <description>Integrates the Acoustic Connect SDK (CDP + engagement) into Cordova applications.</description>
+    <keywords>acoustic,connect,cordova,cdp,push</keywords>
+    <license>Acoustic License for Non-Warranted Programs</license>
+
+    <engines>
+        <engine name="cordova" version=">=12.0.0" />
+        <engine name="cordova-ios" version=">=7.0.0" />
+        <engine name="cordova-android" version=">=13.0.0" />
+    </engines>
+
+    <!-- JS bridge: clobbers `AcousticConnect` onto window. -->
+    <js-module src="www/AcousticConnect.js" name="AcousticConnect">
+        <clobbers target="AcousticConnect" />
+    </js-module>
+
+    <!--
+      Build-time SDK variant. Accepted values: release (default), debug.
+      iOS     : release → AcousticConnect (~> 2.0)
+                debug   → AcousticConnectDebug (~> 2.0)
+                The before_plugin_install hook (select_sdk_variant.js) rewrites
+                the pod name in plugin.xml before Cordova copies it into the app's
+                plugins/ directory; cordova prepare then reads the rewritten copy
+                to generate the Podfile.
+      Android : release → io.github.go-acoustic:connect-push-fcm
+                debug   → io.github.go-acoustic:connect-push-fcm-debug
+                Variant selection is handled in src/android/build-extras.gradle.
+    -->
+    <preference name="ACOUSTIC_SDK_VARIANT" default="release" />
+
+    <hook type="before_plugin_install" src="src/ios/hooks/select_sdk_variant.js" />
+
+    <!--
+      Reads ConnectConfig.json from the project root and emits
+      www/js/connect-config.js (window.ConnectBasicConfig) before each prepare.
+    -->
+    <hook type="before_prepare" src="scripts/before_prepare_connect_config.js" />
+
+    <platform name="ios">
+        <config-file target="config.xml" parent="/*">
+            <feature name="ConnectPlugin">
+                <param name="ios-package" value="ConnectPlugin" />
+                <!-- onload=true: call pluginInitialize() at startup so the SDK
+                     auto-initialises from bundled config without user interaction. -->
+                <param name="onload" value="true" />
+            </feature>
+        </config-file>
+
+        <config-file target="*-Info.plist" parent="UIBackgroundModes">
+            <array>
+                <string>remote-notification</string>
+            </array>
+        </config-file>
+
+        <!-- iOS deployment target -->
+        <preference name="deployment-target" default="15.1" />
+
+        <hook type="before_prepare" src="src/ios/hooks/before_prepare.js" />
+        <hook type="after_prepare" src="src/ios/hooks/after_prepare.js" />
+
+        <source-file src="src/ios/ConnectPlugin.swift" />
+
+        <!--
+          CocoaPods SDK dependency.
+          Default: AcousticConnectDebug (>= 2.1.12) — required until the Release pod
+          ships requestAuthorization() / getCurrentAuthorization() (target: 2.1.12+).
+          select_sdk_variant.js normalises to AcousticConnect (~> 2.0) for release
+          builds, then re-applies AcousticConnectDebug (>= 2.1.12) for debug builds.
+          Keeping the debug pod as the checked-in default means the tooling (IDE,
+          linter) that reads this file stays in sync with pods.json and the Podfile.
+        -->
+        <podspec>
+            <config>
+                <source url="https://cdn.cocoapods.org/" />
+            </config>
+            <pods use-frameworks="true">
+                <pod name="AcousticConnectDebug" spec=">= 2.1.12" />
+            </pods>
+        </podspec>
+    </platform>
+
+    <platform name="android">
+        <preference name="android-minSdkVersion" default="26" />
+
+        <!-- Enable the Kotlin Gradle plugin so ConnectPlugin.kt is compiled. -->
+        <config-file target="config.xml" parent="/*">
+            <preference name="GradlePluginKotlinEnabled" value="true" />
+        </config-file>
+
+        <config-file target="res/xml/config.xml" parent="/widget">
+            <feature name="ConnectPlugin">
+                <param name="android-package" value="co.acoustic.connect.cordova.plugin.ConnectPlugin" />
+                <!-- onload=true: call pluginInitialize() at startup so the SDK
+                     auto-initialises from bundled config without user interaction,
+                     matching the Android Java demo's ConnectWrapper behaviour. -->
+                <param name="onload" value="true" />
+            </feature>
+        </config-file>
+
+        <!--
+          Custom WebView engine — tolerates Tealeaf's TLFWebViewClient injection
+          without crashing Cordova's strict setWebViewClient type check.
+          Cordova-Android >=10 selects the engine via the "webview" preference
+          (CordovaWebViewImpl.createEngine reads preferences.getString("webview")).
+        -->
+        <config-file target="res/xml/config.xml" parent="/widget">
+            <preference name="webview"
+                        value="co.acoustic.connect.cordova.plugin.ConnectSystemWebViewEngine" />
+        </config-file>
+
+        <hook type="after_prepare" src="src/android/hooks/add_tools_namespace.js" />
+        <hook type="after_prepare" src="src/android/hooks/after_prepare.js" />
+
+        <framework src="src/android/build-extras.gradle" custom="true" type="gradleReference" />
+
+        <source-file src="src/android/ConnectPlugin.kt"
+                     target-dir="java/co/acoustic/connect/cordova/plugin" />
+        <source-file src="src/android/ConnectSystemWebView.kt"
+                     target-dir="java/co/acoustic/connect/cordova/plugin" />
+        <source-file src="src/android/ConnectSystemWebViewEngine.kt"
+                     target-dir="java/co/acoustic/connect/cordova/plugin" />
+
+    </platform>
+</plugin>

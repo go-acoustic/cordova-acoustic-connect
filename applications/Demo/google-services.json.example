@@ -1,0 +1,37 @@
+{
+  "_comment": "TEMPLATE — replace all placeholder values before building for a real device.",
+  "_instructions": [
+    "1. Open https://console.firebase.google.com",
+    "2. Select your project (or create one) → Project settings → Your apps",
+    "3. Register the Android app with package name co.acoustic.connect.cordova.demo",
+    "4. Download google-services.json and place it in applications/Demo/",
+    "   The real file is gitignored — never commit credentials to the repo."
+  ],
+  "project_info": {
+    "project_number": "000000000000",
+    "project_id": "your-firebase-project-id",
+    "storage_bucket": "your-firebase-project-id.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:000000000000:android:0000000000000000",
+        "android_client_info": {
+          "package_name": "co.acoustic.connect.cordova.demo"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaPlaceholderReplaceWithRealKeyFromFirebase00"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
