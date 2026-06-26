@@ -145,13 +145,26 @@ describe('ConnectPlugin.swift — readiness guard', () => {
         expect(block).toMatch(/commandDelegate.*nil.*NSLog|NSLog.*commandDelegate.*nil/s);
     });
 
-    test('waitForEnabled times out with a user-facing error', () => {
+    test('waitForEnabled times out with a user-facing error when isEnabled=false', () => {
         const block = SWIFT.match(
             /func\s+waitForEnabled[\s\S]*?(?=\n(?:    |\t)(?:private |internal |public |open |fileprivate |@objc\b|@objc\(|func |\/\/\s*MARK:|\}))/
         )?.[0];
         expect(block).toBeDefined();
         expect(block).toMatch(/ACOUSTIC_INTERNAL_ERROR/);
         expect(block).toMatch(/5\s*s/);
+    });
+
+    test('waitForEnabled falls back to isEnabled when _connectIsReadyForLogging() times out', () => {
+        // Covers the XPC / kill-switch accumulator-timeout scenario where the SDK
+        // is functional but hasKillSwitchCompleted stays NO — the JS promise must
+        // still resolve rather than leaving the app stuck.
+        const block = SWIFT.match(
+            /func\s+waitForEnabled[\s\S]*?(?=\n(?:    |\t)(?:private |internal |public |open |fileprivate |@objc\b|@objc\(|func |\/\/\s*MARK:|\}))/
+        )?.[0];
+        expect(block).toBeDefined();
+        expect(block).toMatch(/ConnectSDK\.shared\.isEnabled/);
+        // Success path sends .ok (not .error) on the fallback branch.
+        expect(block).toMatch(/isEnabled[\s\S]*?CDVPluginResult\s*\(\s*status:\s*\.ok\s*\)/);
     });
 });
 

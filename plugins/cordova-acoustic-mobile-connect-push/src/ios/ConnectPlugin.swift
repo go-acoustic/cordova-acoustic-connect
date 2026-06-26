@@ -354,14 +354,26 @@ public class ConnectPlugin: CDVPlugin {
                 }
                 try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 s off MainActor
             }
+            // _connectIsReadyForLogging() did not become true within 5 s.
+            // XPC / network errors during the SDK's kill-switch check can leave
+            // hasKillSwitchCompleted=NO indefinitely even though the SDK is otherwise
+            // functional (e.g. coretelephony.xpc invalid after a fresh install on
+            // simulator). Fall back to isEnabled so a transient kill-switch failure
+            // doesn't permanently break the JS enable() promise.
+            // Only hard-fail if the SDK itself never reached isEnabled=true.
             await MainActor.run {
-                let payload: [String: Any] = [
-                    "code": "ACOUSTIC_INTERNAL_ERROR",
-                    "message": "enable: SDK did not become ready within 5 s"
-                ]
-                let result = CDVPluginResult(status: .error,
-                                             messageAs: payload as [AnyHashable: Any])
-                delegate.send(result, callbackId: callbackId)
+                if ConnectSDK.shared.isEnabled {
+                    NSLog("[AcousticConnect] waitForEnabled: _connectIsReadyForLogging() timed out but isEnabled=true — proceeding (kill-switch may be pending)")
+                    delegate.send(CDVPluginResult(status: .ok), callbackId: callbackId)
+                } else {
+                    let payload: [String: Any] = [
+                        "code": "ACOUSTIC_INTERNAL_ERROR",
+                        "message": "enable: SDK did not become ready within 5 s"
+                    ]
+                    let result = CDVPluginResult(status: .error,
+                                                 messageAs: payload as [AnyHashable: Any])
+                    delegate.send(result, callbackId: callbackId)
+                }
             }
         }
     }

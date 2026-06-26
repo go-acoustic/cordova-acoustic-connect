@@ -7,6 +7,7 @@
         "iOSVersion": "",
         "iOSPushMode": "automatic",
         "iOSAppGroupIdentifier": "YOUR_APP_GROUP_ID_HERE",
+        "iOSDevelopmentTeam": "YOUR_TEAM_ID",
         "AndroidNotificationIconResName": "ic_stat_push",
         "layoutConfigAndroid": {
             "AppendMapIds": {

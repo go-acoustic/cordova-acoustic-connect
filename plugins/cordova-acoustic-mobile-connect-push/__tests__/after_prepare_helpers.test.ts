@@ -4,10 +4,13 @@
  * Fixture-based unit tests for the critical pbxproj / Podfile manipulation
  * helpers in src/ios/hooks/after_prepare.js.
  *
- * The three functions under test perform regex-based text manipulation on
- * pbxproj and Podfile content. Any format change from the xcode npm package
- * or Xcode itself would silently break extension embedding for all consumers,
- * so these tests use representative fixture strings to catch regressions early.
+ * pbxproj surgery (target creation, embed wiring, framework linking) is now
+ * handled by add_ios_push_extensions.rb (xcodeproj gem) and tested via
+ * integration. This file covers the JS helpers that remain in after_prepare.js:
+ *   - updatePodfile          (Podfile NSE/NCE target insertion)
+ *   - patchXcframeworksScriptPhases  (post-pod-install pbxproj repair)
+ *   - resolveConnectConfigPath       (config file resolution)
+ *   - resolveIosDevelopmentTeam      (team ID extraction)
  *
  * Functions are exposed via module.exports._internal — not part of the public API.
  */
@@ -28,118 +31,16 @@ afterAll(() => {
 
 const hook = require('../src/ios/hooks/after_prepare.js');
 const {
-    ensureExtensionsEmbeddedInApp,
-    ensureExtensionDependenciesInApp,
     updatePodfile,
     patchXcframeworksScriptPhases,
+    resolveConnectConfigPath,
+    resolveIosDevelopmentTeam,
 } = hook._internal as {
-    ensureExtensionsEmbeddedInApp:    (p: string, exts: ReadonlyArray<{ name: string }>) => void;
-    ensureExtensionDependenciesInApp: (p: string, exts: ReadonlyArray<{ name: string }>) => void;
-    updatePodfile:                    (iosDir: string) => boolean;
-    patchXcframeworksScriptPhases:    (p: string) => void;
+    updatePodfile:                 (iosDir: string) => boolean;
+    patchXcframeworksScriptPhases: (p: string, variant?: string) => void;
+    resolveConnectConfigPath:      (projectRoot: string) => string;
+    resolveIosDevelopmentTeam:     (projectRoot: string) => string | null;
 };
-
-// ---------------------------------------------------------------------------
-// Fixture UUIDs  (24 uppercase hex chars — matches [0-9A-F]{24})
-// ---------------------------------------------------------------------------
-
-const APP_UUID  = 'A1A1A1A1A1A1A1A1A1A1A1A1'; // App native target
-const NSE_UUID  = 'B2B2B2B2B2B2B2B2B2B2B2B2'; // ConnectNSE native target
-const NCE_UUID  = 'C3C3C3C3C3C3C3C3C3C3C3C3'; // ConnectNCE native target
-const NSE_PROD  = 'D4D4D4D4D4D4D4D4D4D4D4D4'; // ConnectNSE.appex productReference
-const NCE_PROD  = 'E5E5E5E5E5E5E5E5E5E5E5E5'; // ConnectNCE.appex productReference
-const PROJ_UUID = 'F6F6F6F6F6F6F6F6F6F6F6F6'; // Project object (containerPortal)
-
-const EXTENSIONS = [
-    { name: 'ConnectNSE' },
-    { name: 'ConnectNCE' },
-] as const;
-
-// ---------------------------------------------------------------------------
-// Minimal pbxproj fixture
-//
-// Contains App + ConnectNSE + ConnectNCE PBXNativeTarget blocks, empty
-// PBXBuildFile and PBXCopyFilesBuildPhase sections, and the PBXProject block.
-// This is the "before" state: no embed phase, no target dependencies.
-// ---------------------------------------------------------------------------
-
-function makeMinimalPbxproj(): string {
-    return [
-        '// !$*UTF8*$!',
-        '{',
-        '\tarchiveVersion = 1;',
-        '\tclasses = {',
-        '\t};',
-        '\tobjectVersion = 56;',
-        '\tobjects = {',
-        '',
-        '/* Begin PBXBuildFile section */',
-        '/* End PBXBuildFile section */',
-        '',
-        '/* Begin PBXCopyFilesBuildPhase section */',
-        '/* End PBXCopyFilesBuildPhase section */',
-        '',
-        '/* Begin PBXNativeTarget section */',
-        // App target — no embed phases, empty dependencies
-        `\t\t${APP_UUID} /* App */ = {`,
-        '\t\t\tisa = PBXNativeTarget;',
-        '\t\t\tbuildConfigurationList = A0A0A0A0A0A0A0A0A0A0A0A0;',
-        '\t\t\tbuildPhases = (',
-        '\t\t\t);',
-        '\t\t\tdependencies = (',
-        '\t\t\t);',
-        '\t\t\tname = App;',
-        '\t\t\tproductName = App;',
-        '\t\t\tproductReference = A0A0A0A0A0A0A0A0A0A0A0A1 /* App.app */;',
-        '\t\t\tproductType = "com.apple.product-type.application";',
-        '\t\t};',
-        // ConnectNSE extension target
-        `\t\t${NSE_UUID} /* ConnectNSE */ = {`,
-        '\t\t\tisa = PBXNativeTarget;',
-        '\t\t\tbuildConfigurationList = B0B0B0B0B0B0B0B0B0B0B0B0;',
-        '\t\t\tbuildPhases = (',
-        '\t\t\t);',
-        '\t\t\tdependencies = (',
-        '\t\t\t);',
-        '\t\t\tname = ConnectNSE;',
-        '\t\t\tproductName = ConnectNSE;',
-        `\t\t\tproductReference = ${NSE_PROD} /* ConnectNSE.appex */;`,
-        '\t\t\tproductType = "com.apple.product-type.app-extension";',
-        '\t\t};',
-        // ConnectNCE extension target
-        `\t\t${NCE_UUID} /* ConnectNCE */ = {`,
-        '\t\t\tisa = PBXNativeTarget;',
-        '\t\t\tbuildConfigurationList = C0C0C0C0C0C0C0C0C0C0C0C0;',
-        '\t\t\tbuildPhases = (',
-        '\t\t\t);',
-        '\t\t\tdependencies = (',
-        '\t\t\t);',
-        '\t\t\tname = ConnectNCE;',
-        '\t\t\tproductName = ConnectNCE;',
-        `\t\t\tproductReference = ${NCE_PROD} /* ConnectNCE.appex */;`,
-        '\t\t\tproductType = "com.apple.product-type.app-extension";',
-        '\t\t};',
-        '/* End PBXNativeTarget section */',
-        '',
-        // PBXProject block — provides the project root UUID used as containerPortal
-        '/* Begin PBXProject section */',
-        `\t\t${PROJ_UUID} /* Project object */ = {`,
-        '\t\t\tisa = PBXProject;',
-        '\t\t\tbuildConfigurationList = F0F0F0F0F0F0F0F0F0F0F0F0;',
-        '\t\t\ttargets = (',
-        `\t\t\t\t${APP_UUID} /* App */,`,
-        `\t\t\t\t${NSE_UUID} /* ConnectNSE */,`,
-        `\t\t\t\t${NCE_UUID} /* ConnectNCE */,`,
-        '\t\t\t);',
-        '\t\t};',
-        '/* End PBXProject section */',
-        '',
-        '\t};',
-        `\trootObject = ${PROJ_UUID} /* Project object */;`,
-        '}',
-        '',
-    ].join('\n');
-}
 
 // ---------------------------------------------------------------------------
 // Per-test helpers
@@ -164,121 +65,6 @@ function writePbxproj(content: string): void {
 function readPbxproj(): string {
     return fs.readFileSync(pbxprojPath, 'utf8');
 }
-
-// ---------------------------------------------------------------------------
-// ensureExtensionsEmbeddedInApp
-// ---------------------------------------------------------------------------
-
-describe('ensureExtensionsEmbeddedInApp', () => {
-    it('creates a dstSubfolderSpec=13 embed phase when none exists', () => {
-        writePbxproj(makeMinimalPbxproj());
-        ensureExtensionsEmbeddedInApp(pbxprojPath, EXTENSIONS);
-        expect(readPbxproj()).toContain('dstSubfolderSpec = 13;');
-    });
-
-    it('wires ConnectNSE.appex as a PBXBuildFile in the embed phase', () => {
-        writePbxproj(makeMinimalPbxproj());
-        ensureExtensionsEmbeddedInApp(pbxprojPath, EXTENSIONS);
-        const result = readPbxproj();
-        expect(result).toContain(`fileRef = ${NSE_PROD}`);
-        expect(result).toContain('ConnectNSE.appex in Copy Files');
-    });
-
-    it('wires ConnectNCE.appex as a PBXBuildFile in the embed phase', () => {
-        writePbxproj(makeMinimalPbxproj());
-        ensureExtensionsEmbeddedInApp(pbxprojPath, EXTENSIONS);
-        const result = readPbxproj();
-        expect(result).toContain(`fileRef = ${NCE_PROD}`);
-        expect(result).toContain('ConnectNCE.appex in Copy Files');
-    });
-
-    it('sets ATTRIBUTES = (RemoveHeadersOnCopy) on the embedded appex build files', () => {
-        writePbxproj(makeMinimalPbxproj());
-        ensureExtensionsEmbeddedInApp(pbxprojPath, EXTENSIONS);
-        expect(readPbxproj()).toContain('RemoveHeadersOnCopy');
-    });
-
-    it('is idempotent — content unchanged on second run', () => {
-        writePbxproj(makeMinimalPbxproj());
-        ensureExtensionsEmbeddedInApp(pbxprojPath, EXTENSIONS);
-        const after1 = readPbxproj();
-        ensureExtensionsEmbeddedInApp(pbxprojPath, EXTENSIONS);
-        // File must not be rewritten (i.e. content is byte-for-byte identical)
-        expect(readPbxproj()).toBe(after1);
-    });
-
-    it('no-ops and does not throw when the project has no App target', () => {
-        writePbxproj('// empty\n');
-        expect(() => ensureExtensionsEmbeddedInApp(pbxprojPath, EXTENSIONS)).not.toThrow();
-        // No embed phase injected into a file with no targets
-        expect(readPbxproj()).not.toContain('dstSubfolderSpec');
-    });
-});
-
-// ---------------------------------------------------------------------------
-// ensureExtensionDependenciesInApp
-// ---------------------------------------------------------------------------
-
-describe('ensureExtensionDependenciesInApp', () => {
-    it('creates PBXTargetDependency section and adds App→ConnectNSE dependency', () => {
-        writePbxproj(makeMinimalPbxproj());
-        ensureExtensionDependenciesInApp(pbxprojPath, EXTENSIONS);
-        const result = readPbxproj();
-        expect(result).toContain('/* Begin PBXTargetDependency section */');
-        // The dependency entry must reference the ConnectNSE target UUID
-        expect(result).toContain(`target = ${NSE_UUID}`);
-        expect(result).toContain('"ConnectNSE"');
-    });
-
-    it('adds App→ConnectNCE dependency', () => {
-        writePbxproj(makeMinimalPbxproj());
-        ensureExtensionDependenciesInApp(pbxprojPath, EXTENSIONS);
-        const result = readPbxproj();
-        expect(result).toContain(`target = ${NCE_UUID}`);
-        expect(result).toContain('"ConnectNCE"');
-    });
-
-    it('creates PBXContainerItemProxy entries with the project root as containerPortal', () => {
-        writePbxproj(makeMinimalPbxproj());
-        ensureExtensionDependenciesInApp(pbxprojPath, EXTENSIONS);
-        const result = readPbxproj();
-        expect(result).toContain('/* Begin PBXContainerItemProxy section */');
-        expect(result).toContain(`containerPortal = ${PROJ_UUID}`);
-    });
-
-    it('injects dependency UUIDs into the App target dependencies list', () => {
-        writePbxproj(makeMinimalPbxproj());
-        ensureExtensionDependenciesInApp(pbxprojPath, EXTENSIONS);
-        const result = readPbxproj();
-
-        // Extract the App target block (no nested {} so [^}]* is safe)
-        const appBlockMatch = result.match(
-            new RegExp(APP_UUID + '\\s*/\\*[^*]*\\*/\\s*=\\s*\\{([^}]*)\\}')
-        );
-        expect(appBlockMatch).not.toBeNull();
-        const appBlock = appBlockMatch![1];
-
-        const depsMatch = appBlock.match(/dependencies\s*=\s*\(([^)]*)\)/);
-        expect(depsMatch).not.toBeNull();
-        const depUuids = depsMatch![1].match(/[0-9A-F]{24}/g) || [];
-        // One PBXTargetDependency UUID per extension must appear in App.dependencies
-        expect(depUuids.length).toBeGreaterThanOrEqual(2);
-    });
-
-    it('is idempotent — no duplicate dependencies on second run', () => {
-        writePbxproj(makeMinimalPbxproj());
-        ensureExtensionDependenciesInApp(pbxprojPath, EXTENSIONS);
-        const after1 = readPbxproj();
-        ensureExtensionDependenciesInApp(pbxprojPath, EXTENSIONS);
-        expect(readPbxproj()).toBe(after1);
-    });
-
-    it('no-ops and does not throw when the project has no App target', () => {
-        writePbxproj('// empty\n');
-        expect(() => ensureExtensionDependenciesInApp(pbxprojPath, EXTENSIONS)).not.toThrow();
-        expect(readPbxproj()).not.toContain('PBXTargetDependency');
-    });
-});
 
 // ---------------------------------------------------------------------------
 // updatePodfile — NSE / NCE target insertion
@@ -398,7 +184,7 @@ describe('patchXcframeworksScriptPhases', () => {
 
     it('replaces the old single-line shellScript invocation with the locking wrapper', () => {
         writePbxproj(makeScriptPhasePbxproj(OLD_SCRIPT, CORRECT_INPUT));
-        patchXcframeworksScriptPhases(pbxprojPath);
+        patchXcframeworksScriptPhases(pbxprojPath, 'AcousticConnectDebug');
         const result = readPbxproj();
         expect(result).not.toContain(OLD_SCRIPT);
         // The wrapper script contains the acoustic locking sentinel
@@ -408,7 +194,7 @@ describe('patchXcframeworksScriptPhases', () => {
     it('fixes B1 — unquoted ${PODS_ROOT} xcfilelist path', () => {
         const brokenB1 = '${PODS_ROOT}/' + XCFILELIST_SUFFIX;
         writePbxproj(makeScriptPhasePbxproj(OLD_SCRIPT, brokenB1));
-        patchXcframeworksScriptPhases(pbxprojPath);
+        patchXcframeworksScriptPhases(pbxprojPath, 'AcousticConnectDebug');
         const result = readPbxproj();
         expect(result).toContain(CORRECT_INPUT);
         // Unquoted form must be gone (the comma after it is part of the list entry)
@@ -418,7 +204,7 @@ describe('patchXcframeworksScriptPhases', () => {
     it('fixes B3 — quoted path missing the ${PODS_ROOT} prefix', () => {
         const brokenB3 = '"/' + XCFILELIST_SUFFIX + '"';
         writePbxproj(makeScriptPhasePbxproj(OLD_SCRIPT, brokenB3));
-        patchXcframeworksScriptPhases(pbxprojPath);
+        patchXcframeworksScriptPhases(pbxprojPath, 'AcousticConnectDebug');
         const result = readPbxproj();
         expect(result).toContain(CORRECT_INPUT);
         expect(result).not.toContain(brokenB3);
@@ -429,7 +215,106 @@ describe('patchXcframeworksScriptPhases', () => {
         // patchXcframeworksScriptPhases should not rewrite the file.
         const already = makeScriptPhasePbxproj('"already-patched-wrapper"', CORRECT_INPUT);
         writePbxproj(already);
-        patchXcframeworksScriptPhases(pbxprojPath);
+        patchXcframeworksScriptPhases(pbxprojPath, 'AcousticConnectDebug');
         expect(readPbxproj()).toBe(already);
+    });
+
+    it('fixes xcfilelist for release SDK variant (AcousticConnect)', () => {
+        const releaseSuffix = 'Target Support Files/AcousticConnect/AcousticConnect-xcframeworks-input-files.xcfilelist';
+        const brokenPath    = '${PODS_ROOT}/' + releaseSuffix;
+        const correctPath   = '"${PODS_ROOT}/' + releaseSuffix + '"';
+        writePbxproj(makeScriptPhasePbxproj('"some-existing-script"', brokenPath));
+        patchXcframeworksScriptPhases(pbxprojPath, 'AcousticConnect');
+        const result = readPbxproj();
+        expect(result).toContain(correctPath);
+        expect(result).not.toContain(brokenPath + ',');
+    });
+});
+
+// ---------------------------------------------------------------------------
+// resolveConnectConfigPath
+// ---------------------------------------------------------------------------
+
+describe('resolveConnectConfigPath', () => {
+    it('returns ConnectConfig.json when it exists', () => {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cfg-'));
+        const p = path.join(dir, 'ConnectConfig.json');
+        fs.writeFileSync(p, '{}');
+        try {
+            expect(resolveConnectConfigPath(dir)).toBe(p);
+        } finally {
+            fs.rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('falls back to ConnectConfig.example.json when ConnectConfig.json is absent', () => {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cfg-'));
+        const p = path.join(dir, 'ConnectConfig.example.json');
+        fs.writeFileSync(p, '{}');
+        try {
+            expect(resolveConnectConfigPath(dir)).toBe(p);
+        } finally {
+            fs.rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('throws when neither file exists', () => {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cfg-'));
+        try {
+            expect(() => resolveConnectConfigPath(dir)).toThrow('ConnectConfig.json not found');
+        } finally {
+            fs.rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('prefers ConnectConfig.json over ConnectConfig.example.json when both exist', () => {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cfg-'));
+        const real    = path.join(dir, 'ConnectConfig.json');
+        const example = path.join(dir, 'ConnectConfig.example.json');
+        fs.writeFileSync(real, '{}');
+        fs.writeFileSync(example, '{}');
+        try {
+            expect(resolveConnectConfigPath(dir)).toBe(real);
+        } finally {
+            fs.rmSync(dir, { recursive: true, force: true });
+        }
+    });
+});
+
+// ---------------------------------------------------------------------------
+// resolveIosDevelopmentTeam
+// ---------------------------------------------------------------------------
+
+describe('resolveIosDevelopmentTeam', () => {
+    let cfgDir: string;
+
+    beforeEach(() => {
+        cfgDir = fs.mkdtempSync(path.join(os.tmpdir(), 'team-'));
+    });
+    afterEach(() => {
+        fs.rmSync(cfgDir, { recursive: true, force: true });
+    });
+
+    function writeConfig(obj: object): void {
+        fs.writeFileSync(path.join(cfgDir, 'ConnectConfig.json'), JSON.stringify(obj));
+    }
+
+    it('returns the team ID from Connect.iOSDevelopmentTeam', () => {
+        writeConfig({ Connect: { iOSDevelopmentTeam: 'ABCD1234EF' } });
+        expect(resolveIosDevelopmentTeam(cfgDir)).toBe('ABCD1234EF');
+    });
+
+    it('returns null when iOSDevelopmentTeam is absent', () => {
+        writeConfig({ Connect: { AppKey: 'x' } });
+        expect(resolveIosDevelopmentTeam(cfgDir)).toBeNull();
+    });
+
+    it('returns null when config file is absent (no throw)', () => {
+        expect(resolveIosDevelopmentTeam(cfgDir)).toBeNull();
+    });
+
+    it('throws a descriptive error when ConnectConfig.json is malformed JSON', () => {
+        fs.writeFileSync(path.join(cfgDir, 'ConnectConfig.json'), '{ not valid json');
+        expect(() => resolveIosDevelopmentTeam(cfgDir)).toThrow('malformed JSON');
     });
 });

@@ -7,10 +7,14 @@
 // Responsibilities each prepare cycle:
 //   1. Copy NSE/NCE source files from plugin src to platform/ios, substituting
 //      the CONNECT_APP_GROUP_IDENTIFIER_PLACEHOLDER token.
-//   2. Add ConnectNSE / ConnectNCE Xcode targets (idempotent).
+//   2. Invoke add_ios_push_extensions.rb (xcodeproj gem) for all pbxproj surgery:
+//      NSE/NCE targets, embed phase, target dependencies, frameworks, xcframeworks
+//      script phase, Mac Catalyst settings.
 //   3. Ensure the Podfile nests ConnectNSE / ConnectNCE under the App target.
 //   4. Ensure the host-app entitlements include the App Group.
 //   5. Re-run `pod install` only when the Podfile was changed.
+//   6. Re-patch xcframeworks inputFileListPaths after pod install (CocoaPods
+//      can garble the quoted ${PODS_ROOT} prefix during its project write).
 
 'use strict';
 
@@ -29,12 +33,38 @@ function resolveAppBundleId(projectRoot) {
     return m[1];
 }
 
-function resolveAppGroupIdentifier(projectRoot) {
+function resolveConnectConfigPath(projectRoot) {
     const configPath = path.join(projectRoot, 'ConnectConfig.json');
-    const config     = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    if (fs.existsSync(configPath)) return configPath;
+    const examplePath = path.join(projectRoot, 'ConnectConfig.example.json');
+    if (fs.existsSync(examplePath)) return examplePath;
+    throw new Error('ConnectConfig.json not found');
+}
+
+function resolveAppGroupIdentifier(projectRoot) {
+    const configPath = resolveConnectConfigPath(projectRoot);
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
     const val = (config.Connect || config).iOSAppGroupIdentifier;
     if (!val) throw new Error('iOSAppGroupIdentifier not found in ConnectConfig.json');
     return val;
+}
+
+function resolveIosDevelopmentTeam(projectRoot) {
+    let configPath;
+    try {
+        configPath = resolveConnectConfigPath(projectRoot);
+    } catch (_) {
+        return null; // config file genuinely absent
+    }
+    try {
+        const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+        return (config.Connect || config).iOSDevelopmentTeam || null;
+    } catch (e) {
+        if (e instanceof SyntaxError) {
+            throw new Error('[after_prepare] ConnectConfig.json is malformed JSON: ' + e.message);
+        }
+        return null;
+    }
 }
 
 function resolveProjectName(iosDir) {
@@ -105,167 +135,56 @@ function copyExtensionSources(pluginIosDir, iosDir, appGroupIdentifier, extensio
     }
 }
 
-// ---------------------------------------------------------------------------
-// Xcode project manipulation
-// ---------------------------------------------------------------------------
+// Copy plugin source files to platforms/ios so they exist on disk before Ruby
+// registers them in the pbxproj. Cordova's "already installed" short-circuit
+// may skip this copy on repeated prepares; this function ensures it happens
+// every time so the platform copy never drifts from the plugin src/ios source.
+function copyPluginSourceFiles(pluginIosDir, iosDir) {
+    const pluginId  = 'co.acoustic.connect.push';
+    const pluginDst = path.join(iosDir, 'App', 'Plugins', pluginId);
+    const files     = ['ConnectPlugin.swift'];
 
-function targetExistsByName(proj, name) {
-    const section = proj.pbxNativeTargetSection();
-    return Object.values(section).some(t => {
-        if (!t || !t.name) return false;
-        return t.name.replace(/"/g, '') === name;
-    });
-}
-
-function getTargetUuidByName(proj, name) {
-    const section = proj.pbxNativeTargetSection();
-    for (const [uuid, t] of Object.entries(section)) {
-        if (uuid.endsWith('_comment') || !t || !t.name) continue;
-        if (t.name.replace(/"/g, '') === name) return uuid;
-    }
-    return null;
-}
-
-// Idempotently ensure the extension target has a Sources build phase and that
-// the required swift file is in it.  Creates the phase if absent (xcode npm's
-// addTarget for app_extension never creates one).  Skips if the file is already
-// present so repeated prepare runs don't duplicate entries.
-function ensureExtensionSourceInSources(proj, targetUuid, relPath) {
-    const pbx      = proj.hash.project.objects;
-    const target   = (pbx.PBXNativeTarget || {})[targetUuid];
-    if (!target) return;
-    const basename = path.basename(relPath);
-
-    // Find existing Sources phase; create one if missing.
-    let sourcesPhaseUuid = null;
-    for (const ph of (target.buildPhases || [])) {
-        if ((pbx.PBXSourcesBuildPhase || {})[ph.value]) { sourcesPhaseUuid = ph.value; break; }
-    }
-    if (!sourcesPhaseUuid) {
-        const result = proj.addBuildPhase([], 'PBXSourcesBuildPhase', 'Sources', targetUuid);
-        sourcesPhaseUuid = result.uuid;
-    }
-    const sourcesPhase = pbx.PBXSourcesBuildPhase[sourcesPhaseUuid];
-
-    // Skip if the file is already in the phase.
-    const alreadyPresent = (sourcesPhase.files || []).some(f => {
-        const bf = (pbx.PBXBuildFile || {})[f.value];
-        if (!bf) return false;
-        const fr = (pbx.PBXFileReference || {})[bf.fileRef];
-        return fr && (fr.path || '').toString().replace(/"/g, '') === relPath;
-    });
-    if (alreadyPresent) return;
-
-    const fileUuid = proj.generateUuid();
-    const bfUuid   = proj.generateUuid();
-    pbx.PBXFileReference = pbx.PBXFileReference || {};
-    pbx.PBXFileReference[fileUuid] = {
-        isa:               'PBXFileReference',
-        fileEncoding:      4,
-        lastKnownFileType: 'sourcecode.swift',
-        path:              relPath,
-        sourceTree:        'SOURCE_ROOT',
-    };
-    pbx.PBXFileReference[fileUuid + '_comment'] = basename;
-
-    pbx.PBXBuildFile = pbx.PBXBuildFile || {};
-    pbx.PBXBuildFile[bfUuid] = { isa: 'PBXBuildFile', fileRef: fileUuid, settings: {} };
-    pbx.PBXBuildFile[bfUuid + '_comment'] = basename + ' in Sources';
-
-    sourcesPhase.files = sourcesPhase.files || [];
-    sourcesPhase.files.push({ value: bfUuid, comment: basename + ' in Sources' });
-}
-
-// Link a system framework into a target's PBXFrameworksBuildPhase (idempotent).
-// Reuses any existing PBXFileReference for the framework already in the project;
-// otherwise creates one pointing to System/Library/Frameworks/<name>.
-function addFrameworkToTarget(proj, targetUuid, frameworkName) {
-    const pbx = proj.hash.project.objects;
-
-    // Reuse an existing PBXFileReference for this framework if present.
-    let fileRefUuid = null;
-    for (const [uuid, ref] of Object.entries(pbx.PBXFileReference || {})) {
-        if (uuid.endsWith('_comment') || !ref) continue;
-        if ((ref.name || '').replace(/"/g, '') === frameworkName) {
-            fileRefUuid = uuid;
-            break;
+    if (!fs.existsSync(pluginDst)) fs.mkdirSync(pluginDst, { recursive: true });
+    for (const fname of files) {
+        const src = path.join(pluginIosDir, fname);
+        const dst = path.join(pluginDst, fname);
+        if (fs.existsSync(src)) {
+            fs.copyFileSync(src, dst);
         }
     }
-    if (!fileRefUuid) {
-        fileRefUuid = proj.generateUuid();
-        pbx.PBXFileReference = pbx.PBXFileReference || {};
-        pbx.PBXFileReference[fileRefUuid] = {
-            isa:               'PBXFileReference',
-            lastKnownFileType: 'wrapper.framework',
-            name:              frameworkName,
-            path:              'System/Library/Frameworks/' + frameworkName,
-            sourceTree:        'SDKROOT',
-        };
-        pbx.PBXFileReference[fileRefUuid + '_comment'] = frameworkName;
-    }
-
-    const target = (pbx.PBXNativeTarget || {})[targetUuid];
-    if (!target) return;
-
-    for (const ph of (target.buildPhases || [])) {
-        const fwPhase = (pbx.PBXFrameworksBuildPhase || {})[ph.value];
-        if (!fwPhase) continue;
-
-        // Idempotent: skip if already linked.
-        const alreadyLinked = (fwPhase.files || []).some(fRef => {
-            const bf = (pbx.PBXBuildFile || {})[fRef.value];
-            return bf && bf.fileRef === fileRefUuid;
-        });
-        if (alreadyLinked) return;
-
-        const bfUuid = proj.generateUuid();
-        pbx.PBXBuildFile = pbx.PBXBuildFile || {};
-        pbx.PBXBuildFile[bfUuid] = { isa: 'PBXBuildFile', fileRef: fileRefUuid, settings: {} };
-        pbx.PBXBuildFile[bfUuid + '_comment'] = frameworkName + ' in Frameworks';
-
-        fwPhase.files = fwPhase.files || [];
-        fwPhase.files.push({ value: bfUuid, comment: frameworkName + ' in Frameworks' });
-        console.log('[after_prepare] addFrameworkToTarget: linked ' + frameworkName + ' → ' + targetUuid);
-        return;
-    }
 }
 
-function setBuildSettingsForTarget(proj, targetUuid, settings) {
-    const pbx = proj.hash.project.objects;
-    const target = pbx.PBXNativeTarget[targetUuid];
-    if (!target) return;
-    const cfgList = pbx.XCConfigurationList[target.buildConfigurationList];
-    if (!cfgList) return;
-    for (const cfgRef of (cfgList.buildConfigurations || [])) {
-        const cfg = pbx.XCBuildConfiguration[cfgRef.value];
-        if (!cfg) continue;
-        cfg.buildSettings = cfg.buildSettings || {};
-        Object.assign(cfg.buildSettings, settings);
-    }
-}
+// ---------------------------------------------------------------------------
+// xcframeworks script phase — backward compatibility patch
+//
+// These constants are retained so patchXcframeworksScriptPhases can still
+// repair pbxproj files that were written by earlier versions of this hook
+// using the xcode npm package (which serialised only the bare xcframeworks.sh
+// call as the shellScript value).
+// ---------------------------------------------------------------------------
 
-// Serialized wrapper script written by addXcframeworksScriptPhase into NSE/NCE phases.
-// Uses atomic mkdir (macOS has no flock) to prevent concurrent rsync race when both
-// extension targets run the xcframeworks extraction script in parallel.
-const XCFRAMEWORKS_WRAPPER_SCRIPT = [
-    '#!/bin/sh',
-    'DEST="${PODS_XCFRAMEWORKS_BUILD_DIR}/AcousticConnectDebug/Core"',
-    'LOCK="${TMPDIR}/co.acoustic.xcframeworks.lck"',
-    'if [ -d "${DEST}/Connect.framework" ] && [ -d "${DEST}/Tealeaf.framework" ] && [ -d "${DEST}/EOCore.framework" ]; then',
-    '  exit 0',
-    'fi',
-    'if mkdir "${LOCK}" 2>/dev/null; then',
-    '  "${PODS_ROOT}/Target Support Files/AcousticConnectDebug/AcousticConnectDebug-xcframeworks.sh"',
-    '  rmdir "${LOCK}" 2>/dev/null',
-    'else',
-    '  I=0',
-    '  while [ -d "${LOCK}" ] && [ $I -lt 120 ]; do',
-    '    sleep 0.5',
-    '    I=$((I + 1))',
-    '  done',
-    'fi',
-    '',
-].join('\n');
+// Build the locking wrapper script for a given SDK variant.
+function buildXcframeworksWrapperScript(variant) {
+    return [
+        '#!/bin/sh',
+        'DEST="${PODS_XCFRAMEWORKS_BUILD_DIR}/' + variant + '/Core"',
+        'LOCK="${TMPDIR}/co.acoustic.xcframeworks.lck"',
+        'if [ -d "${DEST}/Connect.framework" ] && [ -d "${DEST}/Tealeaf.framework" ] && [ -d "${DEST}/EOCore.framework" ]; then',
+        '  exit 0',
+        'fi',
+        'if mkdir "${LOCK}" 2>/dev/null; then',
+        '  "${PODS_ROOT}/Target Support Files/' + variant + '/' + variant + '-xcframeworks.sh"',
+        '  rmdir "${LOCK}" 2>/dev/null',
+        'else',
+        '  I=0',
+        '  while [ -d "${LOCK}" ] && [ $I -lt 120 ]; do',
+        '    sleep 0.5',
+        '    I=$((I + 1))',
+        '  done',
+        'fi',
+        '',
+    ].join('\n');
+}
 
 // Build the pbxproj shellScript literal: newlines → \n, quotes → \"
 function encodePbxprojShellScript(script) {
@@ -273,40 +192,48 @@ function encodePbxprojShellScript(script) {
     return '"' + body + '"';
 }
 
-// Raw value the xcode npm package writes for the old single-line invocation.
-const XCFRAMEWORKS_OLD_SHELLSCRIPT =
-    '"\\\"${PODS_ROOT}/Target Support Files/AcousticConnectDebug/AcousticConnectDebug-xcframeworks.sh\\\"\\n"';
+// Raw values the xcode npm package wrote for the old single-line invocation, one per
+// SDK variant. Only the debug variant was ever used in practice; both are checked for
+// completeness.
+const XCFRAMEWORKS_OLD_SHELLSCRIPTS = [
+    '"\\\"${PODS_ROOT}/Target Support Files/AcousticConnectDebug/AcousticConnectDebug-xcframeworks.sh\\\"\\n"',
+    '"\\\"${PODS_ROOT}/Target Support Files/AcousticConnect/AcousticConnect-xcframeworks.sh\\\"\\n"',
+];
 
-// After addXcodeTargets writes the pbxproj via xcode npm package, replace any
-// single-line xcframeworks shellScript value with the serialized wrapper.
-// This is necessary because the xcode package cannot reliably round-trip
-// multi-line shell scripts with $ variable references.
-function patchXcframeworksScriptPhases(pbxprojPath) {
+// After pod install, CocoaPods' xcodeproj gem can re-introduce broken forms for
+// inputFileListPaths in the NSE/NCE xcframeworks script phases, and legacy
+// pbxproj files from xcode-npm builds may still have the old bare shellScript.
+// This function fixes both.
+//
+// variant — SDK pod name ('AcousticConnectDebug' or 'AcousticConnect')
+function patchXcframeworksScriptPhases(pbxprojPath, variant) {
+    if (!variant) variant = 'AcousticConnectDebug';
     let content = fs.readFileSync(pbxprojPath, 'utf8');
     let changed = false;
 
     // 1. Replace bare xcframeworks.sh shellScript with the serialized locking wrapper.
-    //    The xcode npm package cannot reliably round-trip multi-line scripts with
-    //    $ variable references, so we do it here as a string replacement.
-    const newShellScript = encodePbxprojShellScript(XCFRAMEWORKS_WRAPPER_SCRIPT);
+    //    Repairs pbxproj files written by earlier xcode-npm based versions of this hook.
+    //    This is a no-op when the Ruby script has already written the correct wrapper.
+    const newShellScript = encodePbxprojShellScript(buildXcframeworksWrapperScript(variant));
     if (!content.includes(newShellScript)) {
-        const patched = content.split(XCFRAMEWORKS_OLD_SHELLSCRIPT).join(newShellScript);
-        if (patched !== content) { content = patched; changed = true; }
+        for (const oldScript of XCFRAMEWORKS_OLD_SHELLSCRIPTS) {
+            const patched = content.split(oldScript).join(newShellScript);
+            if (patched !== content) { content = patched; changed = true; break; }
+        }
     }
 
     // 2. Fix inputFileListPaths: ensure the path is correctly quoted with ${PODS_ROOT} prefix.
-    //    Three broken forms can appear after writeSync():
+    //    Three broken forms can appear after pod install (CocoaPods xcodeproj write):
     //      B1 – unquoted with prefix: ${PODS_ROOT}/Target Support Files/...xcfilelist,
-    //           (xcode npm omits quotes when the JS value didn't include them)
-    //      B2 – Xcode tokenises the unquoted B1 at the first space, so ${PODS_ROOT} alone
-    //           becomes the entry and the rest is lost, expanding to /Target Support Files/...
+    //      B2 – Xcode tokenises the unquoted B1 at the first space, yielding ${PODS_ROOT}
+    //           alone; the rest (/Target Support Files/...) is lost.
     //      B3 – quoted without prefix: "/Target Support Files/...xcfilelist"
     //    All broken forms are replaced with the single correct form:
     //      "${PODS_ROOT}/Target Support Files/...xcfilelist"
     //    Strategy: use a placeholder to protect already-correct occurrences, fix every
     //    other occurrence, then restore. This avoids broken regexes with literal $ chars.
     const XCFILELIST_SUFFIX =
-        'Target Support Files/AcousticConnectDebug/AcousticConnectDebug-xcframeworks-input-files.xcfilelist';
+        'Target Support Files/' + variant + '/' + variant + '-xcframeworks-input-files.xcfilelist';
     const CORRECT_INPUT = '"${PODS_ROOT}/' + XCFILELIST_SUFFIX + '"';
     const PLACEHOLDER = '\x00XCFILELIST\x00';
 
@@ -323,642 +250,6 @@ function patchXcframeworksScriptPhases(pbxprojPath) {
     if (changed) {
         fs.writeFileSync(pbxprojPath, content, 'utf8');
     }
-}
-
-function addXcframeworksScriptPhase(proj, targetUuid) {
-    // xcode package placeholder — patchXcframeworksScriptPhases() rewrites this
-    // to the serialized wrapper after writeSync().
-    const shellScript =
-        '"\\\"${PODS_ROOT}/Target Support Files/AcousticConnectDebug/AcousticConnectDebug-xcframeworks.sh\\\"\\n"';
-
-    const pbx    = proj.hash.project.objects;
-    const target = pbx.PBXNativeTarget[targetUuid];
-    if (!target) return;
-
-    // Idempotency check
-    const alreadyHas = (target.buildPhases || []).some(ph => {
-        const sp = pbx.PBXShellScriptBuildPhase
-            ? pbx.PBXShellScriptBuildPhase[ph.value]
-            : null;
-        return sp && sp.name && sp.name.includes('AcousticConnect xcframeworks');
-    });
-    if (alreadyHas) return;
-
-    const phaseUuid = proj.generateUuid();
-    // Include surrounding quotes so xcode npm writes the quoted form directly.
-    // Without quotes xcode npm omits them, Xcode tokenises at the first space and
-    // ${PODS_ROOT} is lost, expanding the path to /Target Support Files/... at build time.
-    const inputListPath =
-        '"${PODS_ROOT}/Target Support Files/AcousticConnectDebug/AcousticConnectDebug-xcframeworks-input-files.xcfilelist"';
-
-    pbx.PBXShellScriptBuildPhase = pbx.PBXShellScriptBuildPhase || {};
-    pbx.PBXShellScriptBuildPhase[phaseUuid] = {
-        isa:                  'PBXShellScriptBuildPhase',
-        buildActionMask:      2147483647,
-        files:                [],
-        inputFileListPaths:   [inputListPath],
-        inputPaths:           [],
-        name:                 '"[CP] Prepare AcousticConnect xcframeworks"',
-        outputFileListPaths:  [],
-        outputPaths:          [],
-        runOnlyForDeploymentPostprocessing: 0,
-        shellPath:            '/bin/sh',
-        shellScript:          shellScript,
-        showEnvVarsInLog:     0,
-    };
-    pbx.PBXShellScriptBuildPhase[phaseUuid + '_comment'] =
-        '[CP] Prepare AcousticConnect xcframeworks';
-
-    // Insert BEFORE Sources phase (index 1 so it's after the CocoaPods manifest check)
-    const phases = target.buildPhases || [];
-    const sourcesIdx = phases.findIndex(ph => {
-        return pbx.PBXSourcesBuildPhase && pbx.PBXSourcesBuildPhase[ph.value];
-    });
-    const insertAt = sourcesIdx >= 0 ? sourcesIdx : 0;
-    phases.splice(insertAt, 0, {
-        value:   phaseUuid,
-        comment: '[CP] Prepare AcousticConnect xcframeworks',
-    });
-    target.buildPhases = phases;
-}
-
-// Remove non-extension source files Cordova's plugin-add injects into NSE/NCE.
-function purgeExtensionSourcesPhase(proj, extName, allowedSwiftBasename) {
-    const pbx    = proj.hash.project.objects;
-    const target = Object.values(pbx.PBXNativeTarget || {})
-        .find(t => t && t.name && t.name.replace(/"/g, '') === extName);
-    if (!target) return false;
-
-    let removed = false;
-    for (const phRef of (target.buildPhases || [])) {
-        const phase = (pbx.PBXSourcesBuildPhase || {})[phRef.value];
-        if (!phase) continue;
-        const before = (phase.files || []).length;
-        phase.files = (phase.files || []).filter(fRef => {
-            const bf = (pbx.PBXBuildFile || {})[fRef.value];
-            if (!bf) return true;
-            const fr = (pbx.PBXFileReference || {})[bf.fileRef];
-            if (!fr) return true;
-            const filePath = (fr.path || '').replace(/"/g, '');
-            const basename = path.basename(filePath);
-            // Keep ONLY the single allowed source file for this extension.
-            // Remove everything else — Cordova's plugin add injects plugin ObjC
-            // and Swift files into ALL targets including NSE/NCE.
-            return basename === allowedSwiftBasename;
-        });
-        if (phase.files.length !== before) removed = true;
-    }
-    return removed;
-}
-
-// Ensure every extension's product (.appex) is embedded in the App target.
-//
-// xcode npm 3.0.1's addTarget('ConnectNSE', 'app_extension') calls
-// addToPbxCopyfilesBuildPhase(productFile) where productFile.target is the
-// new EXTENSION uuid. buildPhaseObject() looks for a 'Copy Files' phase in
-// the extension's buildPhases; finding none, it falls back to "first 'Copy
-// Files' phase in the section" — which is non-deterministic when multiple
-// extensions are added.  We fix this by directly verifying and wiring each
-// extension product into App's embed phase after writeSync().
-function ensureExtensionsEmbeddedInApp(pbxprojPath, extensions) {
-    let content = fs.readFileSync(pbxprojPath, 'utf8');
-    let changed = false;
-
-    // All helpers work directly on the pbxproj text after writeSync().
-    //
-    // Layout note: in a PBXNativeTarget block, `buildPhases = (...)` comes
-    // BEFORE `name = TargetName;`.  Anchoring by UUID avoids the trap of
-    // matching from `name = …` and overshooting into the wrong target.
-
-    // Returns the UUID of the PBXNativeTarget whose header comment matches targetName.
-    // Requires `isa = PBXNativeTarget;` immediately inside the block so we never
-    // match a PBXGroup that happens to share the same name.
-    function findTargetUuid(targetName) {
-        const re = new RegExp(
-            '([0-9A-F]{24})\\s*\\/\\*\\s*' + targetName + '\\s*\\*\\/\\s*=\\s*\\{[^}]*isa\\s*=\\s*PBXNativeTarget\\s*;'
-        );
-        const m = content.match(re);
-        return m ? m[1] : null;
-    }
-
-    // Returns the PBXNativeTarget block content for the given UUID.
-    // PBXNativeTarget blocks contain no nested { } so [^}]* is safe.
-    function getTargetBlock(targetUuid) {
-        const re = new RegExp(
-            targetUuid + '\\s*\\/\\*[^*]*\\*\\/\\s*=\\s*\\{([^}]*)\\}'
-        );
-        const m = content.match(re);
-        return m ? m[1] : null;
-    }
-
-    // Returns the UUIDs listed in the target's buildPhases = (...).
-    function getBuildPhaseUuids(targetBlock) {
-        const m = targetBlock.match(/buildPhases\s*=\s*\(([^)]*)\)/);
-        if (!m) return [];
-        return m[1].match(/[0-9A-F]{24}/g) || [];
-    }
-
-    // Returns the productReference UUID for an extension target block.
-    function getProductRef(targetBlock) {
-        const m = targetBlock.match(/productReference\s*=\s*([0-9A-F]{24})\s*\/\*[^*]*\.appex\s*\*\//);
-        return m ? m[1] : null;
-    }
-
-    // Returns all PBXCopyFilesBuildPhase UUIDs with dstSubfolderSpec == 13.
-    function getCopyFilesPhase13Uuids() {
-        const uuids = [];
-        // Each phase block has no nested {} so [^}]* is safe.
-        const re = /([0-9A-F]{24})\s*\/\*[^*]*Copy Files[^*]*\*\/\s*=\s*\{[^}]*dstSubfolderSpec\s*=\s*13\s*;[^}]*\}/g;
-        let m;
-        while ((m = re.exec(content)) !== null) uuids.push(m[1]);
-        return uuids;
-    }
-
-    // Returns true if any PBXBuildFile that references productRefUuid appears
-    // inside one of the given Copy Files phases.
-    function buildFileExistsForRef(productRefUuid, copyPhaseUuids) {
-        for (const phaseUuid of copyPhaseUuids) {
-            const phaseRe = new RegExp(phaseUuid + '\\s*\\/\\*[^*]*\\*\\/\\s*=\\s*\\{([^}]*)\\}');
-            const phaseMatch = content.match(phaseRe);
-            if (!phaseMatch) continue;
-            const phaseBlock = phaseMatch[1];
-            const fileRefs = phaseBlock.match(/[0-9A-F]{24}(?=\s*\/\*[^*]*in Copy Files)/g) || [];
-            for (const bfUuid of fileRefs) {
-                // pbxproj format: UUID /* comment */ = {isa = PBXBuildFile; fileRef = UUID /* comment */; ...}
-                // Allow optional comment between the fileRef UUID and the semicolon.
-                const bfRe = new RegExp(bfUuid + '[^=]*=\\s*\\{[^}]*fileRef\\s*=\\s*' + productRefUuid + '[^;]*;');
-                if (bfRe.test(content)) return true;
-            }
-        }
-        return false;
-    }
-
-    function generateUuid() {
-        let u = '';
-        for (let i = 0; i < 24; i++) u += Math.floor(Math.random() * 16).toString(16).toUpperCase();
-        return u;
-    }
-
-    // Add embedPhaseUuid to App target's buildPhases list.
-    function addPhaseToAppTarget(appTargetUuid, embedPhaseUuid) {
-        // Locate the App target block by UUID and add the phase UUID to its buildPhases.
-        const anchorRe = new RegExp(
-            '(' + appTargetUuid + '\\s*\\/\\*[^*]*\\*\\/\\s*=\\s*\\{[^}]*buildPhases\\s*=\\s*\\()[^)]*(\\))'
-        );
-        content = content.replace(anchorRe, (match, _open, close) =>
-            match.replace(close, '\t\t\t\t' + embedPhaseUuid + ' /* Copy Files */,\n\t\t\t' + close)
-        );
-    }
-
-    // Gather App's embed (dstSubfolderSpec=13) Copy Files phases.
-    const appTargetUuid  = findTargetUuid('App');
-    if (!appTargetUuid) return; // no App target — nothing to do
-
-    const appBlock       = getTargetBlock(appTargetUuid);
-    if (!appBlock) return;
-
-    const appPhaseUuids  = getBuildPhaseUuids(appBlock);
-    const allPhase13     = getCopyFilesPhase13Uuids();
-    const appPhase13     = allPhase13.filter(u => appPhaseUuids.includes(u));
-
-    for (const ext of extensions) {
-        const extTargetUuid = findTargetUuid(ext.name);
-        if (!extTargetUuid) continue; // extension not added yet
-
-        const extBlock   = getTargetBlock(extTargetUuid);
-        if (!extBlock) continue;
-
-        const productRef = getProductRef(extBlock);
-        if (!productRef) continue;
-
-        if (buildFileExistsForRef(productRef, appPhase13)) continue; // already wired ✓
-
-        // Ensure there is at least one dstSubfolderSpec=13 phase in App's buildPhases.
-        let embedPhaseUuid = appPhase13[0];
-        if (!embedPhaseUuid) {
-            embedPhaseUuid = generateUuid();
-            const newPhase =
-                '\t\t' + embedPhaseUuid + ' /* Copy Files */ = {\n' +
-                '\t\t\tisa = PBXCopyFilesBuildPhase;\n' +
-                '\t\t\tbuildActionMask = 2147483647;\n' +
-                '\t\t\tdstPath = "";\n' +
-                '\t\t\tdstSubfolderSpec = 13;\n' +
-                '\t\t\tfiles = (\n' +
-                '\t\t\t);\n' +
-                '\t\t\trunOnlyForDeploymentPostprocessing = 0;\n' +
-                '\t\t};\n';
-            content = content.replace(
-                '/* End PBXCopyFilesBuildPhase section */',
-                newPhase + '/* End PBXCopyFilesBuildPhase section */'
-            );
-            addPhaseToAppTarget(appTargetUuid, embedPhaseUuid);
-            appPhase13.push(embedPhaseUuid);
-            changed = true;
-        }
-
-        // Create a PBXBuildFile entry for the extension product.
-        const bfUuid = generateUuid();
-        const bfLine =
-            '\t\t' + bfUuid + ' /* ' + ext.name + '.appex in Copy Files */ = ' +
-            '{isa = PBXBuildFile; fileRef = ' + productRef +
-            ' /* ' + ext.name + '.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };\n';
-        content = content.replace(
-            '/* End PBXBuildFile section */',
-            bfLine + '/* End PBXBuildFile section */'
-        );
-
-        // Add the build file UUID into the embed phase's files list.
-        const phaseRe = new RegExp(
-            '(' + embedPhaseUuid + '\\s*\\/\\*[^*]*\\*\\/\\s*=\\s*\\{[^}]*files\\s*=\\s*\\()([^)]*)(\\);)'
-        );
-        content = content.replace(phaseRe, (_match, open, inner, close) =>
-            open + inner + '\t\t\t\t' + bfUuid + ' /* ' + ext.name + '.appex in Copy Files */,\n\t\t\t' + close
-        );
-
-        console.log('[after_prepare] ensureExtensionsEmbeddedInApp: wired ' + ext.name + '.appex into App embed phase');
-        changed = true;
-    }
-
-    if (changed) {
-        fs.writeFileSync(pbxprojPath, content, 'utf8');
-    }
-}
-
-// Remove duplicate .appex entries from any Copy Files phase in App target.
-function deduplicateCopyFilesPhases(proj) {
-    const pbx     = proj.hash.project.objects;
-    const appTgt  = Object.values(pbx.PBXNativeTarget || {})
-        .find(t => t && t.name && t.name.replace(/"/g, '') === 'App');
-    if (!appTgt) return;
-
-    // Collect all appex Copy Files phases
-    const copyPhases = (appTgt.buildPhases || [])
-        .map(ph => ({ ref: ph, phase: (pbx.PBXCopyFilesBuildPhase || {})[ph.value] }))
-        .filter(p => p.phase && p.phase.dstSubfolderSpec == 13); // 13 = PlugIns
-
-    const seenAppex = new Set();
-    for (const { phase } of copyPhases) {
-        phase.files = (phase.files || []).filter(fRef => {
-            const bf = (pbx.PBXBuildFile || {})[fRef.value];
-            if (!bf) return true;
-            const fr = (pbx.PBXFileReference || {})[bf.fileRef];
-            if (!fr) return true;
-            const filePath = (fr.path || '').replace(/"/g, '');
-            if (filePath.endsWith('.appex')) {
-                if (seenAppex.has(filePath)) return false;
-                seenAppex.add(filePath);
-            }
-            return true;
-        });
-    }
-}
-
-// Ensure ConnectPlugin.swift is compiled by the App target.
-//
-// On a fresh git checkout Cordova's "already installed" short-circuit means the
-// plugin source files are never copied to platforms/ios/App/Plugins/.  This
-// function is self-contained: it copies missing files from the plugin src tree,
-// creates missing PBXFileReference entries, and adds missing PBXBuildFile entries
-// to the App Sources phase — so `cordova prepare ios` always produces a working
-// Xcode project regardless of checkout history.
-function ensurePluginFilesInAppSources(proj, pluginIosDir, iosDir) {
-    const pbx = proj.hash.project.objects;
-    const appTarget = Object.values(pbx.PBXNativeTarget || {})
-        .find(t => t && t.name && t.name.replace(/"/g, '') === 'App');
-    if (!appTarget) return;
-
-    // Find App target's Sources phase
-    let sourcesPhase = null;
-    for (const ph of (appTarget.buildPhases || [])) {
-        const sp = (pbx.PBXSourcesBuildPhase || {})[ph.value];
-        if (sp) { sourcesPhase = sp; break; }
-    }
-    if (!sourcesPhase) return;
-
-    const pluginId  = 'co.acoustic.connect.push';
-    const pluginDst = path.join(iosDir, 'App', 'Plugins', pluginId);
-
-    const compileFiles = [
-        { name: 'ConnectPlugin.swift', fileType: 'sourcecode.swift' },
-    ];
-    const allFiles = compileFiles.map(f => f.name);
-
-    // Copy any missing source files from the plugin src tree.
-    if (!fs.existsSync(pluginDst)) fs.mkdirSync(pluginDst, { recursive: true });
-    for (const fname of allFiles) {
-        const src = path.join(pluginIosDir, fname);
-        const dst = path.join(pluginDst, fname);
-        if (!fs.existsSync(dst) && fs.existsSync(src)) {
-            fs.copyFileSync(src, dst);
-        }
-    }
-
-    let added = false;
-    for (const { name, fileType } of compileFiles) {
-        // Path as stored in the pbxproj (relative to SRCROOT = platforms/ios/).
-        const pbxRelPath = 'App/Plugins/' + pluginId + '/' + name;
-
-        // Find or create PBXFileReference — check by path first, then by name.
-        let fileRefUuid = Object.keys(pbx.PBXFileReference || {}).find(k => {
-            if (k.endsWith('_comment')) return false;
-            const fr = pbx.PBXFileReference[k];
-            return fr && (fr.path || '').replace(/"/g, '') === pbxRelPath;
-        });
-        if (!fileRefUuid) {
-            const byName = Object.entries(pbx.PBXFileReference || {}).find(([k, fr]) =>
-                !k.endsWith('_comment') && fr && (fr.name || '').replace(/"/g, '') === name
-            );
-            fileRefUuid = byName ? byName[0] : null;
-        }
-        if (!fileRefUuid) {
-            fileRefUuid = proj.generateUuid();
-            pbx.PBXFileReference = pbx.PBXFileReference || {};
-            const q = s => /[+\s]/.test(s) ? '"' + s + '"' : s;
-            pbx.PBXFileReference[fileRefUuid] = {
-                isa:               'PBXFileReference',
-                fileEncoding:      4,
-                lastKnownFileType: fileType,
-                name:              q(name),
-                path:              q(pbxRelPath),
-                sourceTree:        'SOURCE_ROOT',
-            };
-            pbx.PBXFileReference[fileRefUuid + '_comment'] = name;
-        }
-
-        // Add to Sources phase if not already there.
-        const inSources = (sourcesPhase.files || []).some(f => {
-            const bf = (pbx.PBXBuildFile || {})[f.value];
-            return bf && bf.fileRef === fileRefUuid;
-        });
-        if (inSources) continue;
-
-        const bfUuid = proj.generateUuid();
-        pbx.PBXBuildFile = pbx.PBXBuildFile || {};
-        pbx.PBXBuildFile[bfUuid] = { isa: 'PBXBuildFile', fileRef: fileRefUuid, settings: {} };
-        pbx.PBXBuildFile[bfUuid + '_comment'] = name + ' in Sources';
-        sourcesPhase.files.push({ value: bfUuid, comment: name + ' in Sources' });
-        console.log('[after_prepare] ensurePluginFilesInAppSources: added ' + name + ' to App Sources');
-        added = true;
-    }
-    return added;
-}
-
-// Verify (and repair) that App has a PBXTargetDependency for each extension.
-//
-// CocoaPods 1.16+ (Xcodeproj 1.27+) validates host targets by checking
-// native_target.dependencies — specifically that App.dependencies contains a
-// PBXTargetDependency whose `target` UUID equals the extension's UUID.
-// xcode npm's addTargetDependency silently no-ops when the PBXTargetDependency /
-// PBXContainerItemProxy sections don't exist in the pbxproj (fresh cordova-ios
-// projects omit both sections).  This function adds the entries via text
-// manipulation when they are missing, as a belt-and-suspenders safeguard.
-function ensureExtensionDependenciesInApp(pbxprojPath, extensions) {
-    let content = fs.readFileSync(pbxprojPath, 'utf8');
-    let changed = false;
-
-    function generateUuid() {
-        let u = '';
-        for (let i = 0; i < 24; i++) u += Math.floor(Math.random() * 16).toString(16).toUpperCase();
-        return u;
-    }
-
-    // Returns the UUID of the PBXNativeTarget (isa=PBXNativeTarget) for the given name.
-    function findNativeTargetUuid(name) {
-        const re = new RegExp(
-            '([0-9A-F]{24})\\s*\\/\\*[^*]*' + name + '[^*]*\\*\\/\\s*=\\s*\\{[^}]*isa\\s*=\\s*PBXNativeTarget\\s*;'
-        );
-        const m = content.match(re);
-        return m ? m[1] : null;
-    }
-
-    // Returns the project root UUID (containerPortal for PBXContainerItemProxy).
-    function findProjectRootUuid() {
-        const m = content.match(/([0-9A-F]{24})\s*\/\*\s*Project object\s*\*\//);
-        return m ? m[1] : null;
-    }
-
-    // True if App's dependencies list already has a PBXTargetDependency whose
-    // `target` field points to extTargetUuid.
-    function dependencyExists(appTargetUuid, extTargetUuid) {
-        // Get App target block
-        const appBlockRe = new RegExp(
-            appTargetUuid + '\\s*\\/\\*[^*]*\\*\\/\\s*=\\s*\\{([^}]*)\\}'
-        );
-        const appBlockMatch = content.match(appBlockRe);
-        if (!appBlockMatch) return false;
-        const depsMatch = appBlockMatch[1].match(/dependencies\s*=\s*\(([^)]*)\)/);
-        if (!depsMatch) return false;
-        const depUuids = depsMatch[1].match(/[0-9A-F]{24}/g) || [];
-        for (const depUuid of depUuids) {
-            // Find the PBXTargetDependency block for this dep UUID
-            const depBlockRe = new RegExp(
-                depUuid + '\\s*\\/\\*[^*]*\\*\\/\\s*=\\s*\\{[^}]*target\\s*=\\s*' + extTargetUuid + '\\s*[;/]'
-            );
-            if (depBlockRe.test(content)) return true;
-        }
-        return false;
-    }
-
-    // Ensure section headers exist (so we can insert entries into them).
-    function ensureSectionExists(sectionName) {
-        if (!content.includes('/* Begin ' + sectionName + ' section */')) {
-            // Insert before the first existing section marker
-            const firstSection = content.indexOf('/* Begin PBX');
-            if (firstSection === -1) return false;
-            const sectionBlock =
-                '\n/* Begin ' + sectionName + ' section */\n' +
-                '/* End ' + sectionName + ' section */\n';
-            content = content.slice(0, firstSection) + sectionBlock + content.slice(firstSection);
-        }
-        return true;
-    }
-
-    const appTargetUuid  = findNativeTargetUuid('App');
-    const projectRootUuid = findProjectRootUuid();
-    if (!appTargetUuid || !projectRootUuid) return;
-
-    for (const ext of extensions) {
-        const extTargetUuid = findNativeTargetUuid(ext.name);
-        if (!extTargetUuid) continue;
-        if (dependencyExists(appTargetUuid, extTargetUuid)) continue; // already wired
-
-        // Ensure both sections exist
-        ensureSectionExists('PBXContainerItemProxy');
-        ensureSectionExists('PBXTargetDependency');
-
-        const proxyUuid = generateUuid();
-        const depUuid   = generateUuid();
-
-        // PBXContainerItemProxy entry
-        const proxyEntry =
-            '\t\t' + proxyUuid + ' /* PBXContainerItemProxy */ = {\n' +
-            '\t\t\tisa = PBXContainerItemProxy;\n' +
-            '\t\t\tcontainerPortal = ' + projectRootUuid + ' /* Project object */;\n' +
-            '\t\t\tproxyType = 1;\n' +
-            '\t\t\tremoteGlobalIDString = ' + extTargetUuid + ';\n' +
-            '\t\t\tremoteInfo = "' + ext.name + '";\n' +
-            '\t\t};\n';
-        content = content.replace(
-            '/* End PBXContainerItemProxy section */',
-            proxyEntry + '/* End PBXContainerItemProxy section */'
-        );
-
-        // PBXTargetDependency entry
-        const depEntry =
-            '\t\t' + depUuid + ' /* PBXTargetDependency */ = {\n' +
-            '\t\t\tisa = PBXTargetDependency;\n' +
-            '\t\t\tname = "' + ext.name + '";\n' +
-            '\t\t\ttarget = ' + extTargetUuid + ' /* "' + ext.name + '" */;\n' +
-            '\t\t\ttargetProxy = ' + proxyUuid + ' /* PBXContainerItemProxy */;\n' +
-            '\t\t};\n';
-        content = content.replace(
-            '/* End PBXTargetDependency section */',
-            depEntry + '/* End PBXTargetDependency section */'
-        );
-
-        // Add depUuid to App target's dependencies list.
-        // Use indexOf (not regex) to locate the exact 'dependencies = (' within
-        // the App block and its closing ')' — regex replacement with ')' as the
-        // search value would hit the first ')' in buildPhases, not dependencies.
-        // Anchor to 'appTargetUuid /* App */ = {' to avoid matching the UUID
-        // that also appears in PBXProject.targets (which has no dependencies key).
-        const appBlockMarker = appTargetUuid + ' /* App */ = {';
-        const appBlockStart = content.indexOf(appBlockMarker);
-        const depsStr = 'dependencies = (';
-        const depsPos = content.indexOf(depsStr, appBlockStart);
-        if (depsPos !== -1) {
-            const depsClosePos = content.indexOf(')', depsPos + depsStr.length);
-            if (depsClosePos !== -1) {
-                const toInsert = '\t\t\t\t' + depUuid + ' /* PBXTargetDependency */,\n\t\t\t';
-                content = content.slice(0, depsClosePos) + toInsert + content.slice(depsClosePos);
-            }
-        }
-
-        console.log('[after_prepare] ensureExtensionDependenciesInApp: added App→' + ext.name + ' target dependency');
-        changed = true;
-    }
-
-    if (changed) fs.writeFileSync(pbxprojPath, content, 'utf8');
-}
-
-function addXcodeTargets(iosDir, projectName, appBundleId, extensions, pluginIosDir) {
-    const xcode     = require('xcode');
-    const pbxprojPath = path.join(iosDir, projectName + '.xcodeproj', 'project.pbxproj');
-    const proj      = xcode.project(pbxprojPath);
-    proj.parseSync();
-
-    // Ensure PBXTargetDependency and PBXContainerItemProxy sections exist BEFORE
-    // calling addTarget.  A fresh cordova-ios project omits both sections.
-    // xcode npm's addTargetDependency checks `if (section && section)` and silently
-    // no-ops when either is absent — leaving App.dependencies empty.
-    // CocoaPods 1.16+ (Xcodeproj 1.27+) validates host targets by checking
-    // native_target.dependencies, NOT the Copy Files embed phase, so an empty
-    // dependencies list causes "Unable to find host target(s)" on first prepare.
-    const pbxObjects = proj.hash.project.objects;
-    if (!pbxObjects.PBXTargetDependency)   pbxObjects.PBXTargetDependency   = {};
-    if (!pbxObjects.PBXContainerItemProxy) pbxObjects.PBXContainerItemProxy = {};
-
-    let modified = false;
-
-    // Ensure ConnectPlugin.swift is compiled by App target
-    if (ensurePluginFilesInAppSources(proj, pluginIosDir || '', iosDir)) modified = true;
-
-    for (const ext of extensions) {
-        // Always run purge and dedup regardless of whether target already exists
-        if (purgeExtensionSourcesPhase(proj, ext.name, ext.sourceFile)) modified = true;
-        deduplicateCopyFilesPhases(proj);
-
-        let targetUuid;
-        if (targetExistsByName(proj, ext.name)) {
-            targetUuid = getTargetUuidByName(proj, ext.name);
-        } else {
-            modified = true;
-
-            // addTarget returns the new target UUID
-            const targetResult = proj.addTarget(ext.name, 'app_extension', ext.name);
-            targetUuid = targetResult.uuid;
-
-            // Build settings
-            setBuildSettingsForTarget(proj, targetUuid, {
-                PRODUCT_BUNDLE_IDENTIFIER: '"' + ext.bundleId + '"',
-                PRODUCT_NAME:              ext.name,
-                SWIFT_VERSION:             '5.0',
-                IPHONEOS_DEPLOYMENT_TARGET: '15.1',
-                INFOPLIST_FILE:            '"' + ext.name + '/Info.plist"',
-                CODE_SIGN_ENTITLEMENTS:    '"' + ext.name + '/' + ext.name + '.entitlements"',
-                SKIP_INSTALL:              'YES',
-            });
-
-            // Add xcframeworks extraction script before Sources
-            addXcframeworksScriptPhase(proj, targetUuid);
-        }
-
-        if (targetUuid) {
-            // Ensure Sources phase exists and source file is compiled (idempotent).
-            // xcode npm's addTarget for app_extension never creates a Sources phase,
-            // so this must run for both newly-created and pre-existing targets.
-            ensureExtensionSourceInSources(proj, targetUuid, ext.name + '/' + ext.sourceFile);
-            // Destination: "Designed for iPad", not Mac Catalyst.
-            // xcode npm sets SUPPORTS_MACCATALYST = YES by default on new targets.
-            // Run on every prepare so existing targets are corrected too.
-            setBuildSettingsForTarget(proj, targetUuid, {
-                SUPPORTS_MACCATALYST:                  'NO',
-                SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: 'YES',
-            });
-
-            // Link required frameworks (idempotent, every prepare).
-            for (const fw of (ext.frameworks || [])) {
-                addFrameworkToTarget(proj, targetUuid, fw);
-            }
-        }
-    }
-
-    // App target + project level: Designed for iPad, not Mac Catalyst (every prepare).
-    // Cordova's platform code sets SUPPORTS_MACCATALYST = YES on both the App target
-    // and the project-level build configuration list. Patch both so no target inherits YES.
-    const macSettings = {
-        SUPPORTS_MACCATALYST:                  'NO',
-        SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: 'YES',
-    };
-
-    const appTargetUuid = getTargetUuidByName(proj, projectName);
-    if (appTargetUuid) {
-        setBuildSettingsForTarget(proj, appTargetUuid, macSettings);
-    }
-
-    // Project-level configs (PBXProject.buildConfigurationList)
-    const pbxProjectSection = pbxObjects.PBXProject || {};
-    for (const [pUuid, pbxProj] of Object.entries(pbxProjectSection)) {
-        if (pUuid.endsWith('_comment') || !pbxProj || !pbxProj.buildConfigurationList) continue;
-        const cfgList = (pbxObjects.XCConfigurationList || {})[pbxProj.buildConfigurationList];
-        if (!cfgList) continue;
-        for (const cfgRef of (cfgList.buildConfigurations || [])) {
-            const cfg = (pbxObjects.XCBuildConfiguration || {})[cfgRef.value];
-            if (!cfg) continue;
-            cfg.buildSettings = cfg.buildSettings || {};
-            Object.assign(cfg.buildSettings, macSettings);
-        }
-    }
-
-    if (modified) {
-        fs.writeFileSync(pbxprojPath, proj.writeSync());
-    }
-
-    // Replace plain xcframeworks.sh call with serialized wrapper in NSE/NCE phases.
-    // Must run after writeSync() since the xcode package cannot round-trip the script.
-    patchXcframeworksScriptPhases(pbxprojPath);
-
-    // Explicitly verify and repair the embed-phase wiring for every extension.
-    // xcode npm 3.0.1's addTarget embed logic is unreliable when multiple
-    // extensions are added in sequence; this function works directly on the
-    // written pbxproj text and is idempotent.
-    ensureExtensionsEmbeddedInApp(pbxprojPath, extensions);
-
-    // Belt-and-suspenders: verify PBXTargetDependency entries were written.
-    // If the sections were absent and xcode npm silently skipped them, this
-    // function adds them via direct text manipulation so CocoaPods validation
-    // always finds the host-extension relationship in App.dependencies.
-    ensureExtensionDependenciesInApp(pbxprojPath, extensions);
 }
 
 // ---------------------------------------------------------------------------
@@ -986,7 +277,7 @@ function updatePodfile(iosDir) {
     // CocoaPods 1.16+ validates the host-extension embed relationship for
     // NSE/NCE targets, but that validation fails before the Pods infrastructure
     // (xcconfig, xcfilelist files) exists — even though we already added the
-    // targets and their embed phase to the pbxproj in addXcodeTargets().
+    // targets and their embed phase to the pbxproj in add_ios_push_extensions.rb.
     //
     // Strategy: bootstrap with an App-only Podfile first (no NSE/NCE) so that
     // the Pods directory and xcconfig files are created. Then fall through to
@@ -1161,8 +452,6 @@ function ensurePluginJsModule(iosDir, pluginIosDir) {
     modules.push(moduleEntry);
 
     // Write the file in Cordova's standard format.
-    const pluginsJson = JSON.stringify(modules, null, 2)
-        .replace(/"([^"]+)":/g, '$1:');  // unquote keys — matches Cordova output style
     const output = [
         'cordova.define(\'cordova/plugin_list\', function(require, exports, module) {',
         'module.exports = ' + JSON.stringify(modules, null, 2) + ';',
@@ -1206,8 +495,7 @@ function ensureConnectPluginFeature(iosDir) {
 
 // Adds $(SRCROOT)/packages/cordova-ios/CordovaLib/include to the App target's
 // HEADER_SEARCH_PATHS so that #import <Cordova/CDVAppDelegate.h> resolves.
-// Uses direct string replacement on the pbxproj because the xcode npm package
-// strips $(SRCROOT) variable references when round-tripping through writeSync().
+// Uses direct string replacement on the pbxproj after xcodeproj has saved it.
 function patchAppTargetHeaderSearchPaths(iosDir, projectName) {
     const cordovaIncludePath = '$(SRCROOT)/packages/cordova-ios/CordovaLib/include';
     const pbxprojPath = path.join(iosDir, projectName + '.xcodeproj', 'project.pbxproj');
@@ -1225,9 +513,6 @@ function patchAppTargetHeaderSearchPaths(iosDir, projectName) {
         '\t\t\t\t);',
     ].join('\n');
 
-    // Inject into every App target build config. HEADER_SEARCH_PATHS (H) sorts
-    // before INFOPLIST_KEY (I) so it won't appear in `body`; the top-level guard
-    // above handles the idempotency check.
     content = content.replace(
         /(INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[\s\S]*?)(^\t\t\t};)/mg,
         (match, body, closing) => body + insertion + '\n' + closing
@@ -1386,44 +671,67 @@ module.exports = function (context) {
         return;
     }
 
+    const developmentTeam = resolveIosDevelopmentTeam(projectRoot);
+    if (developmentTeam) {
+        console.log('[after_prepare] iOSDevelopmentTeam: ' + developmentTeam);
+    }
+
     const projectName  = resolveProjectName(iosDir);
     const pluginIosDir = resolvePluginRoot(projectRoot);
     const extensions   = buildExtensions(appBundleId);
+    const pod          = podVariantFromPodsJson(iosDir);
 
-    // 1. Copy source files with placeholder substituted
+    // 1. Copy NSE/NCE source files with placeholder substituted
     copyExtensionSources(pluginIosDir, iosDir, appGroupIdentifier, extensions);
 
-    // 2. Update Xcode project (targets + build phases)
-    addXcodeTargets(iosDir, projectName, appBundleId, extensions, pluginIosDir);
+    // 2. Copy plugin source files to platforms/ios (pbxproj registration is done by Ruby)
+    copyPluginSourceFiles(pluginIosDir, iosDir);
 
-    // 2b. Ensure ConnectPlugin feature is in platform config.xml
+    // 3. pbxproj surgery via xcodeproj Ruby gem — creates/repairs NSE/NCE targets,
+    //    embed phase, target dependencies, system frameworks, xcframeworks script phase,
+    //    Mac Catalyst settings, ConnectPlugin.swift in App Compile Sources.
+    const { execSync } = require('child_process');
+    const rubyScript = path.join(__dirname, '..', 'add_ios_push_extensions.rb');
+    if (!fs.existsSync(rubyScript)) {
+        throw new Error('[after_prepare] Ruby script not found: ' + rubyScript +
+            ' — ensure add_ios_push_extensions.rb is included in the plugin package.');
+    }
+    const rubyEnv = Object.assign({}, process.env, {
+        ACOUSTIC_PROJECT_PATH:  path.join(iosDir, projectName + '.xcodeproj'),
+        ACOUSTIC_APP_TARGET:    projectName,
+        ACOUSTIC_APP_BUNDLE_ID: appBundleId,
+        ACOUSTIC_SDK_VARIANT:   pod.name,
+    });
+    if (developmentTeam) rubyEnv.ACOUSTIC_DEVELOPMENT_TEAM = developmentTeam;
+    execSync('ruby "' + rubyScript + '"', { cwd: iosDir, stdio: 'inherit', env: rubyEnv });
+
+    // 3b. Ensure ConnectPlugin feature is in platform config.xml
     ensureConnectPluginFeature(iosDir);
 
-    // 2c. Ensure AcousticConnect.js is in platforms/ios/www and cordova_plugins.js is correct
+    // 3c. Ensure AcousticConnect.js is in platforms/ios/www and cordova_plugins.js is correct
     ensurePluginJsModule(iosDir, pluginIosDir);
 
-    // 2c. Ensure App target can resolve <Cordova/CDVAppDelegate.h>
+    // 3d. Ensure App target can resolve <Cordova/CDVAppDelegate.h>
     patchAppTargetHeaderSearchPaths(iosDir, projectName);
 
-    // 2d. Ensure `import Cordova` resolves in Swift plugins: create module.modulemap
+    // 3e. Ensure `import Cordova` resolves in Swift plugins: create module.modulemap
     //     and inject SWIFT_INCLUDE_PATHS (array form) into App target build configs.
     ensureCordovaSwiftModule(iosDir, projectName);
 
-    // 3. Update Podfile
+    // 4. Update Podfile
     const podfileChanged = updatePodfile(iosDir);
 
-    // 4. Update host-app entitlements
+    // 5. Update host-app entitlements
     updateEntitlements(iosDir, projectName, appGroupIdentifier);
 
-    // 4b. Add Cordova headers to build-extras.xcconfig so SourceKit resolves them in IDE
+    // 5b. Add Cordova headers to build-extras.xcconfig so SourceKit resolves them in IDE
     updateBuildExtrasXcconfig(iosDir);
 
-    // 5. Re-run pod install only if Podfile changed
+    // 6. Re-run pod install only if Podfile changed
     if (podfileChanged) {
         if (process.env.ACOUSTIC_SKIP_POD_INSTALL === '1') {
             console.log('[after_prepare] ACOUSTIC_SKIP_POD_INSTALL=1 — skipping pod install');
         } else {
-            const { execSync } = require('child_process');
             console.log('[after_prepare] Podfile changed — running pod install');
             try {
                 execSync('pod install', { cwd: iosDir, stdio: 'inherit', timeout: 300000 });
@@ -1433,7 +741,7 @@ module.exports = function (context) {
         }
     }
 
-    // 6. Re-patch xcframeworks inputFileListPaths after all pod installs.
+    // 7. Re-patch xcframeworks inputFileListPaths after all pod installs.
     //    CocoaPods' xcodeproj gem can re-introduce the unquoted broken form
     //    ("${PODS_ROOT}/Target Support Files/..." → "/Target Support Files/...")
     //    for NSE/NCE phases when it writes the project during pod install.
@@ -1441,7 +749,7 @@ module.exports = function (context) {
     //    pbxproj regardless of the pod install write order.
     const pbxprojPath = path.join(iosDir, projectName + '.xcodeproj', 'project.pbxproj');
     if (fs.existsSync(pbxprojPath)) {
-        patchXcframeworksScriptPhases(pbxprojPath);
+        patchXcframeworksScriptPhases(pbxprojPath, pod.name);
     }
 
     console.log('[after_prepare] iOS NSE/NCE setup complete (' + appGroupIdentifier + ')');
@@ -1449,8 +757,8 @@ module.exports = function (context) {
 
 // Internal functions exposed for unit tests — not part of the public plugin API.
 module.exports._internal = {
-    ensureExtensionsEmbeddedInApp,
-    ensureExtensionDependenciesInApp,
     updatePodfile,
     patchXcframeworksScriptPhases,
+    resolveConnectConfigPath,
+    resolveIosDevelopmentTeam,
 };

@@ -11,7 +11,7 @@
     "author": "Acoustic",
     "description": "Cordova plugin for Acoustic Connect (CDP + engagement).",
     "main": "www/AcousticConnect.js",
-    "version": "0.1.5",
+    "version": "0.1.6",
     "license": "SEE LICENSE IN LICENSE",
     "devDependencies": {
         "eslint": "^9.0.0",
@@ -24,7 +24,6 @@
         "@types/jest": "^29.5.12",
         "jest-environment-jsdom": "^29.7.0",
         "typescript": "^5.4.0",
-        "xcode": "^3.0.1",
         "jest": "^29.7.0"
     },
     "cordova": {
@@ -41,7 +40,14 @@
     "files": [
         "www/",
         "types/",
-        "src/",
+        "scripts/",
+        "src/android/*.kt",
+        "src/android/*.gradle",
+        "src/android/hooks/",
+        "src/ios/ConnectNCE/",
+        "src/ios/ConnectNSE/",
+        "src/ios/*.swift",
+        "src/ios/hooks/",
         "plugin.xml",
         "Package.swift",
         "LICENSE",
@@ -51,6 +57,7 @@
         "lint": "eslint www types",
         "test": "jest",
         "typecheck": "tsc --noEmit -p tsconfig.json",
+        "test:ruby": "ruby __tests__/smoke_add_ios_push_extensions.rb",
         "pack": "npm pack",
         "test:strict": "tsc --strict --noEmit -p tsconfig.test.json"
     }
