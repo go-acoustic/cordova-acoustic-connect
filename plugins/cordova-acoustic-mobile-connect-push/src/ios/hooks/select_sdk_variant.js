@@ -4,66 +4,47 @@
  * Copyright (C) 2026 Acoustic, L.P. All rights reserved.
  *
  * Runs at `before_plugin_install` and rewrites the CocoaPods pod name in
- * plugin.xml based on ACOUSTIC_SDK_VARIANT before Cordova copies the plugin
- * into the host app. cordova prepare then reads the rewritten copy to generate
- * the Podfile.
+ * plugin.xml based on ConnectConfig.json.Connect.useRelease before Cordova
+ * copies the plugin into the host app. cordova prepare then reads the
+ * rewritten copy to generate the Podfile.
  *
- *   release (default) → AcousticConnect (~> 2.0)
- *   debug             → AcousticConnectDebug (>= 2.1.12)
+ *   useRelease: true  → AcousticConnect (~> 2.0)         — production / release SDK
+ *   useRelease: false → AcousticConnectDebug (>= 2.1.12) — debug SDK (default)
  *
- * IMPORTANT: both the pod name AND spec must change together. The debug pod
- * (AcousticConnectDebug) requires >= 2.1.12 because requestAuthorization() and
- * getCurrentAuthorization() land in that version. Swapping only the name would
- * register AcousticConnectDebug ~> 2.0 in pods.json, which Cordova then merges
- * with the existing Podfile entry, producing two conflicting pods.
+ * This hook is iOS-only. Android always uses connect-push-fcm regardless of
+ * useRelease (connect-push-fcm-debug is not published to public Maven).
+ * ConnectConfig.json is the single source of truth. No CLI variable or env var
+ * override is accepted;
+ * change the flag in ConnectConfig.json and re-add the plugin.
+ *
+ * IMPORTANT: both the pod name AND spec must change together. AcousticConnectDebug
+ * requires >= 2.1.12 because requestAuthorization() / getCurrentAuthorization()
+ * land in that version.
  */
 
 'use strict';
 
-var fs = require('fs');
+var fs   = require('fs');
 var path = require('path');
 
 module.exports = function (context) {
-    // Resolution order:
-    //   1. --variable ACOUSTIC_SDK_VARIANT=<value> passed on the CLI
-    //   2. ACOUSTIC_SDK_VARIANT environment variable (CI / Jenkins)
-    //   3. ConnectConfig.json Connect.useRelease (false → debug, true → release)
-    //   4. default declared in plugin.xml <preference> element
-    //   5. hard-coded 'release' guard (should never be reached)
-    //
-    // ConnectConfig.json is the single source of truth shared with
-    // before_prepare_pod.js so both hooks always select the same pod.
-    var pluginPrefs = (
-        context.opts.plugin &&
-        context.opts.plugin.pluginInfo &&
-        typeof context.opts.plugin.pluginInfo.getPreferences === 'function'
-    ) ? context.opts.plugin.pluginInfo.getPreferences() : {};
-
-    var variantFromConfig = null;
     var connectConfigPath = path.join(context.opts.projectRoot, 'ConnectConfig.json');
+
+    var variant = 'debug'; // default: debug (matches RN podspec nil → debug)
+
     if (fs.existsSync(connectConfigPath)) {
+        var connectCfg;
         try {
-            var connectCfg = JSON.parse(fs.readFileSync(connectConfigPath, 'utf8'));
-            if (connectCfg && connectCfg.Connect) {
-                variantFromConfig = connectCfg.Connect.useRelease === false ? 'debug' : 'release';
-            }
-        } catch (_) { /* ignore — fall through to plugin.xml default */ }
-    }
-
-    var variantRaw = (
-        context.opts.cli_variables &&
-        context.opts.cli_variables.ACOUSTIC_SDK_VARIANT
-    ) || process.env.ACOUSTIC_SDK_VARIANT
-      || variantFromConfig
-      || pluginPrefs['ACOUSTIC_SDK_VARIANT']
-      || 'release';
-
-    var variant = String(variantRaw).toLowerCase();
-
-    if (variant !== 'release' && variant !== 'debug') {
-        throw new Error(
-            'ACOUSTIC_SDK_VARIANT must be "release" or "debug", got "' + variantRaw + '"'
-        );
+            connectCfg = JSON.parse(fs.readFileSync(connectConfigPath, 'utf8'));
+        } catch (e) {
+            throw new Error('[acoustic-connect] ConnectConfig.json is malformed JSON: ' + e.message);
+        }
+        var cfg = connectCfg && (connectCfg.Connect || connectCfg);
+        if (cfg && cfg.useRelease !== undefined && cfg.useRelease !== null) {
+            variant = cfg.useRelease ? 'release' : 'debug';
+        }
+    } else {
+        console.log('[acoustic-connect] ConnectConfig.json not found — defaulting to debug SDK variant');
     }
 
     var pluginPath = context.opts.plugin && context.opts.plugin.dir;
@@ -89,7 +70,8 @@ module.exports = function (context) {
 
     if (rewritten !== pluginXml) {
         fs.writeFileSync(pluginXmlPath, rewritten, 'utf8');
-        console.log('[acoustic-connect] ACOUSTIC_SDK_VARIANT=' + variant +
-                    ' → plugin.xml updated');
+        console.log('[acoustic-connect] useRelease=' + (variant === 'release') +
+                    ' → plugin.xml pod set to ' +
+                    (variant === 'release' ? 'AcousticConnect (~> 2.0)' : 'AcousticConnectDebug (>= 2.1.12)'));
     }
 };

@@ -52,14 +52,9 @@ if (useRelease) {
     }
 }
 
-def sdkVariant = (project.hasProperty("ACOUSTIC_SDK_VARIANT")
-    ? project.ACOUSTIC_SDK_VARIANT
-    : "release").toString().toLowerCase()
-
-// This plugin is push-only; connect-push-fcm transitively includes connect.
-def connectSdkArtifact = (sdkVariant == "debug")
-    ? "io.github.go-acoustic:connect-push-fcm-debug"
-    : "io.github.go-acoustic:connect-push-fcm"
+// Android always uses the release FCM artifact. No debug Maven artifact exists;
+// useRelease controls iOS pod selection only (via select_sdk_variant.js).
+def connectSdkArtifact = "io.github.go-acoustic:connect-push-fcm"
 
 // AndroidVersion in ConnectConfig.json takes precedence over the Cordova
 // preference and the default pin.

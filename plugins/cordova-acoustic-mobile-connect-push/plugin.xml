@@ -9,7 +9,7 @@ Acoustic, L.P. Any unauthorized copying or distribution of content from this fil
 -->
 <plugin xmlns="http://apache.org/cordova/ns/plugins/1.0"
         id="co.acoustic.connect.push"
-        version="0.1.6">
+        version="0.1.7">
 
     <name>Acoustic Connect Cordova Plugin</name>
     <author>Acoustic</author>
@@ -29,19 +29,14 @@ Acoustic, L.P. Any unauthorized copying or distribution of content from this fil
     </js-module>
 
     <!--
-      Build-time SDK variant. Accepted values: release (default), debug.
-      iOS     : release → AcousticConnect (~> 2.0)
-                debug   → AcousticConnectDebug (~> 2.0)
-                The before_plugin_install hook (select_sdk_variant.js) rewrites
-                the pod name in plugin.xml before Cordova copies it into the app's
-                plugins/ directory; cordova prepare then reads the rewritten copy
-                to generate the Podfile.
-      Android : release → io.github.go-acoustic:connect-push-fcm
-                debug   → io.github.go-acoustic:connect-push-fcm-debug
-                Variant selection is handled in src/android/build-extras.gradle.
+      SDK variant is driven by ConnectConfig.json → Connect.useRelease (bool).
+        useRelease: true  → AcousticConnect (~> 2.0)         iOS  |  connect-push-fcm  Android
+        useRelease: false → AcousticConnectDebug (>= 2.1.12) iOS  |  connect-push-fcm  Android  (default)
+        Android always uses connect-push-fcm regardless of useRelease (no debug Maven artifact exists).
+      The before_plugin_install hook (select_sdk_variant.js) rewrites the pod
+      name in plugin.xml at `cordova plugin add` time. Android variant selection
+      is handled in src/android/build-extras.gradle using the same flag.
     -->
-    <preference name="ACOUSTIC_SDK_VARIANT" default="release" />
-
     <hook type="before_plugin_install" src="src/ios/hooks/select_sdk_variant.js" />
 
     <!--
@@ -76,8 +71,13 @@ Acoustic, L.P. Any unauthorized copying or distribution of content from this fil
 
         <!--
           CocoaPods SDK dependency.
-          Default: AcousticConnectDebug (>= 2.1.12) — required until the Release pod
-          ships requestAuthorization() / getCurrentAuthorization() (target: 2.1.12+).
+          Default: AcousticConnectDebug (>= 2.1.12) — required because AcousticConnect
+          (release pod) only gained requestAuthorization() / getCurrentAuthorization()
+          at 2.1.12+ (CA-144303). AcousticConnectDebug 2.1.12 has a podspec bug where
+          it declares AcousticConnect as a transitive dependency; both pods bundle the
+          same xcframeworks, triggering CocoaPods 1.16+ duplicate-name validation.
+          The after_prepare.js pre_install hook strips AcousticConnect's
+          vendored_frameworks to avoid the conflict.
           select_sdk_variant.js normalises to AcousticConnect (~> 2.0) for release
           builds, then re-applies AcousticConnectDebug (>= 2.1.12) for debug builds.
           Keeping the debug pod as the checked-in default means the tooling (IDE,

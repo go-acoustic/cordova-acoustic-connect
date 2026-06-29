@@ -11,7 +11,7 @@
     "author": "Acoustic",
     "description": "Cordova plugin for Acoustic Connect (CDP + engagement).",
     "main": "www/AcousticConnect.js",
-    "version": "0.1.6",
+    "version": "0.1.7",
     "license": "SEE LICENSE IN LICENSE",
     "devDependencies": {
         "eslint": "^9.0.0",
@@ -47,6 +47,7 @@
         "src/ios/ConnectNCE/",
         "src/ios/ConnectNSE/",
         "src/ios/*.swift",
+        "src/ios/*.rb",
         "src/ios/hooks/",
         "plugin.xml",
         "Package.swift",
