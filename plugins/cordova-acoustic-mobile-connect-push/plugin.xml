@@ -9,7 +9,7 @@ Acoustic, L.P. Any unauthorized copying or distribution of content from this fil
 -->
 <plugin xmlns="http://apache.org/cordova/ns/plugins/1.0"
         id="co.acoustic.connect.push"
-        version="0.1.9">
+        version="0.1.10">
 
     <name>Acoustic Connect Cordova Plugin</name>
     <author>Acoustic</author>
@@ -68,6 +68,7 @@ Acoustic, L.P. Any unauthorized copying or distribution of content from this fil
         <hook type="after_prepare" src="src/ios/hooks/after_prepare.js" />
 
         <source-file src="src/ios/ConnectPlugin.swift" />
+        <source-file src="src/ios/AppDelegateConnectPush.swift" />
 
         <!--
           CocoaPods SDK dependency.

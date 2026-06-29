@@ -35,11 +35,13 @@ const {
     patchXcframeworksScriptPhases,
     resolveConnectConfigPath,
     resolveIosDevelopmentTeam,
+    addApsEnvironmentToEntitlementsFile,
 } = hook._internal as {
     updatePodfile:                 (iosDir: string) => boolean;
     patchXcframeworksScriptPhases: (p: string, variant?: string) => void;
     resolveConnectConfigPath:      (projectRoot: string) => string;
     resolveIosDevelopmentTeam:     (projectRoot: string) => string | null;
+    addApsEnvironmentToEntitlementsFile:    (filePath: string) => void;
 };
 
 // ---------------------------------------------------------------------------
@@ -316,5 +318,71 @@ describe('resolveIosDevelopmentTeam', () => {
     it('throws a descriptive error when ConnectConfig.json is malformed JSON', () => {
         fs.writeFileSync(path.join(cfgDir, 'ConnectConfig.json'), '{ not valid json');
         expect(() => resolveIosDevelopmentTeam(cfgDir)).toThrow('malformed JSON');
+    });
+});
+
+
+// ---------------------------------------------------------------------------
+// addApsEnvironmentToEntitlementsFile
+// ---------------------------------------------------------------------------
+
+describe('addApsEnvironmentToEntitlementsFile', () => {
+    let tmpFile: string;
+
+    const BARE_PLIST = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
+        '<plist version="1.0">',
+        '<dict>',
+        '</dict>',
+        '</plist>',
+    ].join('\n');
+
+    const withKeys = (...keys: string[]) => {
+        let entries = '';
+        for (const k of keys) {
+            entries += `\t<key>${k}</key>\n\t<string>development</string>\n`;
+        }
+        return BARE_PLIST.replace('</dict>', entries + '</dict>');
+    };
+
+    beforeEach(() => {
+        tmpFile = path.join(os.tmpdir(), `aps-test-${Math.random().toString(36).slice(2)}.plist`);
+    });
+
+    afterEach(() => {
+        if (fs.existsSync(tmpFile)) fs.unlinkSync(tmpFile);
+    });
+
+    it('adds both keys when neither is present', () => {
+        fs.writeFileSync(tmpFile, BARE_PLIST, 'utf8');
+        addApsEnvironmentToEntitlementsFile(tmpFile);
+        const result = fs.readFileSync(tmpFile, 'utf8');
+        expect(result).toContain('<key>aps-environment</key>');
+        expect(result).toContain('<key>com.apple.developer.aps-environment</key>');
+    });
+
+    it('adds the canonical key when only the legacy aps-environment is present', () => {
+        fs.writeFileSync(tmpFile, withKeys('aps-environment'), 'utf8');
+        addApsEnvironmentToEntitlementsFile(tmpFile);
+        const result = fs.readFileSync(tmpFile, 'utf8');
+        expect(result).toContain('<key>com.apple.developer.aps-environment</key>');
+        expect(result.split('<key>aps-environment</key>').length - 1).toBe(1);
+    });
+
+    it('does not write when both keys are already present', () => {
+        const original = withKeys('aps-environment', 'com.apple.developer.aps-environment');
+        fs.writeFileSync(tmpFile, original, 'utf8');
+        const mtimeBefore = fs.statSync(tmpFile).mtimeMs;
+        addApsEnvironmentToEntitlementsFile(tmpFile);
+        const mtimeAfter = fs.statSync(tmpFile).mtimeMs;
+        expect(mtimeAfter).toBe(mtimeBefore);
+    });
+
+    it('adds the legacy key when only the canonical key is present', () => {
+        fs.writeFileSync(tmpFile, withKeys('com.apple.developer.aps-environment'), 'utf8');
+        addApsEnvironmentToEntitlementsFile(tmpFile);
+        const result = fs.readFileSync(tmpFile, 'utf8');
+        expect(result).toContain('<key>aps-environment</key>');
     });
 });

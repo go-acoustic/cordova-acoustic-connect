@@ -569,10 +569,25 @@ function addAppGroupToEntitlementsFile(filePath, appGroupIdentifier) {
 
 function addApsEnvironmentToEntitlementsFile(filePath) {
     let content = fs.readFileSync(filePath, 'utf8');
-    if (content.includes('aps-environment')) return; // already present
-    const entry = '\t<key>aps-environment</key>\n\t<string>development</string>';
-    content = content.replace('</dict>', entry + '\n</dict>');
-    fs.writeFileSync(filePath, content, 'utf8');
+    let changed = false;
+
+    if (!content.includes('<key>aps-environment</key>')) {
+        content = content.replace(
+            '</dict>',
+            '\t<key>aps-environment</key>\n\t<string>development</string>\n</dict>'
+        );
+        changed = true;
+    }
+
+    if (!content.includes('<key>com.apple.developer.aps-environment</key>')) {
+        content = content.replace(
+            '</dict>',
+            '\t<key>com.apple.developer.aps-environment</key>\n\t<string>development</string>\n</dict>'
+        );
+        changed = true;
+    }
+
+    if (changed) fs.writeFileSync(filePath, content, 'utf8');
 }
 
 function updateEntitlements(iosDir, projectName, appGroupIdentifier) {
@@ -703,4 +718,5 @@ module.exports._internal = {
     patchXcframeworksScriptPhases,
     resolveConnectConfigPath,
     resolveIosDevelopmentTeam,
+    addApsEnvironmentToEntitlementsFile,
 };
