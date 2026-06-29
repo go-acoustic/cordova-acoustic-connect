@@ -1,41 +1,46 @@
 {
-  "name": "co.acoustic.connect.cordova.demo",
-  "displayName": "Demo",
-  "version": "1.0.0",
-  "description": "Internal demo app for the Acoustic Connect Cordova plugin.",
-  "main": "index.js",
-  "private": true,
-  "scripts": {
-    "install:plugin": "cordova plugin add ../../plugins/cordova-acoustic-mobile-connect-push --link",
-    "prepare:android": "cordova prepare android",
-    "prepare:ios": "cordova prepare ios",
-    "run:android": "cordova run android",
-    "run:ios": "cordova run ios",
-    "build:android": "cordova build android",
-    "build:ios": "cordova build ios",
-    "clean": "cordova clean"
-  },
-  "keywords": [
-    "ecosystem:cordova"
-  ],
-  "author": "Acoustic",
-  "license": "SEE LICENSE IN ../../LICENSE",
-  "devDependencies": {
-    "cordova-acoustic-connect": "file:../../plugins/cordova-acoustic-mobile-connect-push",
-    "cordova-android": "^15.0.0",
-    "cordova-ios": "^8.0.1"
-  },
-  "cordova": {
-    "platforms": [
-      "android",
-      "ios"
+    "license": "SEE LICENSE IN ../../LICENSE",
+    "private": true,
+    "devDependencies": {
+        "cordova-ios": "^8.1.0",
+        "cordova-acoustic-connect-beta": "0.1.9",
+        "cordova-android": "^15.0.0"
+    },
+    "keywords": [
+        "ecosystem:cordova"
     ],
-    "plugins": {
-      "cordova-acoustic-connect": {
-        "ACOUSTIC_SDK_VARIANT": "release",
-        "ANDROID-MINSDKVERSION": "26",
-        "DEPLOYMENT-TARGET": "15.1"
-      }
-    }
-  }
+    "cordova": {
+        "plugins": {
+            "co.acoustic.connect.push": {
+                "ACOUSTIC_SDK_VARIANT": "release",
+                "ANDROID-MINSDKVERSION": "26",
+                "DEPLOYMENT-TARGET": "15.1"
+            },
+            "cordova-acoustic-connect-beta": {
+                "ACOUSTIC_SDK_VARIANT": "release",
+                "ANDROID-MINSDKVERSION": "26",
+                "DEPLOYMENT-TARGET": "15.1"
+            }
+        },
+        "platforms": [
+            "android",
+            "ios"
+        ]
+    },
+    "displayName": "Demo",
+    "author": "Acoustic",
+    "name": "co.acoustic.connect.cordova.demo",
+    "description": "Internal demo app for the Acoustic Connect Cordova plugin.",
+    "main": "index.js",
+    "scripts": {
+        "build:ios": "cordova build ios",
+        "install:plugin": "cordova plugin add cordova-acoustic-connect-beta",
+        "prepare:android": "cordova prepare android",
+        "run:ios": "cordova run ios",
+        "build:android": "cordova build android",
+        "prepare:ios": "cordova prepare ios",
+        "run:android": "cordova run android",
+        "clean": "cordova clean"
+    },
+    "version": "1.0.0"
 }
