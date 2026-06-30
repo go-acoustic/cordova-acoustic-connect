@@ -96,7 +96,7 @@ describe('variant selection', () => {
         writeConfig(DEBUG_CONFIG);
         writePodfile('OLD');
         hook(makeContext(tmpDir));
-        expect(readPodfile()).toContain("pod 'AcousticConnectDebug', '>= 2.1.12'");
+        expect(readPodfile()).toContain("pod 'AcousticConnectDebug', '= 2.1.13'");
     });
 
     it('selects release when useRelease is true', () => {
@@ -192,7 +192,7 @@ describe('pods.json sync', () => {
         hook(makeContext(tmpDir));
         const libs = (readPodsJson() as any).libraries;
         expect(libs['AcousticConnectDebug']).toEqual({
-            name: 'AcousticConnectDebug', spec: '>= 2.1.12', count: 1,
+            name: 'AcousticConnectDebug', spec: '= 2.1.13', count: 1,
         });
         expect(libs['AcousticConnect']).toBeUndefined();
     });
@@ -210,7 +210,7 @@ describe('pods.json sync', () => {
 
     it('removes the wrong variant from pods.json', () => {
         writeConfig(RELEASE_CONFIG);
-        writePodsJson({ libraries: { AcousticConnectDebug: { name: 'AcousticConnectDebug', spec: '>= 2.1.12', count: 1 } } });
+        writePodsJson({ libraries: { AcousticConnectDebug: { name: 'AcousticConnectDebug', spec: '= 2.1.13', count: 1 } } });
         hook(makeContext(tmpDir));
         const libs = (readPodsJson() as any).libraries;
         expect(libs['AcousticConnectDebug']).toBeUndefined();

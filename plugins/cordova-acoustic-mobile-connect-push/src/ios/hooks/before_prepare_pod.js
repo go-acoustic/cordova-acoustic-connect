@@ -13,7 +13,7 @@
  * It also updates pods.json so the state stays consistent.
  *
  *   useRelease: true  (or missing) → AcousticConnect    (~> 2.0)
- *   useRelease: false               → AcousticConnectDebug (>= 2.1.12)
+ *   useRelease: false               → AcousticConnectDebug (= 2.1.13)
  */
 
 'use strict';
@@ -24,7 +24,7 @@ var path = require('path');
 var RELEASE_NAME = 'AcousticConnect';
 var RELEASE_SPEC = '~> 2.0';
 var DEBUG_NAME   = 'AcousticConnectDebug';
-var DEBUG_SPEC   = '>= 2.1.12';
+var DEBUG_SPEC   = '= 2.1.13';
 var MIN_IOS      = '15.1';
 
 // Resolve Xcode target/project name from the .xcodeproj directory present

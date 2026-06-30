@@ -43,26 +43,10 @@ module.exports = function (context) {
     const assetsDir = path.join(projectRoot, 'platforms', 'android', 'app', 'src', 'main', 'assets');
     fs.mkdirSync(assetsDir, { recursive: true });
 
-    // Copy ConnectBasicConfig.properties under BOTH expected file names so the
-    // Connect SDK picks up AppKey / PostMessageUrl regardless of which name it
-    // resolves first. BasicConfig.properties is the legacy name.
     const configSrc = path.join(projectRoot, 'ConnectBasicConfig.properties');
     if (fs.existsSync(configSrc)) {
-        ['BasicConfig.properties', 'ConnectBasicConfig.properties'].forEach((name) => {
-            fs.copyFileSync(configSrc, path.join(assetsDir, name));
-            console.log('[acoustic-connect] ' + name + ' copied to assets');
-        });
+        fs.copyFileSync(configSrc, path.join(assetsDir, 'ConnectBasicConfig.properties'));
+        console.log('[acoustic-connect] ConnectBasicConfig.properties copied to assets');
     }
 
-    // Copy optional SDK config JSONs when present in the project root.
-    [
-        'ConnectLayoutConfig.json',
-        'ConnectAdvancedConfig.json',
-    ].forEach((name) => {
-        const src = path.join(projectRoot, name);
-        if (fs.existsSync(src)) {
-            fs.copyFileSync(src, path.join(assetsDir, name));
-            console.log('[acoustic-connect] ' + name + ' copied to assets');
-        }
-    });
 };

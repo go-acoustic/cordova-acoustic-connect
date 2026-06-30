@@ -11,13 +11,17 @@
     <allow-intent href="http://*/*" />
     <allow-intent href="https://*/*" />
     <preference name="android-minSdkVersion" value="26" />
-    <preference name="GradlePluginGoogleServicesEnabled" value="true" />
-    <preference name="GradlePluginGoogleServicesVersion" value="4.4.2" />
 
     <platform name="android">
         <hook type="before_build" src="hooks/before_build_check_credentials.js" />
         <hook type="after_prepare" src="hooks/after_prepare_icons.js" />
-        <hook type="after_prepare" src="hooks/after_prepare_android_manifest.js" />
+
+        <preference name="AndroidJavaSourceCompatibility" value="17" />
+        <preference name="AndroidJavaTargetCompatibility" value="17" />
+        <preference name="AndroidKotlinJVMTarget" value="17" />
+
+        <preference name="GradlePluginGoogleServicesEnabled" value="true" />
+        <preference name="GradlePluginGoogleServicesVersion" value="4.4.2" />
 
         <!-- Route push-tap into the existing activity instead of stacking a new one -->
         <preference name="AndroidLaunchMode" value="singleTask" />

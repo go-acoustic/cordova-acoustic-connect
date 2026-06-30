@@ -9,7 +9,7 @@ Acoustic, L.P. Any unauthorized copying or distribution of content from this fil
 -->
 <plugin xmlns="http://apache.org/cordova/ns/plugins/1.0"
         id="co.acoustic.connect.push"
-        version="0.1.10">
+        version="0.1.11">
 
     <name>Acoustic Connect Cordova Plugin</name>
     <author>Acoustic</author>
@@ -31,7 +31,7 @@ Acoustic, L.P. Any unauthorized copying or distribution of content from this fil
     <!--
       SDK variant is driven by ConnectConfig.json → Connect.useRelease (bool).
         useRelease: true  → AcousticConnect (~> 2.0)         iOS  |  connect-push-fcm  Android
-        useRelease: false → AcousticConnectDebug (>= 2.1.12) iOS  |  connect-push-fcm  Android  (default)
+        useRelease: false → AcousticConnectDebug (= 2.1.13) iOS  |  connect-push-fcm  Android  (default)
         Android always uses connect-push-fcm regardless of useRelease (no debug Maven artifact exists).
       The before_plugin_install hook (select_sdk_variant.js) rewrites the pod
       name in plugin.xml at `cordova plugin add` time. Android variant selection
@@ -68,19 +68,16 @@ Acoustic, L.P. Any unauthorized copying or distribution of content from this fil
         <hook type="after_prepare" src="src/ios/hooks/after_prepare.js" />
 
         <source-file src="src/ios/ConnectPlugin.swift" />
-        <source-file src="src/ios/AppDelegateConnectPush.swift" />
 
         <!--
           CocoaPods SDK dependency.
-          Default: AcousticConnectDebug (>= 2.1.12) — required because AcousticConnect
+          Default: AcousticConnectDebug (= 2.1.13) — required because AcousticConnect
           (release pod) only gained requestAuthorization() / getCurrentAuthorization()
-          at 2.1.12+ (CA-144303). AcousticConnectDebug 2.1.12 has a podspec bug where
-          it declares AcousticConnect as a transitive dependency; both pods bundle the
-          same xcframeworks, triggering CocoaPods 1.16+ duplicate-name validation.
-          The after_prepare.js pre_install hook strips AcousticConnect's
-          vendored_frameworks to avoid the conflict.
+          at 2.1.12+. 2.1.13 fixes the podspec bug present in 2.1.12 where
+          AcousticConnectDebug declared AcousticConnect as a transitive dependency,
+          causing CocoaPods 1.16+ duplicate-xcframework validation to abort pod install.
           select_sdk_variant.js normalises to AcousticConnect (~> 2.0) for release
-          builds, then re-applies AcousticConnectDebug (>= 2.1.12) for debug builds.
+          builds, then re-applies AcousticConnectDebug (= 2.1.13) for debug builds.
           Keeping the debug pod as the checked-in default means the tooling (IDE,
           linter) that reads this file stays in sync with pods.json and the Podfile.
         -->
@@ -89,7 +86,7 @@ Acoustic, L.P. Any unauthorized copying or distribution of content from this fil
                 <source url="https://cdn.cocoapods.org/" />
             </config>
             <pods use-frameworks="true">
-                <pod name="AcousticConnectDebug" spec=">= 2.1.12" />
+                <pod name="AcousticConnectDebug" spec="= 2.1.13" />
             </pods>
         </podspec>
     </platform>

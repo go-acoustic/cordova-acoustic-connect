@@ -259,15 +259,15 @@ function patchXcframeworksScriptPhases(pbxprojPath, variant) {
 
 function podVariantFromPodsJson(iosDir) {
     const podsJsonPath = path.join(iosDir, 'pods.json');
-    if (!fs.existsSync(podsJsonPath)) return { name: 'AcousticConnectDebug', spec: '>= 2.1.12' };
+    if (!fs.existsSync(podsJsonPath)) return { name: 'AcousticConnectDebug', spec: '= 2.1.13' };
     try {
         const libs = (JSON.parse(fs.readFileSync(podsJsonPath, 'utf8')) || {}).libraries || {};
         if (libs['AcousticConnect'])
             return { name: 'AcousticConnect', spec: libs['AcousticConnect'].spec || '~> 2.0' };
         if (libs['AcousticConnectDebug'])
-            return { name: 'AcousticConnectDebug', spec: libs['AcousticConnectDebug'].spec || '>= 2.1.12' };
+            return { name: 'AcousticConnectDebug', spec: libs['AcousticConnectDebug'].spec || '= 2.1.13' };
     } catch (_) {}
-    return { name: 'AcousticConnectDebug', spec: '>= 2.1.12' };
+    return { name: 'AcousticConnectDebug', spec: '= 2.1.13' };
 }
 
 

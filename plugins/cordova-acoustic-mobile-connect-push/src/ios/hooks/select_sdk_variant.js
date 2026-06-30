@@ -9,7 +9,7 @@
  * rewritten copy to generate the Podfile.
  *
  *   useRelease: true  → AcousticConnect (~> 2.0)         — production / release SDK
- *   useRelease: false → AcousticConnectDebug (>= 2.1.12) — debug SDK (default)
+ *   useRelease: false → AcousticConnectDebug (= 2.1.13) — debug SDK (default)
  *
  * This hook is iOS-only. Android always uses connect-push-fcm regardless of
  * useRelease (connect-push-fcm-debug is not published to public Maven).
@@ -18,7 +18,7 @@
  * change the flag in ConnectConfig.json and re-add the plugin.
  *
  * IMPORTANT: both the pod name AND spec must change together. AcousticConnectDebug
- * requires >= 2.1.12 because requestAuthorization() / getCurrentAuthorization()
+ * requires = 2.1.13 because requestAuthorization() / getCurrentAuthorization()
  * land in that version.
  */
 
@@ -59,19 +59,19 @@ module.exports = function (context) {
     // Both must change together so Cordova registers the correct pod in pods.json.
     var normalized = pluginXml
         .replace(/<pod name="AcousticConnectDebug"/g, '<pod name="AcousticConnect"')
-        .replace(/(<pod name="AcousticConnect"\s+spec=")>= 2\.1\.12"/g, '$1~> 2.0"');
+        .replace(/(<pod name="AcousticConnect"\s+spec=")= 2\.1\.13"/g, '$1~> 2.0"');
 
     var rewritten = normalized;
     if (variant === 'debug') {
         rewritten = normalized
             .replace(/<pod name="AcousticConnect"/g, '<pod name="AcousticConnectDebug"')
-            .replace(/(<pod name="AcousticConnectDebug"\s+spec=")~> 2\.0"/g, '$1>= 2.1.12"');
+            .replace(/(<pod name="AcousticConnectDebug"\s+spec=")~> 2\.0"/g, '$1= 2.1.13"');
     }
 
     if (rewritten !== pluginXml) {
         fs.writeFileSync(pluginXmlPath, rewritten, 'utf8');
         console.log('[acoustic-connect] useRelease=' + (variant === 'release') +
                     ' → plugin.xml pod set to ' +
-                    (variant === 'release' ? 'AcousticConnect (~> 2.0)' : 'AcousticConnectDebug (>= 2.1.12)'));
+                    (variant === 'release' ? 'AcousticConnect (~> 2.0)' : 'AcousticConnectDebug (= 2.1.13)'));
     }
 };
