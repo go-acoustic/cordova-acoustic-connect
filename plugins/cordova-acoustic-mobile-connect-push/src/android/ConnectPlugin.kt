@@ -479,9 +479,6 @@ class ConnectPlugin : CordovaPlugin() {
 
     /**
      * Flushes queued Analytics events to the collector immediately.
-     * Mirrors `onFlushMessages` in the Android Java demo's NotificationViewModel.
-     * Never rejects — best-effort fire-and-forget; resolves success once the
-     * call has been dispatched (delivery is async inside the SDK).
      */
     internal fun handleFlushQueues(callbackContext: CallbackContext) {
         if (!Connect.isEnabled()) {
@@ -505,7 +502,6 @@ class ConnectPlugin : CordovaPlugin() {
 
     /**
      * Updates the logical screen name reported to the Connect SDK.
-     * Mirrors [Connect.resumeConnect] / RN's [setCurrentScreenName].
      * Call this on every tab/page navigation so the server sees distinct
      * screen identifiers (e.g. "notification_screen", "identity_screen").
      */
@@ -582,9 +578,6 @@ class ConnectPlugin : CordovaPlugin() {
      */
     /**
      * First-launch initialisation from the bundled `BasicConfig.properties`.
-     * Mirrors `ConnectWrapper` / `ViewModel` auto-init in the Android Java demo:
-     * `Connect.init(application)` + `Connect.enable()` (no explicit args — the SDK
-     * reads AppKey and PostMessageUrl from the bundled properties file).
      *
      * Runs on startup (first install, cleared data, or every launch if the SDK
      * has not yet been enabled via JS). A rapid JS `enable(appKey, postURL)` call
@@ -613,7 +606,7 @@ class ConnectPlugin : CordovaPlugin() {
                 work.addOnSuccessListener {
                     Connect.flushQueues()
                     Log.i(TAG, "bundled-init: SDK enabled from bundled config")
-                    // Request POST_NOTIFICATIONS on API 33+ — mirrors handleEnable() behaviour
+                    // Request POST_NOTIFICATIONS on API 33+
                     // so first launch / reinstall shows the permission dialog automatically.
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                         (cordova.activity as? ComponentActivity)?.let { comp ->

@@ -11,7 +11,11 @@
     "author": "Acoustic",
     "description": "Cordova plugin for Acoustic Connect (CDP + engagement).",
     "main": "www/AcousticConnect.js",
-    "version": "0.1.14",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/aipoweredmarketer/cordova-acoustic-connect.git"
+    },
+    "version": "0.1.15",
     "license": "SEE LICENSE IN LICENSE",
     "devDependencies": {
         "eslint": "^9.0.0",

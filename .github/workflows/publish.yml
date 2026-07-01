@@ -91,7 +91,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'
           registry-url: 'https://registry.npmjs.org'
 
       - name: Upgrade npm for Trusted Publishers
@@ -99,7 +99,7 @@ jobs:
         run: |
           set -euo pipefail
           echo "Current npm version: $(npm --version)"
-          npm install -g npm@latest
+          npm install -g npm@11
           echo "Upgraded npm version: $(npm --version)"
 
       - name: Download tarball from release
@@ -179,6 +179,7 @@ jobs:
           npm publish "$TARBALL" \
             --access public \
             --tag latest \
+            --provenance \
             --verbose
 
       - name: Job summary

@@ -51,7 +51,6 @@ declare namespace AcousticConnect {
 
     /**
      * Log an identity signal to the Connect SDK.
-     * Mirrors `AcousticConnectRN.logIdentity` in the React Native bridge.
      *
      * **Native action name**: the Cordova bridge dispatches this to the native
      * action `logIdentificationEvent` (not `logIdentity`). If you call

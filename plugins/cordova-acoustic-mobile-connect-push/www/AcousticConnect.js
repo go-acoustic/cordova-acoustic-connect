@@ -95,12 +95,11 @@ var AcousticConnect = {
 
     /**
      * Log an identity signal to the Connect SDK.
-     * Mirrors `AcousticConnectRN.logIdentity` in the React Native bridge.
      *
-     * The JS method is named `logIdentity` to match the RN bridge convention;
-     * it dispatches to the native action `logIdentificationEvent` (the name used
-     * by both ConnectPlugin.kt and ConnectPlugin.swift). TypeScript types should
-     * declare the public name `logIdentity`, not the internal action name.
+     * The JS method is named `logIdentity`; it dispatches to the native action
+     * `logIdentificationEvent` (the name used by both ConnectPlugin.kt and
+     * ConnectPlugin.swift). TypeScript types should declare the public name
+     * `logIdentity`, not the internal action name.
      *
      * Common callers:
      *   logUserLoggedIn  → signalType='loggedIn',           additionalParameters={ loginMethod: 'email' }

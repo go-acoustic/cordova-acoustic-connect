@@ -65,8 +65,6 @@ public class ConnectPlugin: CDVPlugin {
         let mode = mapPushMode(modeString)
         let pushConfig = ConnectPushConfig(mode: mode, appGroupIdentifier: appGroupId)
         // Disable kill switch before enabling so the bundled plist's KillSwitchEnabled=true
-        // does not fire after the async kill-switch check — mirrors Android's
-        // KillSwitchEnabled=false in ConnectBasicConfig.properties.
         ConnectSDK.shared.setConfigurableItem("KillSwitchEnabled", value: false)
         ConnectSDK.shared.enable(appKey: appKey, postURL: postURL, push: pushConfig)
         // Re-apply after enable() in case the SDK re-loaded bundle defaults internally.
@@ -103,7 +101,7 @@ public class ConnectPlugin: CDVPlugin {
         commandDelegate.send(result, callbackId: command.callbackId)
     }
 
-    /// JS: `AcousticConnect.setCurrentScreenName(name)` — mirrors `ConnectSDK.shared.setCurrentScreen`.
+    /// JS: `AcousticConnect.setCurrentScreenName(name)`.
     @objc(setCurrentScreenName:)
     func setCurrentScreenName(command: CDVInvokedUrlCommand) {
         let name = (command.argument(at: 0) as? String ?? "").trimmingCharacters(in: .whitespaces)
@@ -122,11 +120,10 @@ public class ConnectPlugin: CDVPlugin {
 
     // MARK: - Identity
 
-    /// JS: `AcousticConnect.logIdentity(name, value, signalType?, additionalParameters?)`
-    ///
-    /// Mirrors `AcousticConnectRN.logIdentity` which calls
-    /// `ConnectSDK.shared.identity.log(...)`. Flushes immediately so the server
-    /// sees the contact signal without waiting for the next batch upload.
+
+    /// Logs an identity signal via `ConnectSDK.shared.identity.log(...)`. Flushes
+    /// immediately so the server sees the contact signal without waiting for the
+    /// next batch upload.
     @objc(logIdentificationEvent:)
     func logIdentificationEvent(command: CDVInvokedUrlCommand) {
         let name  = (command.argument(at: 0) as? String ?? "").trimmingCharacters(in: .whitespaces)
@@ -164,8 +161,8 @@ public class ConnectPlugin: CDVPlugin {
 
     /// JS: `AcousticConnect.logCustomEvent(eventName, values?, level?)`
     ///
-    /// Mirrors `AcousticConnectRN.logCustomEvent`. Level defaults to 3
-    /// (kEOMonitoringLevelInfo on Android / connectMonitoringLevelWiFi on iOS).
+    /// Level defaults to 3 (kEOMonitoringLevelInfo on Android /
+    /// connectMonitoringLevelWiFi on iOS).
     @objc(logCustomEvent:)
     func logCustomEvent(command: CDVInvokedUrlCommand) {
         let eventName = command.argument(at: 0) as? String ?? ""
