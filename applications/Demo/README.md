@@ -20,14 +20,7 @@ cordova platform add android
 cordova platform add ios
 ```
 
-This installs the published `cordova-acoustic-connect-beta` package from npm, pinned to the version in `install:plugin` (kept in sync with the `devDependencies` range in `package.json` — check npm for the latest before bumping). To exercise unreleased local plugin changes instead, link the workspace copy directly:
-
-```sh
-cordova plugin rm cordova-acoustic-connect-beta
-cordova plugin add ../../plugins/cordova-acoustic-mobile-connect-push --link
-```
-
-`--link` symlinks the plugin so edits in `../../src/` reflect after a `cordova prepare` — no re-install needed.
+This installs the published `cordova-acoustic-connect-beta` package from npm, pinned to the version in `install:plugin` (kept in sync with the `devDependencies` range in `package.json` — check npm for the latest before bumping).
 
 ### Android push prerequisites
 
@@ -72,15 +65,6 @@ npm run run:ios        # cordova run ios
 | Show token | `push.getToken` | ✅ |
 
 Output appears in the inline panel below the buttons. Resolved Promises render as `✓`; rejected as `✗`.
-
-## Iterating on the plugin
-
-Switch to the linked local plugin first (see First-time setup above). Once installed with `--link`, edits to `../../src/android/` or `../../src/ios/` only need `cordova prepare` (not a re-install) to take effect in this demo.
-
-```sh
-# from applications/Demo/
-cordova prepare android && cordova run android
-```
 
 ## Notes
 
