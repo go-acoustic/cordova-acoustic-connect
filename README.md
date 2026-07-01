@@ -53,7 +53,7 @@ All commands run from `applications/Demo/`.
 
 ```sh
 npm install
-npx cordova plugin add "../../plugins/cordova-acoustic-mobile-connect-push"
+npx cordova plugin add cordova-acoustic-connect
 npx cordova platform add android
 npx cordova platform add ios
 npx cordova build android
@@ -65,7 +65,7 @@ npx cordova build ios
 ```sh
 npx cordova platform rm ios && \
 npx cordova plugin rm co.acoustic.connect.push && \
-npx cordova plugin add "../../plugins/cordova-acoustic-mobile-connect-push" && \
+npx cordova plugin add cordova-acoustic-connect && \
 rm -rf ~/Library/Developer/Xcode/DerivedData && \
 npx cordova platform add ios && \
 npx cordova build ios
@@ -86,23 +86,9 @@ npx cordova run android
 npx cordova run ios
 ```
 
-## Iterating on plugin source
-
-The plugin is installed from a local path. After editing source files:
-
-```sh
-# iOS
-npx cordova prepare ios && npx cordova build ios
-
-# Android
-npx cordova prepare android && npx cordova build android
-```
-
-No re-install needed — `cordova prepare` picks up the changes from the local plugin directory.
-
 ## iOS push setup (Xcode)
 
-After building, open `platforms/ios/App.xcworkspace` in Xcode:
+After building, open `platforms/ios/Demo.xcworkspace` in Xcode:
 
 1. Select the project → **Signing & Capabilities** → set a Team.
 2. Add the **Push Notifications** capability.
