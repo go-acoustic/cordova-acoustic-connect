@@ -42,8 +42,7 @@ function onDeviceReady() {
         });
     });
 
-    // Mirrors the React Native bare-workflow demo's AppState 'active' listener:
-    // re-check permission state every time the app comes to foreground so the
+    // Re-check permission state every time the app comes to foreground so the
     // badge stays accurate after the SDK auto-shows the Android 13+ system
     // permission dialog (fire-and-forget from handleEnable, no JS callback).
     document.addEventListener('resume', refreshPermissionState, false);
@@ -60,7 +59,6 @@ function onDeviceReady() {
 // ── SDK initialisation ─────────────────────────────────────────────────
 
 // Enables the SDK from the bundled config.
-// Mirrors ConnectSDKManager.start() in the React Native bare-workflow demo.
 function initSdk() {
     const appKey  = CONFIG.AppKey;
     const postURL = CONFIG.PostMessageUrl;
@@ -122,7 +120,6 @@ function switchTab(tab) {
     document.querySelector('[data-tab="' + tab + '"]').classList.add('active');
     const titleEl = document.getElementById('pageTitle');
     if (titleEl) titleEl.textContent = TAB_TITLES[tab] || tab;
-    // Mirror the Android demo screen names: notification_screen / identity_screen
     exec('setCurrentScreenName', [tab + '_screen']);
 }
 
@@ -139,8 +136,7 @@ function restoreSession() {
 
 // ── Notification Authorization ─────────────────────────────────────────
 
-// Updates the Notification Authorization card — mirrors the Android demo and
-// the React Native PushScreen: green dot + "Status: Authorized" when granted.
+// Updates the Notification Authorization card: green dot + "Status: Authorized" when granted.
 function updateAuthStatus(authorized, message) {
     const dot  = document.getElementById('authDot');
     const text = document.getElementById('authStatusText');
@@ -233,7 +229,7 @@ function renderHistory() {
         '</li>'
     ).join('');
 
-    // Tapping a history entry pre-fills the inputs — mirrors Android demo.
+    // Tapping a history entry pre-fills the inputs.
     list.querySelectorAll('.history-item').forEach(li => {
         li.addEventListener('click', () => {
             const entry = identityHistory[parseInt(li.dataset.index, 10)];

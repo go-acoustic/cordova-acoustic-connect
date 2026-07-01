@@ -82,8 +82,7 @@ dependencies {
   implementation platform('com.google.firebase:firebase-bom:33.7.0')
   implementation 'com.google.firebase:firebase-messaging'
 
-  // Unit-test harness (CA-144735). Test source-set lives under
-  // src/android/src/test/java/. QA-2 of CA-137533 populates it.
+  // Unit-test harness. Test source-set lives under src/android/src/test/java/.
   testImplementation 'junit:junit:4.13.2'
   testImplementation 'org.mockito.kotlin:mockito-kotlin:5.2.1'
   testImplementation 'org.robolectric:robolectric:4.11.1'
