@@ -19,6 +19,7 @@ import android.util.Log
 import androidx.activity.ComponentActivity
 import com.acoustic.connect.android.connectmod.Connect
 import com.acoustic.connect.android.connectmod.push.PushPermissionState
+import com.tl.uic.Tealeaf
 import com.tl.uic.model.ScreenviewType
 import com.acoustic.connect.android.connectmod.push.core.MobileServiceType
 import org.apache.cordova.CallbackContext
@@ -457,7 +458,7 @@ class ConnectPlugin : CordovaPlugin() {
                 if (ok) {
                     // Flush immediately so the server sees the identity signal without
                     // waiting for the SDK's next scheduled batch upload.
-                    Connect.flushQueues()
+                    Tealeaf.flushAll(false)
                     workWrapper.success(callbackContext)
                 } else {
                     workWrapper.error(

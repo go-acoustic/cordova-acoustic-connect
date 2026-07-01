@@ -9,7 +9,7 @@ Acoustic, L.P. Any unauthorized copying or distribution of content from this fil
 -->
 <plugin xmlns="http://apache.org/cordova/ns/plugins/1.0"
         id="co.acoustic.connect.push"
-        version="0.1.11">
+        version="0.1.12">
 
     <name>Acoustic Connect Cordova Plugin</name>
     <author>Acoustic</author>
