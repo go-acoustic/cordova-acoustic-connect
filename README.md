@@ -21,7 +21,7 @@ Cordova plugin for integrating [Acoustic Connect](https://acoustic.com/connect/)
 
 | Requirement | Version |
 |---|---|
-| Node.js | 18+ |
+| Node.js | 20+ |
 | Cordova CLI | `npm install -g cordova` |
 | Xcode | 15+ (iOS builds) |
 | Xcode CLI tools pointed at Xcode | `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer` |

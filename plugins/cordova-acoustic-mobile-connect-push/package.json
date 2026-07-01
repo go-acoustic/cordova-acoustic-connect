@@ -15,7 +15,7 @@
         "type": "git",
         "url": "git+https://github.com/aipoweredmarketer/cordova-acoustic-connect.git"
     },
-    "version": "0.1.15",
+    "version": "0.1.16",
     "license": "SEE LICENSE IN LICENSE",
     "devDependencies": {
         "eslint": "^9.0.0",
@@ -38,7 +38,7 @@
         ]
     },
     "engines": {
-        "node": ">=18.0.0"
+        "node": ">=20.0.0"
     },
     "name": "cordova-acoustic-connect-beta",
     "files": [
