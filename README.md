@@ -11,10 +11,7 @@ Cordova plugin for integrating [Acoustic Connect](https://acoustic.com/connect/)
 ```
 .
 ├── applications/Demo/                            Sample Cordova app
-├── plugins/cordova-acoustic-mobile-connect-push/ Plugin source (iOS + Android)
-├── docs/                                         Project documentation
-├── Jenkinsfile                                   CI pipeline
-└── .github/workflows/                            GitHub Actions (npm publish on release)
+└── plugins/cordova-acoustic-mobile-connect-push/ Plugin source (iOS + Android)
 ```
 
 ## Prerequisites
