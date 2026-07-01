@@ -1,0 +1,31 @@
+Acoustic Connect for Cordova
+
+New Features
+
+- Unified `AcousticConnect` JavaScript API (Promise-based), available both as a
+  CommonJS/ES module export and as a global `window.AcousticConnect`
+- `AcousticConnect.enable(appKey, postURL, pushMode?, options?)` — initializes the
+  native iOS and Android Connect SDKs
+- `AcousticConnect.logIdentity(...)` — logs identity signals (e.g. login,
+  registration) to Connect
+- `AcousticConnect.push` namespace — permission requests (`requestPermission`,
+  `getPermissionState`) and manual-mode forwarders (`didReceiveNotification`,
+  `didReceiveResponse`) for apps that own their own native push delegate
+- `AcousticConnect.setLogLevel(...)` and `AcousticConnect.disable()`
+- Automatic and manual push modes, selectable via `enable()`
+- `ConnectConfig.json`-driven configuration, including a `useRelease` flag that
+  switches between debug/release native SDK variants with no build-time flag
+- TypeScript type definitions shipped with the package
+- Sample Cordova app (`applications/Demo`) demonstrating setup end-to-end
+
+
+Known Issues
+
+- Rich push cannot be end-to-end tested on the iOS Simulator — simulators don't display large icon.
+
+Our environment for this release:
+
+- Xcode 26.2
+- MacOS 26.0.1
+- iOS 15.1 to 26.x
+- Android minSdk 26, SDK 36
