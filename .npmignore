@@ -1,0 +1,20 @@
+# IDE artefacts (npm doesn't follow .gitignore when `files` is set)
+.idea/
+*.iml
+.vscode/
+.DS_Store
+
+# OS / scratch
+Thumbs.db
+
+# Local build output
+build/
+coverage/
+*.tgz
+
+# Tooling caches
+.eslintcache
+.tsbuildinfo
+
+# Test scaffolding source-sets (shipped empty — consumers don't need them)
+__tests__/

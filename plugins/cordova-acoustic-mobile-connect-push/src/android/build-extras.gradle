@@ -1,0 +1,102 @@
+// Acoustic Connect Cordova plugin — Gradle extras.
+// Selects the connect-push-fcm artefact (release or debug variant).
+// Also seeds the JUnit + Mockito-Kotlin + Robolectric test harness used
+// by the PR-build Jenkinsfile.
+
+import groovy.json.JsonSlurper
+
+repositories {
+  google()
+  mavenCentral()
+  maven { url "https://maven.google.com" }
+}
+
+// Resolve ConnectConfig.json by probing candidate paths in priority order:
+//   1. <cordova-app>/ConnectConfig.json  — standard Cordova layout
+//      (rootProject.projectDir = platforms/android/, so ../../ = cordova app root)
+//   2. <repo-root>/ConnectConfig.json   — monorepo layout where the Cordova
+//      app sits one level below the repo root
+def connectConfigCandidates = [
+    new File(rootProject.projectDir, '../../ConnectConfig.json'),
+    new File(rootProject.projectDir, '../../../ConnectConfig.json'),
+]
+def connectConfigFile = connectConfigCandidates.find { it.exists() }
+
+def androidVersion = ""
+def useRelease = false
+if (connectConfigFile) {
+    try {
+        def cfg = new JsonSlurper().parse(connectConfigFile)
+        androidVersion = cfg?.Connect?.AndroidVersion ?: ""
+        useRelease    = cfg?.Connect?.useRelease == true
+    } catch (Exception e) {
+        logger.warn("[Acoustic] ConnectConfig.json parse error: ${e.message}")
+    }
+} else {
+    def tried = connectConfigCandidates.collect { it.canonicalPath }.join(', ')
+    logger.warn("[Acoustic] ConnectConfig.json not found (tried: ${tried}) — using default SDK version and useRelease=false")
+}
+
+if (useRelease) {
+    configurations.all {
+        resolutionStrategy {
+            componentSelection {
+                all { selection ->
+                    if (selection.candidate.group == 'io.github.go-acoustic' &&
+                            selection.candidate.version.endsWith('-beta')) {
+                        selection.reject("useRelease is true — rejecting beta version ${selection.candidate.version}")
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Android always uses the release FCM artifact. No debug Maven artifact exists;
+// useRelease controls iOS pod selection only (via select_sdk_variant.js).
+def connectSdkArtifact = "io.github.go-acoustic:connect-push-fcm"
+
+// AndroidVersion in ConnectConfig.json takes precedence over the Cordova
+// preference and the default pin.
+def defaultSdkVersion = project.hasProperty("connectSdkVersion") ? project.connectSdkVersion : "11.0.11"
+def connectSdkVersion
+if (!androidVersion.isEmpty()) {
+    if (androidVersion ==~ /\d+\.\d+\.\d+(-[A-Za-z0-9._-]+)?/) {
+        connectSdkVersion = androidVersion
+    } else {
+        logger.warn("[Acoustic] AndroidVersion '${androidVersion}' is not a valid version string — falling back to ${defaultSdkVersion}")
+        connectSdkVersion = defaultSdkVersion
+    }
+} else {
+    connectSdkVersion = defaultSdkVersion
+}
+
+dependencies {
+  implementation "${connectSdkArtifact}:${connectSdkVersion}"
+
+  // connect-push-fcm's POM declares no Firebase dependency — the host app
+  // must supply it. firebase-messaging brings in play-services-base which
+  // contains GoogleApiAvailability, required by the SDK's GMS availability
+  // check. Without this the check throws ClassNotFoundException and GMS is
+  // always reported unavailable, blocking FCM token registration.
+  implementation platform('com.google.firebase:firebase-bom:33.7.0')
+  implementation 'com.google.firebase:firebase-messaging'
+
+  // Unit-test harness. Test source-set lives under src/android/src/test/java/.
+  testImplementation 'junit:junit:4.13.2'
+  testImplementation 'org.mockito.kotlin:mockito-kotlin:5.2.1'
+  testImplementation 'org.robolectric:robolectric:4.11.1'
+}
+
+android {
+  packagingOptions {
+    exclude 'META-INF/NOTICE'
+    exclude 'META-INF/LICENSE'
+  }
+
+  testOptions {
+    unitTests {
+      includeAndroidResources true
+    }
+  }
+}

@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Notification small icon for ConnectPushConfig.iconRes.
+
+    DEVELOPER NOTES
+    ───────────────
+    Android's notification system renders small icons in monochrome: it ignores
+    all color information and uses only the alpha channel to determine the shape.
+    Any pixel that is not fully transparent appears white (or the accent color
+    chosen by the OS/launcher).
+
+    Rules for this file:
+      • Use only android:fillColor="#FFFFFFFF" (opaque white) or transparent.
+      • Keep the shape simple and recognizable at 24 dp (the system scales it
+        down to ~18 dp on the status bar).
+      • If the app icon or brand assets change, update this file to match.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+
+    <!-- Bell body -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12,2
+            C10.9,2 10,2.9 10,4
+            C10,4.06 10.01,4.12 10.01,4.18
+            C7.15,4.86 5,7.46 5,10.5
+            L5,16
+            L3,18
+            L3,19
+            L21,19
+            L21,18
+            L19,16
+            L19,10.5
+            C19,7.46 16.85,4.86 14,4.18
+            C14,4.12 14,4.06 14,4
+            C14,2.9 13.1,2 12,2Z" />
+
+    <!-- Bell clapper / bottom dot -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12,22
+            C13.1,22 14,21.1 14,20
+            L10,20
+            C10,21.1 10.9,22 12,22Z" />
+
+</vector>

@@ -1,0 +1,35 @@
+<?xml version='1.0' encoding='utf-8'?>
+<widget id="co.acoustic.connect.cordova.demo" version="1.0.0" xmlns="http://www.w3.org/ns/widgets" xmlns:android="http://schemas.android.com/apk/res/android" xmlns:cdv="http://cordova.apache.org/ns/1.0">
+    <name>Cordova Connect</name>
+    <description>
+        A sample Apache Cordova application that responds to the deviceready event.
+    </description>
+    <author email="dev@cordova.apache.org" href="https://cordova.apache.org">
+        Apache Cordova Team
+    </author>
+    <content src="index.html" />
+    <allow-intent href="http://*/*" />
+    <allow-intent href="https://*/*" />
+    <preference name="android-minSdkVersion" value="26" />
+
+    <platform name="android">
+        <hook type="before_build" src="hooks/before_build_check_credentials.js" />
+        <hook type="after_prepare" src="hooks/after_prepare_icons.js" />
+
+        <preference name="AndroidJavaSourceCompatibility" value="17" />
+        <preference name="AndroidJavaTargetCompatibility" value="17" />
+        <preference name="AndroidKotlinJVMTarget" value="17" />
+
+        <preference name="GradlePluginGoogleServicesEnabled" value="true" />
+        <preference name="GradlePluginGoogleServicesVersion" value="4.4.2" />
+
+        <!-- Route push-tap into the existing activity instead of stacking a new one -->
+        <preference name="AndroidLaunchMode" value="singleTask" />
+    </platform>
+
+    <platform name="ios">
+        <preference name="deployment-target" value="15.1" />
+        <preference name="SplashScreenBackgroundColor" value="0xFFFFFFFF" />
+        <hook type="after_prepare" src="hooks/after_prepare_entitlements.js" />
+    </platform>
+</widget>

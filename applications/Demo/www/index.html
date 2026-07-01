@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="Content-Security-Policy" content="default-src 'self' data: https://ssl.gstatic.com 'unsafe-eval'; style-src 'self' 'unsafe-inline'; media-src *; img-src 'self' data: content:;">
+        <meta name="format-detection" content="telephone=no">
+        <meta name="msapplication-tap-highlight" content="no">
+        <meta name="viewport" content="initial-scale=1, width=device-width, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
+        <meta name="color-scheme" content="light dark">
+        <link rel="stylesheet" href="css/index.css">
+        <title>Acoustic Connect Demo</title>
+    </head>
+    <body>
+
+        <header>
+            <h1>ACOUSTIC</h1>
+            <p id="pageTitle" class="page-title">Connect</p>
+            <p id="deviceready" class="status">Connecting to device&hellip;</p>
+        </header>
+
+        <!-- ── Notification tab ───────────────────────────────────────── -->
+        <div id="tab-notification" class="tab-content active">
+
+            <section class="card">
+                <h2 class="card-title">Notification Authorization</h2>
+                <div class="auth-row" id="authRow">
+                    <span class="auth-dot" id="authDot"></span>
+                    <span class="auth-status-text" id="authStatusText">Status: Not Authorized</span>
+                </div>
+                <button class="action" id="btnEnablePush" disabled>Enable Push</button>
+                <p class="auth-message hidden" id="authMessage"></p>
+            </section>
+
+        </div>
+
+        <!-- ── Identity tab ──────────────────────────────────────────── -->
+        <div id="tab-identity" class="tab-content">
+
+            <section class="card">
+                <h2 class="card-title">Log Identity</h2>
+                <label class="field-label" for="identName">Identifier Name</label>
+                <input class="field-input" id="identName" type="text" placeholder="e.g. email" autocomplete="off">
+                <label class="field-label" for="identValue">Identifier Value</label>
+                <input class="field-input" id="identValue" type="text" placeholder="e.g. user@example.com" autocomplete="off">
+                <button class="action" id="btnLogLoggedIn" disabled>Log Logged In With Email</button>
+                <button class="action" id="btnLogRegistered" disabled>Log Account Registered With Email</button>
+                <p class="ident-status hidden" id="identStatus"></p>
+            </section>
+
+            <section class="card" id="historyCard" style="display:none">
+                <h2 class="card-title">Recent</h2>
+                <ul class="history-list" id="identityHistory"></ul>
+            </section>
+
+        </div>
+
+        <!-- ── Behaviour tab ─────────────────────────────────────────── -->
+        <div id="tab-behaviour" class="tab-content">
+
+            <section class="card">
+                <h2 class="card-title">Coming Soon</h2>
+                <p class="behaviour-headline">Analytics surfaces will land here.</p>
+                <p class="behaviour-body">
+                    This tab is intentionally empty for now. Future work will add
+                    demo cards for custom events, signals, click and text-change
+                    tracking, screen-view logging, and unhandled-exception reporting —
+                    the analytics half of the SDK that lives alongside the push half.
+                </p>
+            </section>
+
+        </div>
+
+        <!-- ── Bottom tab bar ─────────────────────────────────────────── -->
+        <nav class="tab-bar" aria-label="Main navigation">
+
+            <button class="tab-btn active" data-tab="notification" aria-label="Notification">
+                <svg class="tab-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6V11c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5S10.5 3.17 10.5 4v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/>
+                </svg>
+                <span class="tab-label">Notification</span>
+            </button>
+
+            <button class="tab-btn" data-tab="identity" aria-label="Identity">
+                <svg class="tab-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <path d="M12 12c2.21 0 4-1.79 4-4S14.21 4 12 4 8 5.79 8 8s1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+                </svg>
+                <span class="tab-label">Identity</span>
+            </button>
+
+            <button class="tab-btn" data-tab="behaviour" aria-label="Behaviour">
+                <svg class="tab-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <path d="M3.5 18.49l6-6.01 4 4L22 6.92l-1.41-1.41-7.09 7.97-4-4L2 16.99z"/>
+                </svg>
+                <span class="tab-label">Behaviour</span>
+            </button>
+
+        </nav>
+
+        <script src="cordova.js"></script>
+        <script src="js/connect-config.js"></script>
+        <script src="js/index.js"></script>
+    </body>
+</html>

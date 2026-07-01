@@ -1,0 +1,203 @@
+# Copyright (C) 2026 Acoustic, L.P. All rights reserved.
+#
+# NOTICE: This file contains material that is confidential and proprietary to
+# Acoustic, L.P. and/or other developers. No license is granted under any intellectual or
+# industrial property rights of Acoustic, L.P. except as may be provided in an agreement with
+# Acoustic, L.P. Any unauthorized copying or distribution of content from this file is
+# prohibited.
+
+# Publish cordova-acoustic-connect to npm using npm Trusted Publishers (OIDC).
+#
+# Note for maintainers: this file is the SOURCE for the public repo's
+# `.github/workflows/publish.yml`. The release pipeline copies it there under
+# that name on every production publish — edits made directly in the public
+# repo are overwritten. In this (private) repo the workflow is inert: the
+# repository guard below only matches the public repo.
+#
+# Flow:
+#   1. Jenkins syncs plugin source to go-acoustic/cordova-acoustic-connect,
+#      rewrites the package name to `cordova-acoustic-connect`, commits, and
+#      pushes a bare-semver tag (e.g. 0.1.1) to that repo.
+#   2. Jenkins uploads the `npm pack` tarball as a GitHub Release asset.
+#   3. This workflow triggers on the tag push, waits for the tarball, downloads
+#      it, and publishes to npm via OIDC — no npm token stored in GitHub.
+#
+# Prerequisites:
+#   - npm package `cordova-acoustic-connect` configured with GitHub as a
+#     Trusted Publisher on npmjs.com:
+#       repository: go-acoustic/cordova-acoustic-connect
+#       workflow:   publish.yml
+#   - Jenkins must push a bare-semver tag AND upload the tarball to the
+#     matching GitHub Release before this workflow times out
+#   - npm CLI >= 11.5.1 (upgraded automatically in this workflow)
+#
+# Troubleshooting:
+#   - "Timeout": Jenkins did not upload the tarball to the GitHub Release in time
+#   - "npm publish failed": verify Trusted Publishers config on npmjs.com
+
+name: Publish to npm (Trusted Publishers)
+
+on:
+  push:
+    tags-ignore:
+      - '*-beta'  # Only bare semver tags from the release pipeline
+  workflow_dispatch:  # Allow manual re-run from the GitHub UI
+
+permissions:
+  id-token: write  # Required for OIDC Trusted Publishers
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    # Only publish from the public repository — inert everywhere else.
+    if: github.repository == 'go-acoustic/cordova-acoustic-connect'
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Validate semver tag
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          if [[ ! "$TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "ERROR: '${TAG}' is not a bare semver tag — aborting." >&2
+            exit 1
+          fi
+
+      - name: Verify package metadata
+        run: |
+          PLUGIN_PKG="plugins/cordova-acoustic-mobile-connect-push/package.json"
+          PACKAGE_NAME=$(jq -r '.name' "$PLUGIN_PKG")
+          PACKAGE_VERSION=$(jq -r '.version' "$PLUGIN_PKG")
+
+          echo "Package name   : $PACKAGE_NAME"
+          echo "Package version: $PACKAGE_VERSION"
+          echo "Tag            : ${{ github.ref_name }}"
+
+          if [ "$PACKAGE_NAME" != "cordova-acoustic-connect" ]; then
+            echo "ERROR: unexpected package name '${PACKAGE_NAME}'" >&2
+            exit 1
+          fi
+          if [ "$PACKAGE_VERSION" != "${{ github.ref_name }}" ]; then
+            echo "ERROR: tag '${{ github.ref_name }}' does not match package.json version '${PACKAGE_VERSION}'" >&2
+            exit 1
+          fi
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Upgrade npm for Trusted Publishers
+        timeout-minutes: 3
+        run: |
+          set -euo pipefail
+          echo "Current npm version: $(npm --version)"
+          npm install -g npm@11
+          echo "Upgraded npm version: $(npm --version)"
+
+      - name: Download tarball from release
+        id: download
+        timeout-minutes: 10
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          PLUGIN_PKG="plugins/cordova-acoustic-mobile-connect-push/package.json"
+          VERSION=$(jq -r '.version' "$PLUGIN_PKG")
+
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "ERROR: version '${VERSION}' from package.json is not a bare semver string" >&2
+            exit 1
+          fi
+
+          TARBALL="cordova-acoustic-connect-${VERSION}.tgz"
+
+          echo "Version : $VERSION"
+          echo "Tarball : $TARBALL"
+
+          # Wait for Jenkins to upload the tarball asset to the GitHub Release.
+          MAX_RETRIES=36  # 36 × 10s = 6 minutes
+          RETRY_DELAY=10
+          attempt=1
+
+          while [ $attempt -le $MAX_RETRIES ]; do
+            echo "Attempt $attempt/$MAX_RETRIES — checking for ${TARBALL}..."
+
+            RELEASE_JSON=$(gh release view "$RELEASE_TAG" \
+              --repo "$REPO" \
+              --json assets 2>/dev/null) || RELEASE_JSON='{"assets":[]}'
+            ASSET_COUNT=$(echo "$RELEASE_JSON" \
+              | jq --arg name "$TARBALL" '[(.assets // [])[] | select(.name == $name)] | length')
+
+            if [ "${ASSET_COUNT}" -ge 1 ]; then
+              echo "Asset found — downloading."
+              gh release download "$RELEASE_TAG" \
+                --repo "$REPO" \
+                --pattern "$TARBALL"
+              break
+            fi
+
+            if [ $attempt -eq $MAX_RETRIES ]; then
+              echo "Timeout: ${TARBALL} not attached to release ${RELEASE_TAG} after $((MAX_RETRIES * RETRY_DELAY))s" >&2
+              exit 1
+            fi
+
+            sleep $RETRY_DELAY
+            attempt=$((attempt + 1))
+          done
+
+          echo "tarball=$TARBALL" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Verify tarball
+        env:
+          TARBALL: ${{ steps.download.outputs.tarball }}
+        run: |
+          set -euo pipefail
+          echo "--- Contents (first 30 entries) ---"
+          tar -tzf "$TARBALL" | head -30
+          echo "--- Size ---"
+          ls -lh "$TARBALL"
+
+      - name: Publish to npm
+        timeout-minutes: 5
+        env:
+          TARBALL: ${{ steps.download.outputs.tarball }}
+          # Public repo — provenance attestation enabled (npm >= 11.5.1).
+          NPM_CONFIG_PROVENANCE: true
+        run: |
+          set -euo pipefail
+          npm publish "$TARBALL" \
+            --access public \
+            --tag latest \
+            --provenance \
+            --verbose
+
+      - name: Job summary
+        if: always()
+        env:
+          TARBALL:  ${{ steps.download.outputs.tarball }}
+          VERSION:  ${{ steps.download.outputs.version }}
+          TAG:      ${{ github.ref_name }}
+          REPO:     ${{ github.repository }}
+        run: |
+          {
+            echo "# npm publish results"
+            echo ""
+            echo "**Package:** cordova-acoustic-connect@${VERSION}"
+            echo "**npm tag:** \`latest\`"
+            echo "**Tarball:** \`${TARBALL}\`"
+            echo "**Tag:** \`${TAG}\`"
+            echo "**Repository:** ${REPO}"
+            echo ""
+            echo "Published via [npm Trusted Publishers](https://docs.npmjs.com/trusted-publishers)"
+          } >> "$GITHUB_STEP_SUMMARY"

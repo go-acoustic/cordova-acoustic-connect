@@ -128,3 +128,27 @@ dist
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.idea/
+.vscode/
+*.iml
+*.swp
+*.swo
+
+# Cordova generated
+applications/*/platforms/
+applications/*/plugins/
+applications/*/node_modules/
+applications/*/www/js/connect-config.js
+
+# Real credentials — copy ConnectConfig.example.json → ConnectConfig.json
+# and fill in AppKey and PostMessageUrl before running cordova prepare.
+applications/Demo/ConnectConfig.json
+
+# Auto-generated from ConnectConfig.json on every cordova prepare
+applications/Demo/ConnectBasicConfig.properties
