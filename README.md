@@ -121,6 +121,10 @@ The Background Modes → Remote notifications entitlement is added automatically
 
 Drop a real `google-services.json` into `applications/Demo/` (gitignored). The `after_prepare` hook copies it into the generated Android project on each prepare.
 
+## Troubleshooting
+
+Common build/push issues and fixes: [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
+
 ## License
 
 Licensed under the Acoustic License for Non-Warranted Programs. See [license/license.txt](license/license.txt) for full terms.
