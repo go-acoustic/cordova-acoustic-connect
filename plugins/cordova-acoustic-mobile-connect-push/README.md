@@ -17,7 +17,7 @@ Cordova plugin for [Acoustic Connect](https://acoustic.com/connect/) (CDP + enga
 ## Installation
 
 ```sh
-npx cordova plugin add cordova-acoustic-connect-beta
+npx cordova plugin add cordova-acoustic-connect
 ```
 
 ## Configuration
@@ -127,7 +127,7 @@ Drop a real `google-services.json` into your Cordova project root (gitignored). 
 
 ## Troubleshooting
 
-Common build/push issues and fixes: [TROUBLESHOOTING.md](https://github.com/aipoweredmarketer/cordova-acoustic-connect/blob/main/TROUBLESHOOTING.md).
+Common build/push issues and fixes: [TROUBLESHOOTING.md](https://github.com/go-acoustic/cordova-acoustic-connect/blob/main/TROUBLESHOOTING.md).
 
 ## License
 

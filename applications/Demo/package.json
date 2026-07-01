@@ -3,7 +3,7 @@
     "private": true,
     "devDependencies": {
         "cordova-ios": "^8.1.0",
-        "cordova-acoustic-connect-beta": "0.1.16",
+        "cordova-acoustic-connect": "0.1.17",
         "cordova-android": "^15.0.0"
     },
     "keywords": [
@@ -15,7 +15,7 @@
                 "ANDROID-MINSDKVERSION": "26",
                 "DEPLOYMENT-TARGET": "15.1"
             },
-            "cordova-acoustic-connect-beta": {
+            "cordova-acoustic-connect": {
                 "ANDROID-MINSDKVERSION": "26",
                 "DEPLOYMENT-TARGET": "15.1"
             }
@@ -32,7 +32,7 @@
     "main": "index.js",
     "scripts": {
         "build:ios": "cordova build ios",
-        "install:plugin": "cordova plugin add cordova-acoustic-connect-beta",
+        "install:plugin": "cordova plugin add cordova-acoustic-connect",
         "prepare:android": "cordova prepare android",
         "run:ios": "cordova run ios",
         "build:android": "cordova build android",

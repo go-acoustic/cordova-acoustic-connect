@@ -13,9 +13,9 @@
     "main": "www/AcousticConnect.js",
     "repository": {
         "type": "git",
-        "url": "git+https://github.com/aipoweredmarketer/cordova-acoustic-connect.git"
+        "url": "git+https://github.com/go-acoustic/cordova-acoustic-connect.git"
     },
-    "version": "0.1.16",
+    "version": "0.1.17",
     "license": "SEE LICENSE IN LICENSE",
     "devDependencies": {
         "eslint": "^9.0.0",
@@ -40,7 +40,7 @@
     "engines": {
         "node": ">=20.0.0"
     },
-    "name": "cordova-acoustic-connect-beta",
+    "name": "cordova-acoustic-connect",
     "files": [
         "www/",
         "types/",

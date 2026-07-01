@@ -55,21 +55,21 @@ All commands run from `applications/Demo/`.
 
 ```sh
 npm install
-npx cordova plugin add cordova-acoustic-connect-beta
+npx cordova plugin add cordova-acoustic-connect
 npx cordova platform add android
 npx cordova platform add ios
 npx cordova build android
 npx cordova build ios
 ```
 
-The Demo app pulls the plugin from the published `cordova-acoustic-connect-beta` npm package (pinned in `package.json`), not from the local `plugins/` source — this is what lets the public mirror of the demo build without the private monorepo. See [Iterating on plugin source](#iterating-on-plugin-source) to work against local changes instead.
+The Demo app pulls the plugin from the published `cordova-acoustic-connect` npm package (pinned in `package.json`), not from the local `plugins/` source — this is what lets the public mirror of the demo build without the private monorepo. See [Iterating on plugin source](#iterating-on-plugin-source) to work against local changes instead.
 
 ### Clean rebuild (after platform or plugin changes)
 
 ```sh
 npx cordova platform rm ios && \
 npx cordova plugin rm co.acoustic.connect.push && \
-npx cordova plugin add cordova-acoustic-connect-beta && \
+npx cordova plugin add cordova-acoustic-connect && \
 rm -rf ~/Library/Developer/Xcode/DerivedData && \
 npx cordova platform add ios && \
 npx cordova build ios

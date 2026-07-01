@@ -15,12 +15,12 @@ From this directory (`applications/Demo`):
 
 ```sh
 npm install
-npm run install:plugin    # cordova plugin add cordova-acoustic-connect-beta
+npm run install:plugin    # cordova plugin add cordova-acoustic-connect
 cordova platform add android
 cordova platform add ios
 ```
 
-`install:plugin` pulls the plugin from the published `cordova-acoustic-connect-beta` npm package (pinned in `package.json`) — not from `../../plugins/` — so the demo builds the same way the public mirror does. To iterate against local plugin source instead, see [Iterating on the plugin](#iterating-on-the-plugin) below.
+`install:plugin` pulls the plugin from the published `cordova-acoustic-connect` npm package (pinned in `package.json`) — not from `../../plugins/` — so the demo builds the same way the public mirror does. To iterate against local plugin source instead, see [Iterating on the plugin](#iterating-on-the-plugin) below.
 
 ### Android push prerequisites
 
