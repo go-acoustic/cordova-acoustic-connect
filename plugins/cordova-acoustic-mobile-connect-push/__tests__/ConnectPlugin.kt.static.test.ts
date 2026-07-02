@@ -13,7 +13,7 @@
  *  - `Connect.push.enable` + `Connect.push.turnOnPush` ARE wired into
  *    `handleEnable` for automatic mode.
  *  - `Connect.push.turnOffPush` is NOT called — Android supports only the
- *    automatic mode at the bridge boundary (PES-4040 squad decision).
+ *    automatic mode at the bridge boundary (squad decision).
  *  - `androidIconResName` is resolved via `resources.getIdentifier(...)`
  *    with an `ic_launcher` fallback.
  *  - Permission flow handlers: `handlePushRequestPermission`,
