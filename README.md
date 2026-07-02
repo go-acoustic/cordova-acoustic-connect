@@ -13,7 +13,6 @@ Cordova plugin for integrating [Acoustic Connect](https://acoustic.com/connect/)
 ├── applications/Demo/                            Sample Cordova app
 ├── plugins/cordova-acoustic-mobile-connect-push/ Plugin source (iOS + Android)
 ├── scripts/                                      Repo-level tooling (e.g. Jenkinsfile validation)
-├── Jenkinsfile                                   CI pipeline
 └── .github/workflows/                            GitHub Actions (npm publish, AI review)
 ```
 
@@ -38,12 +37,31 @@ Create `applications/Demo/ConnectConfig.json` (gitignored — never commit real 
     "AppKey": "<your-app-key>",
     "PostMessageUrl": "<your-collector-url>",
     "useRelease": false,
-    "iOSAppGroupIdentifier": "group.<your-bundle-id>"
+    "iOSAppGroupIdentifier": "group.<your-bundle-id>",
+    "iOSDevelopmentTeam": "<your-apple-team-id>",
+    "AndroidVersion": "<optional-connect-android-sdk-version-override>",
+    "iOSPushMode": "automatic",
+    "AndroidNotificationIconResName": "<optional-drawable-name>",
+    "KillSwitchUrl": "<optional-kill-switch-url>"
   }
 }
 ```
 
 Only `AppKey` and `PostMessageUrl` are required; everything else has a default.
+
+| Field | Description |
+|---|---|
+| `AppKey` | Required. Connect application key. |
+| `PostMessageUrl` | Required. Connect collector endpoint. |
+| `useRelease` | `true` → release SDK/pod. `false` (default) → debug. |
+| `iOSAppGroupIdentifier` | Shared App Group ID between the app and its iOS NSE/NCE extensions. |
+| `iOSDevelopmentTeam` | Apple Team ID. Sets the Xcode signing team automatically, skipping the manual step below. |
+| `AndroidVersion` | Pins a specific Connect Android SDK version (`x.y.z`) instead of the plugin's default. Invalid values are ignored with a build warning. |
+| `iOSPushMode` | `'automatic'` (default) or `'manual'`. iOS only — Android is always `'automatic'` at the bridge boundary. |
+| `AndroidNotificationIconResName` | Drawable resource name for the push notification icon on Android. Fallback chain: your name → the plugin's bundled `ic_notification` (correct default — launcher icons crash at delivery) → `ic_launcher` (legacy) → the SDK's own default. |
+| `KillSwitchUrl` | Remote kill-switch URL for the Android SDK. Currently has no effect — the bridge always generates the native config with the kill switch disabled. |
+
+`ConnectConfig.example.json` also contains an `iOSVersion` field — it isn't read anywhere in the plugin (no iOS equivalent of `AndroidVersion` exists yet); leave it unset.
 
 A `ConnectConfig.example.json` with placeholder values is included for reference. If `ConnectConfig.json` is absent the build falls back to the example file (placeholder values — NSE/NCE will not work).
 

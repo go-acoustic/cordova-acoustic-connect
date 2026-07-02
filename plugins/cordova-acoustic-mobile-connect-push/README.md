@@ -30,10 +30,28 @@ Create `ConnectConfig.json` at your Cordova project root (gitignored — never c
     "AppKey": "<your-app-key>",
     "PostMessageUrl": "<your-collector-url>",
     "useRelease": false,
-    "iOSAppGroupIdentifier": "group.<your-bundle-id>"
+    "iOSAppGroupIdentifier": "group.<your-bundle-id>",
+    "iOSDevelopmentTeam": "<your-apple-team-id>",
+    "AndroidVersion": "<optional-connect-android-sdk-version-override>",
+    "iOSPushMode": "automatic",
+    "AndroidNotificationIconResName": "<optional-drawable-name>",
+    "KillSwitchUrl": "<optional-kill-switch-url>"
   }
 }
 ```
+
+| Field | Description |
+|---|---|
+| `AppKey` | Required. Connect application key. |
+| `PostMessageUrl` | Required. Connect collector endpoint. |
+| `iOSAppGroupIdentifier` | Shared App Group ID between the app and its iOS NSE/NCE extensions. |
+| `iOSDevelopmentTeam` | Apple Team ID. Sets the Xcode signing team automatically, skipping the manual Signing & Capabilities step below. |
+| `AndroidVersion` | Pins a specific Connect Android SDK version (`x.y.z`) instead of the plugin's default (currently `11.0.11`). Invalid values are ignored with a build warning. |
+| `iOSPushMode` | `'automatic'` (default) or `'manual'`. iOS only — Android is always `'automatic'` at the bridge boundary. |
+| `AndroidNotificationIconResName` | Drawable resource name for the push notification icon on Android. Fallback chain: your name → the plugin's bundled `ic_notification` (correct default — launcher icons crash at delivery) → `ic_launcher` (legacy) → the SDK's own default. |
+| `KillSwitchUrl` | Remote kill-switch URL for the Android SDK. Currently has no effect — the bridge always generates the native config with the kill switch disabled. |
+
+`ConnectConfig.example.json` also contains an `iOSVersion` field — it isn't read anywhere in the plugin (no iOS equivalent of `AndroidVersion` exists yet); leave it unset.
 
 The plugin's `before_prepare` hook reads this file on every `cordova prepare` / `cordova build`. `Connect.useRelease` is the single source of truth for which native SDK variant is used:
 

@@ -3,8 +3,7 @@
  *
  * Acoustic Connect Cordova plugin — public JS surface (TypeScript).
  *
- * Matches the contract in
- * `idfs/2026-Q2/PES-4040/api-contract.md §8` verbatim. The plugin clobbers
+ * The plugin clobbers
  * `AcousticConnect` onto `window` at install time via plugin.xml's
  * `<js-module><clobbers target="AcousticConnect" /></js-module>` entry,
  * so the same shape is reachable from `import` / `require` consumers and

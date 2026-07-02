@@ -6,8 +6,6 @@
  * Promise façade over `cordova.exec`. Every public method routes through
  * a single private `call(action, args)` helper. The bridge is strictly
  * one-direction (JS -> native); no `keepCallback: true`, no pub/sub.
- *
- * Contract: idfs/2026-Q2/PES-4040/api-contract.md §1-§8.
  */
 
 'use strict';

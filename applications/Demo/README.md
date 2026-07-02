@@ -4,7 +4,7 @@ Reference Cordova app for exercising the `cordova-acoustic-connect` plugin durin
 
 ## Prerequisites
 
-- Node 18+
+- Node 20+
 - Cordova CLI: `npm install -g cordova`
 - iOS: Xcode + an Apple developer team with Push Notifications capability enabled
 - Android: Android Studio with platform SDK 34+
