@@ -86,6 +86,9 @@ dependencies {
   testImplementation 'junit:junit:4.13.2'
   testImplementation 'org.mockito.kotlin:mockito-kotlin:5.2.1'
   testImplementation 'org.robolectric:robolectric:4.11.1'
+  // androidx.test.core.app.ApplicationProvider, used by the Robolectric-based
+  // WebView/engine tests to obtain a Context.
+  testImplementation 'androidx.test:core:1.6.1'
 }
 
 android {
@@ -97,6 +100,13 @@ android {
   testOptions {
     unitTests {
       includeAndroidResources true
+    }
+  }
+
+  def pluginTestSrc = file('../../../plugins/co.acoustic.connect.push/src/android/src/test/java')
+  if (pluginTestSrc.exists()) {
+    sourceSets {
+      test.java.srcDirs += pluginTestSrc.path
     }
   }
 }

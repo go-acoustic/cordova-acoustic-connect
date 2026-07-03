@@ -15,7 +15,7 @@
         "type": "git",
         "url": "git+https://github.com/go-acoustic/cordova-acoustic-connect.git"
     },
-    "version": "1.0.2",
+    "version": "1.0.3",
     "license": "SEE LICENSE IN LICENSE",
     "devDependencies": {
         "eslint": "^9.0.0",

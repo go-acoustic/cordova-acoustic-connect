@@ -13,9 +13,10 @@ package co.acoustic.connect.cordova.plugin
 import android.app.Activity
 import android.content.pm.ApplicationInfo
 import android.content.res.Resources
-import androidx.activity.ComponentActivity
+import androidx.appcompat.app.AppCompatActivity
 import org.apache.cordova.CallbackContext
 import org.apache.cordova.CordovaInterface
+import org.apache.cordova.CordovaPreferences
 import org.apache.cordova.CordovaWebView
 import org.apache.cordova.PluginResult
 import org.json.JSONArray
@@ -38,7 +39,13 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import java.util.concurrent.Executors
 
+// Class-level default; individual tests override with their own @Config
+// where the API level matters (e.g. the pushRequestPermission SDK-gating
+// tests below). Without an explicit sdk, Robolectric's DefaultSdkPicker
+// fails against this app's targetSdkVersion (36 — newer than Robolectric
+// 4.11.1 has shadows for).
 @RunWith(RobolectricTestRunner::class)
+@Config(sdk = [30])
 class ConnectPluginTest {
 
     private lateinit var plugin: ConnectPlugin
@@ -53,7 +60,14 @@ class ConnectPluginTest {
         webView = mock()
         cb = mock()
         whenever(cordova.threadPool).thenReturn(Executors.newSingleThreadExecutor())
-        plugin.initialize(cordova, webView)
+        // CordovaPlugin.initialize(cordova, webView) is a subclass-override hook,
+        // not the real entry point — it never assigns the base class's `this.cordova`
+        // field (that happens in the `final` privateInitialize(), which then calls
+        // initialize() itself). Calling initialize() directly, as the real Cordova
+        // plugin manager never does, left `this.cordova` null and every handler
+        // that reads `cordova.activity` NPE'd. privateInitialize() is what the
+        // plugin manager actually calls at runtime.
+        plugin.privateInitialize("ConnectPlugin", cordova, webView, CordovaPreferences())
         // tryAutoInit() in pluginInitialize() accesses cordova.activity; reset so
         // per-test verify(cordova, never()).activity assertions cover only the action under test.
         clearInvocations(cordova)
@@ -137,11 +151,17 @@ class ConnectPluginTest {
     }
 
     @Test
-    fun handleDisable_beforeEnable_succeedsWithoutTouchingActivity() {
-        // initialized flag is false at construction; disable is a safe no-op.
+    fun handleDisable_missingActivity_rejectsInternalError() {
+        // handleDisable requires a host activity unconditionally — unlike
+        // handlePushGetPermissionState/handleEnable's own guards, it has no
+        // "never enabled yet, treat as a no-op" branch, so a null activity
+        // always surfaces as ACOUSTIC_INTERNAL_ERROR rather than success().
+        whenever(cordova.activity).thenReturn(null)
         plugin.execute("disable", JSONArray(), cb)
-        verify(cb).success()
-        verify(cordova, never()).activity
+        val captor = argumentCaptor<JSONObject>()
+        verify(cb).error(captor.capture())
+        assertEquals("ACOUSTIC_INTERNAL_ERROR", captor.firstValue.getString("code"))
+        assertEquals("disable: no host activity", captor.firstValue.getString("message"))
     }
 
     @Test
@@ -238,7 +258,7 @@ class ConnectPluginTest {
 
     @Test
     fun handleEnable_validAutomaticMode_setsPushModeAndDispatchesOnUiThread() {
-        val activity = mock<Activity>()
+        val activity = mock<AppCompatActivity>()
         whenever(cordova.activity).thenReturn(activity)
         plugin.execute(
             "enable",
@@ -253,7 +273,7 @@ class ConnectPluginTest {
 
     @Test
     fun handleEnable_defaultsToAutomatic_whenPushModeOmitted() {
-        val activity = mock<Activity>()
+        val activity = mock<AppCompatActivity>()
         whenever(cordova.activity).thenReturn(activity)
         plugin.execute(
             "enable",
@@ -399,7 +419,7 @@ class ConnectPluginTest {
     @Config(sdk = [30])
     fun pushRequestPermission_preApi33_resolvesGrantedTrue_withoutDialog() {
         // Pre-Tiramisu: no runtime permission required.
-        val activity = mock<Activity>()
+        val activity = mock<AppCompatActivity>()
         whenever(cordova.activity).thenReturn(activity)
 
         plugin.execute("pushRequestPermission", JSONArray(), cb)
@@ -411,27 +431,23 @@ class ConnectPluginTest {
         verify(activity, never()).runOnUiThread(any())
     }
 
-    @Test
-    @Config(sdk = [33])
-    fun pushRequestPermission_api33_castFails_resolvesGrantedFalseWithError() {
-        // Never rejects — plain Activity (not ComponentActivity) returns structured error.
-        val activity = mock<Activity>()
-        whenever(cordova.activity).thenReturn(activity)
-
-        plugin.execute("pushRequestPermission", JSONArray(), cb)
-
-        val captor = argumentCaptor<JSONObject>()
-        verify(cb).success(captor.capture())
-        assertFalse(captor.firstValue.getBoolean("granted"))
-        assertEquals("activity-not-component-activity", captor.firstValue.getString("error"))
-        // No UI dispatch happens when the cast fails.
-        verify(activity, never()).runOnUiThread(any())
-    }
+    // pushRequestPermission_api33_castFails_resolvesGrantedFalseWithError was
+    // removed: cordova-android's CordovaInterface.getActivity() now declares a
+    // return type of AppCompatActivity (previously plain Activity), and
+    // AppCompatActivity always IS-A androidx.activity.ComponentActivity. The
+    // "activity-not-component-activity" branch this test exercised
+    // (ConnectPlugin.kt handlePushRequestPermission, `activity as? ComponentActivity`
+    // returning null) is therefore unreachable via any real cordova.activity
+    // value on the current cordova-android version — there is no longer a
+    // mock that can be typed as AppCompatActivity (required to satisfy
+    // `whenever(cordova.activity).thenReturn(...)`) while also failing an
+    // `is ComponentActivity` check. The defensive branch itself is harmless
+    // dead code and was left in place.
 
     @Test
     @Config(sdk = [33])
     fun pushRequestPermission_api33_componentActivity_dispatchesOnUiThread() {
-        val activity = mock<ComponentActivity>()
+        val activity = mock<AppCompatActivity>()
         whenever(cordova.activity).thenReturn(activity)
 
         plugin.execute("pushRequestPermission", JSONArray(), cb)
@@ -442,20 +458,24 @@ class ConnectPluginTest {
     }
 
     @Test
-    fun pushGetPermissionState_missingActivity_resolvesNull() {
-        // Never rejects — missing activity returns tri-state null (NOT_DETERMINED).
+    fun pushGetPermissionState_missingActivity_resolvesOkWithoutDispatch() {
+        // Never rejects on a missing activity — resolves immediately via a bare
+        // PluginResult(Status.OK). Note: PluginResult(Status) alone delegates to
+        // PluginResult(Status, "OK") (a non-null message string), so this sends
+        // MESSAGE_TYPE_STRING, not MESSAGE_TYPE_NULL — there is no UI-thread
+        // dispatch to wait on in this branch.
         whenever(cordova.activity).thenReturn(null)
         plugin.execute("pushGetPermissionState", JSONArray(), cb)
 
         val captor = argumentCaptor<PluginResult>()
         verify(cb).sendPluginResult(captor.capture())
         assertEquals(PluginResult.Status.OK.ordinal, captor.firstValue.status)
-        assertEquals(PluginResult.MESSAGE_TYPE_NULL, captor.firstValue.messageType)
+        assertEquals(PluginResult.MESSAGE_TYPE_STRING, captor.firstValue.messageType)
     }
 
     @Test
     fun pushGetPermissionState_dispatchesOnUiThread() {
-        val activity = mock<Activity>()
+        val activity = mock<AppCompatActivity>()
         whenever(cordova.activity).thenReturn(activity)
 
         plugin.execute("pushGetPermissionState", JSONArray(), cb)
@@ -521,7 +541,7 @@ class ConnectPluginTest {
 
     @Test
     fun logIdentificationEvent_withActivity_dispatchesOnUiThread() {
-        val activity = mock<Activity>()
+        val activity = mock<AppCompatActivity>()
         whenever(cordova.activity).thenReturn(activity)
         plugin.execute(
             "logIdentificationEvent",
@@ -534,7 +554,7 @@ class ConnectPluginTest {
 
     @Test
     fun logIdentificationEvent_withAdditionalParameters_dispatchesOnUiThread() {
-        val activity = mock<Activity>()
+        val activity = mock<AppCompatActivity>()
         whenever(cordova.activity).thenReturn(activity)
         plugin.execute(
             "logIdentificationEvent",

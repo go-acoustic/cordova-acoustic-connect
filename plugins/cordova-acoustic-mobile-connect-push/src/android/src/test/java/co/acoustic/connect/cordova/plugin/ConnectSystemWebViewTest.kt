@@ -20,6 +20,9 @@ import android.graphics.Bitmap
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.test.core.app.ApplicationProvider
+import org.apache.cordova.CordovaBridge
+import org.apache.cordova.CordovaPreferences
+import org.apache.cordova.CordovaWebViewEngine
 import org.apache.cordova.engine.SystemWebViewClient
 import org.apache.cordova.engine.SystemWebViewEngine
 import org.junit.Assert.assertNotNull
@@ -55,7 +58,7 @@ class ConnectSystemWebViewTest {
 
     @Test
     fun setWebViewClient_systemWebViewClient_noPending_setsClientDirectly() {
-        val cordovaClient = createCordovaClient(mock())
+        val cordovaClient = createCordovaClient(realEngine())
 
         webView.setWebViewClient(cordovaClient)
 
@@ -68,7 +71,7 @@ class ConnectSystemWebViewTest {
 
     @Test
     fun setWebViewClient_analyticsAfterCordova_installsAnalyticsAwareClient() {
-        val cordovaClient = createCordovaClient(mock())
+        val cordovaClient = createCordovaClient(realEngine())
         val analyticsClient = mock<WebViewClient>()
 
         webView.setWebViewClient(cordovaClient)
@@ -96,7 +99,7 @@ class ConnectSystemWebViewTest {
     @Test
     fun setWebViewClient_cordovaArrivesAfterAnalytics_clearsPendingAndChains() {
         val analyticsClient = mock<WebViewClient>()
-        val cordovaClient = createCordovaClient(mock())
+        val cordovaClient = createCordovaClient(realEngine())
 
         webView.setWebViewClient(analyticsClient)   // queued
         assertNotNull(pendingAnalyticsClient())
@@ -189,7 +192,7 @@ class ConnectSystemWebViewTest {
 
     @Test
     fun analyticsAwareClient_onPageFinished_forwardsToAnalyticsDelegate() {
-        val cordovaClient = createCordovaClient(mock())
+        val cordovaClient = createCordovaClient(realEngine())
         val analyticsClient = mock<WebViewClient>()
         val view = mock<WebView>()
 
@@ -203,7 +206,7 @@ class ConnectSystemWebViewTest {
 
     @Test
     fun analyticsAwareClient_onPageStarted_forwardsToAnalyticsDelegate() {
-        val cordovaClient = createCordovaClient(mock())
+        val cordovaClient = createCordovaClient(realEngine())
         val analyticsClient = mock<WebViewClient>()
         val view = mock<WebView>()
 
@@ -217,7 +220,7 @@ class ConnectSystemWebViewTest {
 
     @Test
     fun analyticsAwareClient_onPageFinished_analyticsThrows_doesNotCrash() {
-        val cordovaClient = createCordovaClient(mock())
+        val cordovaClient = createCordovaClient(realEngine())
         val analyticsClient = mock<WebViewClient>()
         whenever(analyticsClient.onPageFinished(any(), any()))
             .thenThrow(RuntimeException("Analytics exploded"))
@@ -231,7 +234,7 @@ class ConnectSystemWebViewTest {
 
     @Test
     fun analyticsAwareClientonPageStarted_analyticsThrows_doesNotCrash() {
-        val cordovaClient = createCordovaClient(mock())
+        val cordovaClient = createCordovaClient(realEngine())
         val analyticsClient = mock<WebViewClient>()
         whenever(analyticsClient.onPageStarted(any(), any(), any()))
             .thenThrow(RuntimeException("Analytics exploded"))
@@ -245,9 +248,9 @@ class ConnectSystemWebViewTest {
     @Test
     fun analyticsAwareClient_onPageFinished_cordovaClientReplaced_analyticsNotCalledByOldClient() {
         // Verifies that replacing the client stops old analytics from receiving events.
-        val cordovaClient = createCordovaClient(mock())
+        val cordovaClient = createCordovaClient(realEngine())
         val analyticsClientOld = mock<WebViewClient>()
-        val cordovaClient2 = createCordovaClient(mock())
+        val cordovaClient2 = createCordovaClient(realEngine())
 
         webView.setWebViewClient(cordovaClient)
         webView.setWebViewClient(analyticsClientOld)  // AnalyticsAwareClient with old analytics
@@ -261,8 +264,42 @@ class ConnectSystemWebViewTest {
     // ── Helpers ───────────────────────────────────────────────────────────
 
     /**
+     * A [SystemWebViewEngine] mock with real `preferences`, `bridge`, and
+     * `client` fields. SystemWebViewClient's constructor dereferences
+     * `parentEngine.preferences` immediately
+     * (`WebViewAssetLoader.Builder().setDomain(parentEngine.preferences...)`),
+     * and `onPageStarted`/`onPageFinished` later dereference `parentEngine.bridge`
+     * and `parentEngine.client` — all NPE against a bare Mockito mock (fields
+     * aren't stubbed, only methods). Constructing a fully real
+     * SystemWebViewEngine instead would pull in a real SystemWebView, which
+     * trips Robolectric's WebView shadow (UnsupportedOperationException) —
+     * unnecessary since none of this test's call paths touch `webView`
+     * itself. Reflectively setting just the fields actually dereferenced
+     * keeps the engine a mock everywhere else.
+     *
+     * `ResolveServiceWorkerRequests` defaults to true when unset, and the
+     * constructor's `true` branch calls `ServiceWorkerController.getInstance()`,
+     * which requires a real native WebView provider — also unavailable under
+     * Robolectric (UnsupportedOperationException from WebViewFactory.getProvider()).
+     * Explicitly disabling it keeps construction on the pure-JVM path.
+     */
+    private fun realEngine(): SystemWebViewEngine {
+        val engine = mock<SystemWebViewEngine>()
+        setEngineField(engine, "preferences", CordovaPreferences().apply { set("ResolveServiceWorkerRequests", false) })
+        setEngineField(engine, "bridge", mock<CordovaBridge>())
+        setEngineField(engine, "client", mock<CordovaWebViewEngine.Client>())
+        return engine
+    }
+
+    private fun setEngineField(engine: SystemWebViewEngine, name: String, value: Any?) {
+        val f = SystemWebViewEngine::class.java.getDeclaredField(name)
+        f.isAccessible = true
+        f.set(engine, value)
+    }
+
+    /**
      * Creates a [SystemWebViewClient] stub with [engine] and no-op lifecycle
-     * methods, avoiding Cordova internals that NPE when the engine is a mock.
+     * methods.
      */
     private fun createCordovaClient(engine: SystemWebViewEngine): SystemWebViewClient =
         object : SystemWebViewClient(engine) {
@@ -274,8 +311,19 @@ class ConnectSystemWebViewTest {
      * A [SystemWebViewClient] whose inherited [parentEngine] field is null.
      * [extractEngine] will find the field but return null, simulating
      * reflection-based engine extraction failure.
+     *
+     * The constructor requires a non-null engine (it dereferences
+     * `engine.preferences` before returning), so this constructs with a real
+     * engine first and then reflectively nulls the field afterward — the
+     * only way to reach the "field present but null" state extractEngine
+     * actually probes for.
      */
-    private inner class NullEngineCordovaClient : SystemWebViewClient(null) {
+    private inner class NullEngineCordovaClient : SystemWebViewClient(realEngine()) {
+        init {
+            val f = SystemWebViewClient::class.java.getDeclaredField("parentEngine")
+            f.isAccessible = true
+            f.set(this, null)
+        }
         override fun onPageFinished(view: WebView, url: String) {}
         override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {}
     }
