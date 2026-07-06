@@ -8,7 +8,7 @@
  * copies the plugin into the host app. cordova prepare then reads the
  * rewritten copy to generate the Podfile.
  *
- *   useRelease: true  → AcousticConnect (~> 2.0)         — production / release SDK
+ *   useRelease: true  → AcousticConnect (= 2.1.15)       — production / release SDK
  *   useRelease: false → AcousticConnectDebug (= 2.1.13) — debug SDK (default)
  *
  * This hook is iOS-only. Android always uses connect-push-fcm regardless of
@@ -33,7 +33,7 @@ var fs   = require('fs');
 var path = require('path');
 
 var RELEASE_NAME = 'AcousticConnect';
-var RELEASE_SPEC = '~> 2.0';
+var RELEASE_SPEC = '= 2.1.15';
 var DEBUG_NAME   = 'AcousticConnectDebug';
 var DEBUG_SPEC   = '= 2.1.13';
 
@@ -69,26 +69,26 @@ function selectSdkVariant(context) {
     var pluginXmlPath = path.join(pluginPath, 'plugin.xml');
     var pluginXml = fs.readFileSync(pluginXmlPath, 'utf8');
 
-    var debugNameRe          = new RegExp('<pod name="' + escapeRegExp(DEBUG_NAME) + '"', 'g');
-    var releaseNameRe        = new RegExp('<pod name="' + escapeRegExp(RELEASE_NAME) + '"', 'g');
-    var debugToReleaseSpecRe = new RegExp(
-        '(<pod name="' + escapeRegExp(RELEASE_NAME) + '"\\s+spec=")' + escapeRegExp(DEBUG_SPEC) + '"', 'g'
+    var debugNameRe   = new RegExp('<pod name="' + escapeRegExp(DEBUG_NAME) + '"', 'g');
+    var releaseNameRe = new RegExp('<pod name="' + escapeRegExp(RELEASE_NAME) + '"', 'g');
+    var releaseSpecRe = new RegExp(
+        '(<pod name="' + escapeRegExp(RELEASE_NAME) + '"\\s+spec=")[^"]+"', 'g'
     );
-    var releaseToDebugSpecRe = new RegExp(
-        '(<pod name="' + escapeRegExp(DEBUG_NAME) + '"\\s+spec=")' + escapeRegExp(RELEASE_SPEC) + '"', 'g'
+    var debugSpecRe = new RegExp(
+        '(<pod name="' + escapeRegExp(DEBUG_NAME) + '"\\s+spec=")[^"]+"', 'g'
     );
 
     // Normalize to release (name + spec), then apply debug overrides if needed.
     // Both must change together so Cordova registers the correct pod in pods.json.
     var normalized = pluginXml
         .replace(debugNameRe, '<pod name="' + RELEASE_NAME + '"')
-        .replace(debugToReleaseSpecRe, '$1' + RELEASE_SPEC + '"');
+        .replace(releaseSpecRe, '$1' + RELEASE_SPEC + '"');
 
     var rewritten = normalized;
     if (variant === 'debug') {
         rewritten = normalized
             .replace(releaseNameRe, '<pod name="' + DEBUG_NAME + '"')
-            .replace(releaseToDebugSpecRe, '$1' + DEBUG_SPEC + '"');
+            .replace(debugSpecRe, '$1' + DEBUG_SPEC + '"');
     }
 
     if (rewritten !== pluginXml) {

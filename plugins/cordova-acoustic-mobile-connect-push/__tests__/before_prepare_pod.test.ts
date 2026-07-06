@@ -89,7 +89,7 @@ describe('variant selection', () => {
     it('defaults to release when ConnectConfig.json is absent', () => {
         writePodfile('OLD');
         hook(makeContext(tmpDir));
-        expect(readPodfile()).toContain("pod 'AcousticConnect', '~> 2.0'");
+        expect(readPodfile()).toContain("pod 'AcousticConnect', '= 2.1.15'");
     });
 
     it('selects debug when useRelease is false', () => {
@@ -103,7 +103,7 @@ describe('variant selection', () => {
         writeConfig(RELEASE_CONFIG);
         writePodfile('OLD');
         hook(makeContext(tmpDir));
-        expect(readPodfile()).toContain("pod 'AcousticConnect', '~> 2.0'");
+        expect(readPodfile()).toContain("pod 'AcousticConnect', '= 2.1.15'");
     });
 
     it('defaults to release and warns when ConnectConfig.json is malformed', () => {
@@ -111,7 +111,7 @@ describe('variant selection', () => {
         const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
         writePodfile('OLD');
         hook(makeContext(tmpDir));
-        expect(readPodfile()).toContain("pod 'AcousticConnect', '~> 2.0'");
+        expect(readPodfile()).toContain("pod 'AcousticConnect', '= 2.1.15'");
         expect(warn).toHaveBeenCalledWith(expect.stringContaining('parse error'));
         warn.mockRestore();
     });
@@ -133,6 +133,20 @@ describe('Podfile generation', () => {
         const pf = readPodfile();
         expect(pf).toContain("platform :ios, '15.1'");
         expect(pf).toContain("IPHONEOS_DEPLOYMENT_TARGET'] = '15.1'");
+    });
+
+    it('declares both the CDN and git Specs sources, and suppresses the master specs warning', () => {
+        // The git Specs repo receives new pod versions before they propagate
+        // to the CDN — both sources must be listed, and declaring any source
+        // disables the implicit CDN default, so install! must suppress the
+        // resulting "master specs repo" warning.
+        writeConfig(DEBUG_CONFIG);
+        writePodfile('OLD');
+        hook(makeContext(tmpDir));
+        const pf = readPodfile();
+        expect(pf).toContain("source 'https://cdn.cocoapods.org/'");
+        expect(pf).toContain("source 'https://github.com/CocoaPods/Specs.git'");
+        expect(pf).toContain("install! 'cocoapods', :warn_for_unused_master_specs_repo => false");
     });
 
     it('uses project name from .xcodeproj directory', () => {
@@ -203,7 +217,7 @@ describe('pods.json sync', () => {
         hook(makeContext(tmpDir));
         const libs = (readPodsJson() as any).libraries;
         expect(libs['AcousticConnect']).toEqual({
-            name: 'AcousticConnect', spec: '~> 2.0', count: 1,
+            name: 'AcousticConnect', spec: '= 2.1.15', count: 1,
         });
         expect(libs['AcousticConnectDebug']).toBeUndefined();
     });

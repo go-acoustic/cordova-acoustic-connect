@@ -98,6 +98,22 @@ describe('variant selection', () => {
         expect(readPluginXml()).toContain(DEBUG_POD);
     });
 
+    it('normalizes a stale release spec that does not match the current RELEASE_SPEC constant', () => {
+        writeConfig({ Connect: { useRelease: true } });
+        writePluginXml(`<pod name="${RELEASE_NAME}" spec="= 0.0.1-stale" />`);
+        hook(makeContext(tmpDir, pluginDir));
+        expect(readPluginXml()).toContain(RELEASE_POD);
+        expect(readPluginXml()).not.toContain('0.0.1-stale');
+    });
+
+    it('normalizes a stale debug spec that does not match the current DEBUG_SPEC constant', () => {
+        writeConfig({ Connect: { useRelease: false } });
+        writePluginXml(`<pod name="${DEBUG_NAME}" spec="= 0.0.1-stale" />`);
+        hook(makeContext(tmpDir, pluginDir));
+        expect(readPluginXml()).toContain(DEBUG_POD);
+        expect(readPluginXml()).not.toContain('0.0.1-stale');
+    });
+
     it('throws a descriptive error when ConnectConfig.json is malformed', () => {
         fs.writeFileSync(path.join(tmpDir, 'ConnectConfig.json'), '{ not valid json');
         writePluginXml(DEBUG_POD);
