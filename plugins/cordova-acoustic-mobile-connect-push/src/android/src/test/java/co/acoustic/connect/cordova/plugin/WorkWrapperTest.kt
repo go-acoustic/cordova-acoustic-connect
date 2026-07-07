@@ -23,24 +23,38 @@ import org.mockito.kotlin.mock
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import java.util.concurrent.AbstractExecutorService
 import java.util.concurrent.CountDownLatch
-import java.util.concurrent.Executor
+import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
+// Robolectric's DefaultSdkPicker fails without an explicit sdk against this
+// app's targetSdkVersion (36 — newer than Robolectric 4.11.1 has shadows for).
 @RunWith(RobolectricTestRunner::class)
+@Config(sdk = [30])
 class WorkWrapperTest {
 
     private lateinit var cordova: CordovaInterface
     private lateinit var cb: CallbackContext
-    private lateinit var directExecutor: Executor
+    private lateinit var directExecutor: ExecutorService
 
     @Before
     fun setUp() {
         cordova = mock()
         cb = mock()
-        // Direct executor so tests run synchronously when convenient.
-        directExecutor = Executor { it.run() }
+        // Direct, synchronous ExecutorService so tests run synchronously when
+        // convenient. cordova.threadPool is declared ExecutorService (not
+        // plain Executor) by the current cordova-android CordovaInterface.
+        directExecutor = object : AbstractExecutorService() {
+            override fun execute(command: Runnable) = command.run()
+            override fun shutdown() {}
+            override fun shutdownNow(): MutableList<Runnable> = mutableListOf()
+            override fun isShutdown(): Boolean = false
+            override fun isTerminated(): Boolean = false
+            override fun awaitTermination(timeout: Long, unit: TimeUnit): Boolean = true
+        }
         whenever(cordova.threadPool).thenReturn(directExecutor)
     }
 

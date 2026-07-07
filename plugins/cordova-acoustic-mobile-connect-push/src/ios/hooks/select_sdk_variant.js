@@ -8,7 +8,7 @@
  * copies the plugin into the host app. cordova prepare then reads the
  * rewritten copy to generate the Podfile.
  *
- *   useRelease: true  → AcousticConnect (~> 2.0)         — production / release SDK
+ *   useRelease: true  → AcousticConnect (= 2.1.15)       — production / release SDK
  *   useRelease: false → AcousticConnectDebug (= 2.1.13) — debug SDK (default)
  *
  * This hook is iOS-only. Android always uses connect-push-fcm regardless of
@@ -20,6 +20,11 @@
  * IMPORTANT: both the pod name AND spec must change together. AcousticConnectDebug
  * requires = 2.1.13 because requestAuthorization() / getCurrentAuthorization()
  * land in that version.
+ *
+ * RELEASE_NAME / RELEASE_SPEC / DEBUG_NAME / DEBUG_SPEC below are exported via
+ * `module.exports.versions` so tests can derive their expectations from this
+ * single source of truth instead of hardcoding an independent copy that could
+ * silently drift if these values change here.
  */
 
 'use strict';
@@ -27,7 +32,16 @@
 var fs   = require('fs');
 var path = require('path');
 
-module.exports = function (context) {
+var RELEASE_NAME = 'AcousticConnect';
+var RELEASE_SPEC = '= 2.1.15';
+var DEBUG_NAME   = 'AcousticConnectDebug';
+var DEBUG_SPEC   = '= 2.1.13';
+
+function escapeRegExp(value) {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function selectSdkVariant(context) {
     var connectConfigPath = path.join(context.opts.projectRoot, 'ConnectConfig.json');
 
     var variant = 'debug'; // default: debug (matches RN podspec nil → debug)
@@ -55,23 +69,42 @@ module.exports = function (context) {
     var pluginXmlPath = path.join(pluginPath, 'plugin.xml');
     var pluginXml = fs.readFileSync(pluginXmlPath, 'utf8');
 
+    var debugNameRe   = new RegExp('<pod name="' + escapeRegExp(DEBUG_NAME) + '"', 'g');
+    var releaseNameRe = new RegExp('<pod name="' + escapeRegExp(RELEASE_NAME) + '"', 'g');
+    var releaseSpecRe = new RegExp(
+        '(<pod name="' + escapeRegExp(RELEASE_NAME) + '"\\s+spec=")[^"]+"', 'g'
+    );
+    var debugSpecRe = new RegExp(
+        '(<pod name="' + escapeRegExp(DEBUG_NAME) + '"\\s+spec=")[^"]+"', 'g'
+    );
+
     // Normalize to release (name + spec), then apply debug overrides if needed.
     // Both must change together so Cordova registers the correct pod in pods.json.
     var normalized = pluginXml
-        .replace(/<pod name="AcousticConnectDebug"/g, '<pod name="AcousticConnect"')
-        .replace(/(<pod name="AcousticConnect"\s+spec=")= 2\.1\.13"/g, '$1~> 2.0"');
+        .replace(debugNameRe, '<pod name="' + RELEASE_NAME + '"')
+        .replace(releaseSpecRe, '$1' + RELEASE_SPEC + '"');
 
     var rewritten = normalized;
     if (variant === 'debug') {
         rewritten = normalized
-            .replace(/<pod name="AcousticConnect"/g, '<pod name="AcousticConnectDebug"')
-            .replace(/(<pod name="AcousticConnectDebug"\s+spec=")~> 2\.0"/g, '$1= 2.1.13"');
+            .replace(releaseNameRe, '<pod name="' + DEBUG_NAME + '"')
+            .replace(debugSpecRe, '$1' + DEBUG_SPEC + '"');
     }
 
     if (rewritten !== pluginXml) {
         fs.writeFileSync(pluginXmlPath, rewritten, 'utf8');
         console.log('[acoustic-connect] useRelease=' + (variant === 'release') +
                     ' → plugin.xml pod set to ' +
-                    (variant === 'release' ? 'AcousticConnect (~> 2.0)' : 'AcousticConnectDebug (= 2.1.13)'));
+                    (variant === 'release'
+                        ? RELEASE_NAME + ' (' + RELEASE_SPEC + ')'
+                        : DEBUG_NAME + ' (' + DEBUG_SPEC + ')'));
     }
+}
+
+module.exports = selectSdkVariant;
+module.exports.versions = {
+    RELEASE_NAME: RELEASE_NAME,
+    RELEASE_SPEC: RELEASE_SPEC,
+    DEBUG_NAME: DEBUG_NAME,
+    DEBUG_SPEC: DEBUG_SPEC
 };

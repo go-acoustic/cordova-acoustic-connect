@@ -9,7 +9,7 @@ Acoustic, L.P. Any unauthorized copying or distribution of content from this fil
 -->
 <plugin xmlns="http://apache.org/cordova/ns/plugins/1.0"
         id="co.acoustic.connect.push"
-        version="1.0.1">
+        version="1.0.6">
 
     <name>Acoustic Connect Cordova Plugin</name>
     <author>Acoustic</author>
@@ -30,7 +30,7 @@ Acoustic, L.P. Any unauthorized copying or distribution of content from this fil
 
     <!--
       SDK variant is driven by ConnectConfig.json → Connect.useRelease (bool).
-        useRelease: true  → AcousticConnect (~> 2.0)         iOS  |  connect-push-fcm  Android
+        useRelease: true  → AcousticConnect (= 2.1.15)      iOS  |  connect-push-fcm  Android
         useRelease: false → AcousticConnectDebug (= 2.1.13) iOS  |  connect-push-fcm  Android  (default)
         Android always uses connect-push-fcm regardless of useRelease (no debug Maven artifact exists).
       The before_plugin_install hook (select_sdk_variant.js) rewrites the pod
@@ -64,6 +64,15 @@ Acoustic, L.P. Any unauthorized copying or distribution of content from this fil
         <!-- iOS deployment target -->
         <preference name="deployment-target" default="15.1" />
 
+        <!--
+          Selects the CocoaPods variant (AcousticConnect release vs
+          AcousticConnectDebug) by rewriting the Podfile + pods.json from
+          ConnectConfig.json.useRelease. Must run BEFORE before_prepare.js:
+          cordova-ios regenerates the Podfile by parsing the EXISTING Podfile
+          at prepare time (not plugin.xml/pods.json), so the variant has to be
+          written into the Podfile here or `pod install` keeps the old pod.
+        -->
+        <hook type="before_prepare" src="src/ios/hooks/before_prepare_pod.js" />
         <hook type="before_prepare" src="src/ios/hooks/before_prepare.js" />
         <hook type="after_prepare" src="src/ios/hooks/after_prepare.js" />
 
@@ -76,7 +85,7 @@ Acoustic, L.P. Any unauthorized copying or distribution of content from this fil
           at 2.1.12+. 2.1.13 fixes the podspec bug present in 2.1.12 where
           AcousticConnectDebug declared AcousticConnect as a transitive dependency,
           causing CocoaPods 1.16+ duplicate-xcframework validation to abort pod install.
-          select_sdk_variant.js normalises to AcousticConnect (~> 2.0) for release
+          select_sdk_variant.js normalises to AcousticConnect (= 2.1.15) for release
           builds, then re-applies AcousticConnectDebug (= 2.1.13) for debug builds.
           Keeping the debug pod as the checked-in default means the tooling (IDE,
           linter) that reads this file stays in sync with pods.json and the Podfile.

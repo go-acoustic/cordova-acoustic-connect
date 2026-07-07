@@ -42,7 +42,19 @@ if (useRelease) {
         resolutionStrategy {
             componentSelection {
                 all { selection ->
+                    // eocore has published no non-beta release since 2.1.16 — every
+                    // version from 2.1.21-beta onward (including 2.1.24-beta, the
+                    // exact version tealeaf:10.4.28 pins as a transitive dependency
+                    // of connect-push-fcm) exists only as "-beta". Rejecting it here
+                    // like any other go-acoustic "-beta" artifact leaves no
+                    // candidate version to resolve to at all, since tealeaf's pin
+                    // is an exact version, not a range — the whole graph fails with
+                    // a "could not find" error instead of a clear rejection reason.
+                    // eocore is therefore exempt from this useRelease beta guard;
+                    // the guard still applies to connect-push-fcm/connect/tealeaf
+                    // themselves, which do publish real non-beta releases.
                     if (selection.candidate.group == 'io.github.go-acoustic' &&
+                            selection.candidate.module != 'eocore' &&
                             selection.candidate.version.endsWith('-beta')) {
                         selection.reject("useRelease is true — rejecting beta version ${selection.candidate.version}")
                     }
@@ -58,7 +70,7 @@ def connectSdkArtifact = "io.github.go-acoustic:connect-push-fcm"
 
 // AndroidVersion in ConnectConfig.json takes precedence over the Cordova
 // preference and the default pin.
-def defaultSdkVersion = project.hasProperty("connectSdkVersion") ? project.connectSdkVersion : "11.0.11"
+def defaultSdkVersion = project.hasProperty("connectSdkVersion") ? project.connectSdkVersion : "11.0.13"
 def connectSdkVersion
 if (!androidVersion.isEmpty()) {
     if (androidVersion ==~ /\d+\.\d+\.\d+(-[A-Za-z0-9._-]+)?/) {
@@ -86,6 +98,9 @@ dependencies {
   testImplementation 'junit:junit:4.13.2'
   testImplementation 'org.mockito.kotlin:mockito-kotlin:5.2.1'
   testImplementation 'org.robolectric:robolectric:4.11.1'
+  // androidx.test.core.app.ApplicationProvider, used by the Robolectric-based
+  // WebView/engine tests to obtain a Context.
+  testImplementation 'androidx.test:core:1.6.1'
 }
 
 android {
@@ -97,6 +112,13 @@ android {
   testOptions {
     unitTests {
       includeAndroidResources true
+    }
+  }
+
+  def pluginTestSrc = file('../../../plugins/co.acoustic.connect.push/src/android/src/test/java')
+  if (pluginTestSrc.exists()) {
+    sourceSets {
+      test.java.srcDirs += pluginTestSrc.path
     }
   }
 }
