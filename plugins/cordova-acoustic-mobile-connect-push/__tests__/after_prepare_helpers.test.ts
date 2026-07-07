@@ -36,12 +36,14 @@ const {
     resolveConnectConfigPath,
     resolveIosDevelopmentTeam,
     addApsEnvironmentToEntitlementsFile,
+    resolveApsEnvironmentForEntitlementsFile,
 } = hook._internal as {
     updatePodfile:                 (iosDir: string) => boolean;
     patchXcframeworksScriptPhases: (p: string, variant?: string) => void;
     resolveConnectConfigPath:      (projectRoot: string) => string;
     resolveIosDevelopmentTeam:     (projectRoot: string) => string | null;
-    addApsEnvironmentToEntitlementsFile:    (filePath: string) => void;
+    addApsEnvironmentToEntitlementsFile:    (filePath: string, environment?: string) => void;
+    resolveApsEnvironmentForEntitlementsFile: (filename: string) => 'development' | 'production';
 };
 
 // ---------------------------------------------------------------------------
@@ -384,5 +386,75 @@ describe('addApsEnvironmentToEntitlementsFile', () => {
         addApsEnvironmentToEntitlementsFile(tmpFile);
         const result = fs.readFileSync(tmpFile, 'utf8');
         expect(result).toContain('<key>aps-environment</key>');
+    });
+
+    it('writes production when both keys are absent and environment="production"', () => {
+        fs.writeFileSync(tmpFile, BARE_PLIST, 'utf8');
+        addApsEnvironmentToEntitlementsFile(tmpFile, 'production');
+        const result = fs.readFileSync(tmpFile, 'utf8');
+        expect(result).toContain('<key>aps-environment</key>\n\t<string>production</string>');
+        expect(result).toContain('<key>com.apple.developer.aps-environment</key>\n\t<string>production</string>');
+    });
+
+    it('rewrites a stale development value to production on a Debug→Release switch', () => {
+        fs.writeFileSync(tmpFile, withKeys('aps-environment', 'com.apple.developer.aps-environment'), 'utf8');
+        addApsEnvironmentToEntitlementsFile(tmpFile, 'production');
+        const result = fs.readFileSync(tmpFile, 'utf8');
+        expect(result).not.toContain('development');
+        expect(result.match(/<string>production<\/string>/g) || []).toHaveLength(2);
+    });
+
+    it('is idempotent — no write when the value already matches the requested environment', () => {
+        const original = BARE_PLIST.replace(
+            '</dict>',
+            '\t<key>aps-environment</key>\n\t<string>production</string>\n' +
+            '\t<key>com.apple.developer.aps-environment</key>\n\t<string>production</string>\n</dict>'
+        );
+        fs.writeFileSync(tmpFile, original, 'utf8');
+        const mtimeBefore = fs.statSync(tmpFile).mtimeMs;
+        addApsEnvironmentToEntitlementsFile(tmpFile, 'production');
+        const mtimeAfter = fs.statSync(tmpFile).mtimeMs;
+        expect(mtimeAfter).toBe(mtimeBefore);
+    });
+
+    it('defaults to development when no environment argument is given', () => {
+        fs.writeFileSync(tmpFile, BARE_PLIST, 'utf8');
+        addApsEnvironmentToEntitlementsFile(tmpFile);
+        const result = fs.readFileSync(tmpFile, 'utf8');
+        expect(result).toContain('<string>development</string>');
+    });
+});
+
+// ---------------------------------------------------------------------------
+// resolveApsEnvironmentForEntitlementsFile
+//
+// Cordova writes one entitlements file per build configuration
+// (Entitlements-Debug.plist, Entitlements-Release.plist, ...); only the
+// Release one should carry aps-environment=production — Apple's own
+// convention is Debug → development APNs sandbox, Release/Archive →
+// production. Getting this wrong either breaks push in a release build
+// (stuck on the wrong sandbox) or was previously "fixed" by a manual
+// post-hoc -exportArchive step with a hand-written exportOptions.plist.
+// ---------------------------------------------------------------------------
+
+describe('resolveApsEnvironmentForEntitlementsFile', () => {
+    it('returns production for Entitlements-Release.plist', () => {
+        expect(resolveApsEnvironmentForEntitlementsFile('Entitlements-Release.plist')).toBe('production');
+    });
+
+    it('is case-insensitive about the Release filename', () => {
+        expect(resolveApsEnvironmentForEntitlementsFile('entitlements-release.plist')).toBe('production');
+    });
+
+    it('returns development for Entitlements-Debug.plist', () => {
+        expect(resolveApsEnvironmentForEntitlementsFile('Entitlements-Debug.plist')).toBe('development');
+    });
+
+    it('returns development for other configuration entitlement files (e.g. staging)', () => {
+        expect(resolveApsEnvironmentForEntitlementsFile('Entitlements-Staging.plist')).toBe('development');
+    });
+
+    it('returns development for the named .entitlements template file', () => {
+        expect(resolveApsEnvironmentForEntitlementsFile('App.entitlements')).toBe('development');
     });
 });

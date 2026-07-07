@@ -3,7 +3,7 @@
     "private": true,
     "devDependencies": {
         "cordova-ios": "^8.1.1",
-        "cordova-acoustic-connect": "1.0.5",
+        "cordova-acoustic-connect": "1.0.6",
         "cordova-android": "^15.0.0"
     },
     "keywords": [
