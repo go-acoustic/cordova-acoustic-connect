@@ -14,6 +14,12 @@
  *
  *   useRelease: true  (or missing) → AcousticConnect    (= 2.1.15)
  *   useRelease: false               → AcousticConnectDebug (= 2.1.13)
+ *
+ * Connect.iOSVersion optionally pins a different Connect SDK version (mirrors
+ * AndroidVersion in build-extras.gradle). Values below MIN_CONNECT_VERSION are
+ * rejected — 2.1.13 is the floor that fixes the podspec/duplicate-xcframework
+ * bug described below for the podspec default; letting an override go below
+ * that would silently reintroduce it.
  */
 
 'use strict';
@@ -26,6 +32,23 @@ var RELEASE_SPEC = '= 2.1.15';
 var DEBUG_NAME   = 'AcousticConnectDebug';
 var DEBUG_SPEC   = '= 2.1.13';
 var MIN_IOS      = '15.1';
+var MIN_CONNECT_VERSION = '2.1.13';
+
+// Parses a leading "x.y.z" out of a version string, ignoring any pre-release
+// suffix (e.g. "2.1.20-beta" → [2, 1, 20]). Returns null if it doesn't match.
+function parseVersion(v) {
+    var m = /^(\d+)\.(\d+)\.(\d+)/.exec(v);
+    return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null;
+}
+
+function isVersionAtLeast(version, min) {
+    for (var i = 0; i < 3; i++) {
+        if (version[i] !== min[i]) {
+            return version[i] > min[i];
+        }
+    }
+    return true;
+}
 
 // Resolve Xcode target/project name from the .xcodeproj directory present
 // under platforms/ios. Cordova-iOS 7+ always names it 'App', but derive it
@@ -81,13 +104,19 @@ module.exports = function (context) {
     var projectRoot = context.opts.projectRoot;
 
     // Read ConnectConfig.json — defaults to release when absent.
-    var useRelease = true;
-    var configPath = path.join(projectRoot, 'ConnectConfig.json');
+    var useRelease  = true;
+    var iosVersion  = '';
+    var configPath  = path.join(projectRoot, 'ConnectConfig.json');
     if (fs.existsSync(configPath)) {
         try {
             var cfg = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-            if (cfg && cfg.Connect && cfg.Connect.useRelease === false) {
-                useRelease = false;
+            if (cfg && cfg.Connect) {
+                if (cfg.Connect.useRelease === false) {
+                    useRelease = false;
+                }
+                if (cfg.Connect.iOSVersion) {
+                    iosVersion = String(cfg.Connect.iOSVersion).trim();
+                }
             }
         } catch (e) {
             console.warn('[acoustic-connect] before_prepare: ConnectConfig.json parse error — ' +
@@ -97,6 +126,22 @@ module.exports = function (context) {
 
     var podName  = useRelease ? RELEASE_NAME : DEBUG_NAME;
     var podSpec  = useRelease ? RELEASE_SPEC : DEBUG_SPEC;
+
+    // iOSVersion override — validated against MIN_CONNECT_VERSION so a
+    // misconfigured pin can't reintroduce the podspec bug the default avoids.
+    if (iosVersion) {
+        var parsed = parseVersion(iosVersion);
+        if (!parsed) {
+            console.warn('[acoustic-connect] before_prepare: iOSVersion \'' + iosVersion +
+                         '\' is not a valid version string — falling back to ' + podSpec);
+        } else if (!isVersionAtLeast(parsed, parseVersion(MIN_CONNECT_VERSION))) {
+            console.warn('[acoustic-connect] before_prepare: iOSVersion \'' + iosVersion +
+                         '\' is below the minimum supported ' + MIN_CONNECT_VERSION +
+                         ' — falling back to ' + podSpec);
+        } else {
+            podSpec = '= ' + iosVersion;
+        }
+    }
 
     var iosDir      = path.join(projectRoot, 'platforms', 'ios');
     var projectName = resolveProjectName(iosDir);

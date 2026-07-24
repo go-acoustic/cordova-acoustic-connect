@@ -7,11 +7,19 @@
  * `testMatch`). Picked up by tsconfig.test.json so `npm run test:strict`
  * exercises the full public surface under `tsc --strict --noImplicitAny`.
  * Any breaking change to the declared surface fails strict compilation.
+ *
+ * Deliberately a script, not a module — no top-level import/export
+ * statement — so `AcousticConnect` resolves as the ambient global that
+ * `export as namespace AcousticConnect` in types/index.d.ts declares. This
+ * is the only supported integration pattern (README, Demo app, and the JS
+ * bridge tests all use the plugin.xml-clobbered global — see
+ * `<clobbers target="AcousticConnect" />` in plugin.xml); a prior version of
+ * this fixture used `import AcousticConnect = require('../types')`, which
+ * compiles but demonstrates a module-import pattern this package does not
+ * document or support. Do not reintroduce an import/require form here.
  */
 
-import AcousticConnect = require('../types');
-
-function _publicSurfaceCompiles(): void {
+function _globalPublicSurfaceCompiles(): void {
     // ── Core ─────────────────────────────────────────────────────────────
     void AcousticConnect.enable('key', 'https://example.com');
     void AcousticConnect.enable('key', 'https://example.com', 'automatic');
@@ -72,4 +80,4 @@ function _publicSurfaceCompiles(): void {
     );
 }
 
-void _publicSurfaceCompiles;
+void _globalPublicSurfaceCompiles;

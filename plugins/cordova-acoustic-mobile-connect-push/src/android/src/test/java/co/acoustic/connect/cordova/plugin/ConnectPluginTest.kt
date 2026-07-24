@@ -11,8 +11,10 @@
 package co.acoustic.connect.cordova.plugin
 
 import android.app.Activity
+import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.content.res.Resources
+import android.os.Looper
 import androidx.appcompat.app.AppCompatActivity
 import org.apache.cordova.CallbackContext
 import org.apache.cordova.CordovaInterface
@@ -36,7 +38,10 @@ import org.mockito.kotlin.never
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowLog
+import java.time.Duration
 import java.util.concurrent.Executors
 
 // Class-level default; individual tests override with their own @Config
@@ -567,6 +572,144 @@ class ConnectPluginTest {
             cb
         )
         verify(activity).runOnUiThread(any())
+    }
+
+    @Test
+    fun parseNativeConfig_useRelease_true_returnsTrue() {
+        assertTrue(plugin.parseNativeConfig("""{"useRelease":true}""").useRelease)
+    }
+
+    @Test
+    fun parseNativeConfig_useRelease_false_returnsFalse() {
+        assertFalse(plugin.parseNativeConfig("""{"useRelease":false}""").useRelease)
+    }
+
+    @Test
+    fun parseNativeConfig_missingKeys_defaultToFalseAndNull() {
+        val config = plugin.parseNativeConfig("{}")
+        assertFalse(config.useRelease)
+        assertFalse(config.killSwitchEnabled)
+        assertEquals(null, config.killSwitchUrl)
+    }
+
+    @Test
+    fun parseNativeConfig_malformedJson_defaultsSafely_doesNotThrow() {
+        val config = plugin.parseNativeConfig("{not json")
+        assertFalse(config.useRelease)
+        assertFalse(config.killSwitchEnabled)
+        assertEquals(null, config.killSwitchUrl)
+    }
+
+    @Test
+    fun parseNativeConfig_killSwitchEnabled_true_withUrl() {
+        val config = plugin.parseNativeConfig(
+            """{"killSwitchEnabled":true,"killSwitchUrl":"https://example.com/switch"}"""
+        )
+        assertTrue(config.killSwitchEnabled)
+        assertEquals("https://example.com/switch", config.killSwitchUrl)
+    }
+
+    @Test
+    fun parseNativeConfig_killSwitchUrl_blank_treatedAsNull() {
+        val config = plugin.parseNativeConfig("""{"killSwitchEnabled":true,"killSwitchUrl":""}""")
+        assertEquals(null, config.killSwitchUrl)
+    }
+
+    // ── applyKillSwitchConfig ──────────────────────────────────────────────
+    //
+    // Connect/EOCore are real SDK singleton objects, not mockable here (this
+    // module deliberately has no mockito-inline dependency — see the file
+    // header). So these tests can't assert exact Connect.updateConfig(...)
+    // call arguments. Instead they drive Robolectric's paused main-looper
+    // scheduler to verify the actual observable contract: the work is
+    // genuinely delayed (not run inline), it runs only once the configured
+    // delay has elapsed, and running it — with the real SDK uninitialized,
+    // exactly as in a fresh test process — never throws, proving the
+    // null-module-guard and catch block are effective in practice, not just
+    // present in source.
+
+    private fun logsMentioning(fragment: String) =
+        ShadowLog.getLogs().filter { it.msg?.contains(fragment) == true }
+
+    @Test
+    fun applyKillSwitchConfig_doesNotRunSynchronously() {
+        ShadowLog.clear()
+        plugin.applyKillSwitchConfig(
+            mock(),
+            ConnectPlugin.NativeConfig(useRelease = false, killSwitchEnabled = true, killSwitchUrl = "https://example.com/switch")
+        )
+        assertTrue(
+            "expected no applyKillSwitchConfig log before the main looper is idled",
+            logsMentioning("applyKillSwitchConfig").isEmpty()
+        )
+    }
+
+    @Test
+    fun applyKillSwitchConfig_doesNotRunBeforeConfiguredDelayElapses() {
+        ShadowLog.clear()
+        plugin.applyKillSwitchConfig(
+            mock(),
+            ConnectPlugin.NativeConfig(useRelease = false, killSwitchEnabled = false, killSwitchUrl = null)
+        )
+        shadowOf(Looper.getMainLooper()).idleFor(
+            Duration.ofMillis(ConnectPlugin.KILL_SWITCH_REAPPLY_DELAY_MS - 1)
+        )
+        assertTrue(
+            "expected no applyKillSwitchConfig log before the configured delay elapses",
+            logsMentioning("applyKillSwitchConfig").isEmpty()
+        )
+    }
+
+    @Test
+    fun applyKillSwitchConfig_runsAfterConfiguredDelay_withoutThrowing_whenSdkNotInitialized() {
+        ShadowLog.clear()
+        plugin.applyKillSwitchConfig(
+            mock(),
+            ConnectPlugin.NativeConfig(useRelease = false, killSwitchEnabled = true, killSwitchUrl = "https://example.com/switch")
+        )
+        // Idling to completion (well past the delay) must not throw even though
+        // Connect/EOCore were never initialized in this test — the try/catch and
+        // null-module-guard inside the scheduled work must absorb whatever the
+        // real SDK singletons do when uninitialized.
+        shadowOf(Looper.getMainLooper()).idleFor(
+            Duration.ofMillis(ConnectPlugin.KILL_SWITCH_REAPPLY_DELAY_MS + 50)
+        )
+        assertTrue(
+            "expected the scheduled work to have run (and logged) once the delay elapsed",
+            logsMentioning("applyKillSwitchConfig").isNotEmpty()
+        )
+    }
+
+    @Test
+    fun applyKillSwitchConfig_disabledWithNoUrl_runsWithoutThrowing() {
+        ShadowLog.clear()
+        plugin.applyKillSwitchConfig(
+            mock(),
+            ConnectPlugin.NativeConfig(useRelease = false, killSwitchEnabled = false, killSwitchUrl = null)
+        )
+        shadowOf(Looper.getMainLooper()).idleFor(
+            Duration.ofMillis(ConnectPlugin.KILL_SWITCH_REAPPLY_DELAY_MS + 50)
+        )
+        assertTrue(logsMentioning("applyKillSwitchConfig").isNotEmpty())
+    }
+
+    @Test
+    fun onDestroy_cancelsPendingKillSwitchRunnable() {
+        ShadowLog.clear()
+        plugin.applyKillSwitchConfig(
+            mock(),
+            ConnectPlugin.NativeConfig(useRelease = false, killSwitchEnabled = true, killSwitchUrl = "https://example.com/switch")
+        )
+        plugin.onDestroy()
+        // mainHandler is bound to the process-wide main Looper, not this plugin
+        // instance — without cancellation the callback would still fire here.
+        shadowOf(Looper.getMainLooper()).idleFor(
+            Duration.ofMillis(ConnectPlugin.KILL_SWITCH_REAPPLY_DELAY_MS + 50)
+        )
+        assertTrue(
+            "expected onDestroy() to cancel the pending applyKillSwitchConfig callback",
+            logsMentioning("applyKillSwitchConfig").isEmpty()
+        )
     }
 
 }

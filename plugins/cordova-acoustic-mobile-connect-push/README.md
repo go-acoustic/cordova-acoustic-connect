@@ -33,8 +33,10 @@ Create `ConnectConfig.json` at your Cordova project root (gitignored — never c
     "iOSAppGroupIdentifier": "group.<your-bundle-id>",
     "iOSDevelopmentTeam": "<your-apple-team-id>",
     "AndroidVersion": "<optional-connect-android-sdk-version-override>",
+    "iOSVersion": "<optional-connect-ios-sdk-version-override>",
     "iOSPushMode": "automatic",
     "AndroidNotificationIconResName": "<optional-drawable-name>",
+    "KillSwitchEnabled": false,
     "KillSwitchUrl": "<optional-kill-switch-url>"
   }
 }
@@ -47,18 +49,31 @@ Create `ConnectConfig.json` at your Cordova project root (gitignored — never c
 | `iOSAppGroupIdentifier` | Shared App Group ID between the app and its iOS NSE/NCE extensions. |
 | `iOSDevelopmentTeam` | Apple Team ID. Sets the Xcode signing team automatically, skipping the manual Signing & Capabilities step below. |
 | `AndroidVersion` | Pins a specific Connect Android SDK version (`x.y.z`) instead of the plugin's default (currently `11.0.13`). Invalid values are ignored with a build warning. |
+| `iOSVersion` | Pins a specific Connect iOS SDK pod version (`x.y.z`) instead of the plugin's default (`2.1.15` release / `2.1.13` debug). Values below `2.1.13` — the floor that fixes a podspec/duplicate-xcframework bug — and non-version strings are ignored with a build warning. |
 | `iOSPushMode` | `'automatic'` (default) or `'manual'`. iOS only — Android is always `'automatic'` at the bridge boundary. |
 | `AndroidNotificationIconResName` | Drawable resource name for the push notification icon on Android. Fallback chain: your name → the plugin's bundled `ic_notification` (correct default — launcher icons crash at delivery) → `ic_launcher` (legacy) → the SDK's own default. |
-| `KillSwitchUrl` | Remote kill-switch URL for the Android SDK. Currently has no effect — the bridge always generates the native config with the kill switch disabled. |
+| `KillSwitchEnabled` | `false` (default) or `true`. Controls the native SDK's remote kill switch on both platforms — see below. The SDK's own bundled default is `true`; this plugin defaults it `false` so apps must opt in explicitly. |
+| `KillSwitchUrl` | Remote kill-switch check URL. Only takes effect when `KillSwitchEnabled: true`. |
 
-`ConnectConfig.example.json` also contains an `iOSVersion` field — it isn't read anywhere in the plugin (no iOS equivalent of `AndroidVersion` exists yet); leave it unset.
+### Kill switch
 
-The plugin's `before_prepare` hook reads this file on every `cordova prepare` / `cordova build`. `Connect.useRelease` is the single source of truth for which native SDK variant is used:
+Both native SDKs ship with the kill switch on by default (`KillSwitchEnabled=true`); this plugin forces it off unless you opt in via `KillSwitchEnabled: true` + `KillSwitchUrl`.
 
-- `true` → `AcousticConnect` (release) pod on iOS, the release Connect artifact on Android.
-- `false` (default) → `AcousticConnectDebug` pod on iOS. Android always uses the same `connect-push-fcm` artifact regardless of `useRelease` — there is no separate debug Maven artifact.
+- **iOS**: `ConnectPlugin.swift`'s `enable()` calls `applyKillSwitchConfig()` before *and* after `ConnectSDK.shared.enable(...)` — the SDK may reload its bundled plist defaults (`KillSwitchEnabled=true`) internally during that call, so the configured value is re-applied both times to make it stick either way.
+- **Android**: `ConnectBasicConfig.properties` sets `KillSwitchEnabled` at asset-load time, but that isn't the last word — the native SDK's 2-arg `Tealeaf.enable(appKey, postMessageUrl)` (which `handleEnable()` calls) has an internal handler that unconditionally sets `KillSwitchEnabled=true` and computes its own URL, once, ~100ms after being called. `ConnectPlugin.kt` re-applies the configured value via `Connect.updateConfig(...)` 300ms after `Connect.enable(...)`, comfortably past that window, so either value (on or off) actually sticks. The 0-arg bundled auto-init path (`tryBundledConfigInit`) doesn't hit this internal handler at all, so the properties-file value already applies correctly there without a re-apply.
+
+Verified on-device: with `KillSwitchEnabled: true` and a real `KillSwitchUrl`, the Android SDK logs `KillSwitchEnabled:true` and `Killswitch has enabled Tealeaf with following session id:...` — the real async kill-switch check runs and completes.
+
+The plugin's `before_prepare` hook reads this file on every `cordova prepare` / `cordova build`. `Connect.useRelease` is the single source of truth for which native SDK variant is used, and for whether native SDK logging is verbose:
+
+- `true` → `AcousticConnect` (release) pod on iOS, the release Connect artifact on Android. On Android, `ConnectPlugin.kt` also calls `Connect.updateConfig("DisplayLogging", "false", EOCore.getInstance())` right after `Connect.init()` — native (Tealeaf/EOCore/Connect) logcat output is suppressed regardless of the app's Gradle build type.
+- `false` (default) → `AcousticConnectDebug` pod on iOS, verbose native logcat output on Android (the SDK's own default, left untouched). Android always uses the same `connect-push-fcm` Maven artifact regardless of `useRelease` — there is no separate debug Maven artifact, so this flag does not affect which Android binary is pulled, only its logging config.
+
+The flag reaches Android via `www/AcousticConnectNativeConfig.json` (generated alongside the iOS native config, bundled into `assets/www/` by Cordova) — deliberately not via an app-level `EOCoreBasicConfig.properties` asset override, since Android's asset merge replaces the *entire* file on a name collision and the SDK's bundled default carries several other required keys (e.g. `PostMessageTimeInterval`) that a partial override would silently drop, crashing at `enable()` time.
 
 Android reads the flag fresh on every build; iOS bakes the CocoaPods pod name into `plugin.xml` when the plugin is installed, so after changing `useRelease` you must remove and re-add the plugin for it to take effect.
+
+Note: `useRelease` only controls the native SDK's own logcat output. The plugin bridge's own log level (`ConnectPlugin.kt`) is set separately via `AcousticConnect.setLogLevel()` from JavaScript.
 
 ## Quick start
 

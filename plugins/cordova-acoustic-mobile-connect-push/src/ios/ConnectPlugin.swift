@@ -27,6 +27,8 @@ public class ConnectPlugin: CDVPlugin {
 
     private var pushMode: String = Constants.pushModeAutomatic
     private var bridgeLogLevel: String = Constants.logLevelDefault
+    private var killSwitchEnabled: Bool = false
+    private var killSwitchUrl: String?
 
     // MARK: - Lifecycle
 
@@ -64,11 +66,12 @@ public class ConnectPlugin: CDVPlugin {
         pushMode = modeString
         let mode = mapPushMode(modeString)
         let pushConfig = ConnectPushConfig(mode: mode, appGroupIdentifier: appGroupId)
-        // Disable kill switch before enabling so the bundled plist's KillSwitchEnabled=true
-        ConnectSDK.shared.setConfigurableItem("KillSwitchEnabled", value: false)
+        // Apply the configured kill-switch state before enabling so the bundled plist's
+        // KillSwitchEnabled=true default doesn't take effect ahead of our value.
+        applyKillSwitchConfig()
         ConnectSDK.shared.enable(appKey: appKey, postURL: postURL, push: pushConfig)
         // Re-apply after enable() in case the SDK re-loaded bundle defaults internally.
-        ConnectSDK.shared.setConfigurableItem("KillSwitchEnabled", value: false)
+        applyKillSwitchConfig()
         waitForEnabled(command)
     }
 
@@ -269,6 +272,9 @@ public class ConnectPlugin: CDVPlugin {
     /// Currently applies:
     ///   useRelease=false → setenv CONNECT_DEBUG / TLF_DEBUG / EODebug = "1"
     ///     Enables verbose SDK logging when building against AcousticConnectDebug.
+    ///   killSwitchEnabled / killSwitchUrl → stored for applyKillSwitchConfig() to apply
+    ///     around enable(). Default false/nil — the SDK's own bundled plist default is
+    ///     `true`, so apps must opt in explicitly via ConnectConfig.json.
     private func applyRuntimeConfig() {
         guard let url = Bundle.main.url(forResource: "AcousticConnectNativeConfig",
                                          withExtension: "json",
@@ -293,6 +299,19 @@ public class ConnectPlugin: CDVPlugin {
             NSLog("[AcousticConnect] useRelease=false — enabled verbose native SDK logging (CONNECT_DEBUG/TLF_DEBUG/EODebug)")
         }
         #endif
+
+        killSwitchEnabled = config["killSwitchEnabled"] as? Bool ?? false
+        killSwitchUrl = config["killSwitchUrl"] as? String
+    }
+
+    /// Applies the configured kill-switch state to the SDK. Called both before and after
+    /// `ConnectSDK.shared.enable(...)` in `enable()`, because the SDK may re-load its
+    /// bundled plist defaults (`KillSwitchEnabled=true`) internally during that call.
+    private func applyKillSwitchConfig() {
+        ConnectSDK.shared.setConfigurableItem("KillSwitchEnabled", value: killSwitchEnabled)
+        if killSwitchEnabled, let url = killSwitchUrl, !url.isEmpty {
+            ConnectSDK.shared.setKillSwitchURL(url)
+        }
     }
 
     // MARK: - Helpers

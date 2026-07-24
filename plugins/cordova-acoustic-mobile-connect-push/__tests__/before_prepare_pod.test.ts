@@ -117,6 +117,58 @@ describe('variant selection', () => {
     });
 });
 
+// ── iOSVersion override ───────────────────────────────────────────────────────
+
+describe('iOSVersion override', () => {
+    it('pins the exact version when iOSVersion meets the minimum', () => {
+        writeConfig({ Connect: { AppKey: 'k', PostMessageUrl: 'u', useRelease: true, iOSVersion: '2.1.20' } });
+        writePodfile('OLD');
+        hook(makeContext(tmpDir));
+        expect(readPodfile()).toContain("pod 'AcousticConnect', '= 2.1.20'");
+    });
+
+    it('applies the override to the debug variant too', () => {
+        writeConfig({ Connect: { AppKey: 'k', PostMessageUrl: 'u', useRelease: false, iOSVersion: '2.1.14' } });
+        writePodfile('OLD');
+        hook(makeContext(tmpDir));
+        expect(readPodfile()).toContain("pod 'AcousticConnectDebug', '= 2.1.14'");
+    });
+
+    it('falls back to the default spec and warns when iOSVersion is below the minimum', () => {
+        writeConfig({ Connect: { AppKey: 'k', PostMessageUrl: 'u', useRelease: true, iOSVersion: '2.1.12' } });
+        writePodfile('OLD');
+        const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+        hook(makeContext(tmpDir));
+        expect(readPodfile()).toContain("pod 'AcousticConnect', '= 2.1.15'");
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining('below the minimum supported'));
+        warn.mockRestore();
+    });
+
+    it('falls back to the default spec and warns when iOSVersion is not a valid version string', () => {
+        writeConfig({ Connect: { AppKey: 'k', PostMessageUrl: 'u', useRelease: true, iOSVersion: 'latest' } });
+        writePodfile('OLD');
+        const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+        hook(makeContext(tmpDir));
+        expect(readPodfile()).toContain("pod 'AcousticConnect', '= 2.1.15'");
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining('is not a valid version string'));
+        warn.mockRestore();
+    });
+
+    it('ignores an empty iOSVersion and uses the default spec', () => {
+        writeConfig({ Connect: { AppKey: 'k', PostMessageUrl: 'u', useRelease: true, iOSVersion: '' } });
+        writePodfile('OLD');
+        hook(makeContext(tmpDir));
+        expect(readPodfile()).toContain("pod 'AcousticConnect', '= 2.1.15'");
+    });
+
+    it('accepts a version exactly at the minimum', () => {
+        writeConfig({ Connect: { AppKey: 'k', PostMessageUrl: 'u', useRelease: true, iOSVersion: '2.1.13' } });
+        writePodfile('OLD');
+        hook(makeContext(tmpDir));
+        expect(readPodfile()).toContain("pod 'AcousticConnect', '= 2.1.13'");
+    });
+});
+
 // ── Podfile generation ────────────────────────────────────────────────────────
 
 describe('Podfile generation', () => {

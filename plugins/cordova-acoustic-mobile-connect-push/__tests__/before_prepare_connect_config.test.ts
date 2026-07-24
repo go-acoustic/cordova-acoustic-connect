@@ -23,6 +23,16 @@ function readProperties(projectRoot: string): string {
     return fs.readFileSync(path.join(projectRoot, 'ConnectBasicConfig.properties'), 'utf8');
 }
 
+function readNativeConfig(projectRoot: string): {
+    useRelease: boolean;
+    killSwitchEnabled: boolean;
+    killSwitchUrl: string | null;
+} {
+    return JSON.parse(
+        fs.readFileSync(path.join(projectRoot, 'www', 'AcousticConnectNativeConfig.json'), 'utf8')
+    );
+}
+
 function readJsConfig(projectRoot: string): string {
     return fs.readFileSync(path.join(projectRoot, 'www', 'js', 'connect-config.js'), 'utf8');
 }
@@ -149,6 +159,74 @@ describe('escapeValue — special characters in property values', () => {
         writeConfig(tmpDir, { Connect: { AppKey: 'key\tval', PostMessageUrl: 'https://x.com' } });
         hook(makeContext(tmpDir));
         expect(readProperties(tmpDir)).toContain('AppKey=key\\tval');
+    });
+});
+
+describe('AcousticConnectNativeConfig.json generation (useRelease, both platforms)', () => {
+    it('defaults useRelease to false when omitted', () => {
+        writeConfig(tmpDir, { Connect: { ...VALID_CONFIG.Connect } });
+        hook(makeContext(tmpDir));
+        expect(readNativeConfig(tmpDir).useRelease).toBe(false);
+    });
+
+    it('writes useRelease=false explicitly', () => {
+        writeConfig(tmpDir, { Connect: { ...VALID_CONFIG.Connect, useRelease: false } });
+        hook(makeContext(tmpDir));
+        expect(readNativeConfig(tmpDir).useRelease).toBe(false);
+    });
+
+    it('writes useRelease=true', () => {
+        writeConfig(tmpDir, { Connect: { ...VALID_CONFIG.Connect, useRelease: true } });
+        hook(makeContext(tmpDir));
+        expect(readNativeConfig(tmpDir).useRelease).toBe(true);
+    });
+
+    it('throws when useRelease is not a boolean', () => {
+        writeConfig(tmpDir, { Connect: { ...VALID_CONFIG.Connect, useRelease: 'true' } });
+        expect(() => hook(makeContext(tmpDir))).toThrow('Connect.useRelease must be a boolean');
+    });
+});
+
+describe('AcousticConnectNativeConfig.json generation (kill switch, both platforms)', () => {
+    it('defaults killSwitchEnabled to false and killSwitchUrl to null when omitted', () => {
+        writeConfig(tmpDir, { Connect: { ...VALID_CONFIG.Connect } });
+        hook(makeContext(tmpDir));
+        const config = readNativeConfig(tmpDir);
+        expect(config.killSwitchEnabled).toBe(false);
+        expect(config.killSwitchUrl).toBeNull();
+    });
+
+    it('writes killSwitchEnabled=true and killSwitchUrl when configured', () => {
+        writeConfig(tmpDir, {
+            Connect: {
+                ...VALID_CONFIG.Connect,
+                KillSwitchEnabled: true,
+                KillSwitchUrl: 'https://example.com/collector/switch/testkey123',
+            },
+        });
+        hook(makeContext(tmpDir));
+        const config = readNativeConfig(tmpDir);
+        expect(config.killSwitchEnabled).toBe(true);
+        expect(config.killSwitchUrl).toBe('https://example.com/collector/switch/testkey123');
+    });
+
+    it('throws when KillSwitchEnabled is not a boolean', () => {
+        writeConfig(tmpDir, { Connect: { ...VALID_CONFIG.Connect, KillSwitchEnabled: 'true' } });
+        expect(() => hook(makeContext(tmpDir))).toThrow('Connect.KillSwitchEnabled must be a boolean');
+    });
+});
+
+describe('ConnectBasicConfig.properties — KillSwitchEnabled (Android)', () => {
+    it('writes KillSwitchEnabled=false by default', () => {
+        writeConfig(tmpDir, VALID_CONFIG);
+        hook(makeContext(tmpDir));
+        expect(readProperties(tmpDir)).toContain('KillSwitchEnabled=false');
+    });
+
+    it('writes KillSwitchEnabled=true when configured', () => {
+        writeConfig(tmpDir, { Connect: { ...VALID_CONFIG.Connect, KillSwitchEnabled: true } });
+        hook(makeContext(tmpDir));
+        expect(readProperties(tmpDir)).toContain('KillSwitchEnabled=true');
     });
 });
 

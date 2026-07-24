@@ -3,8 +3,8 @@
     "private": true,
     "devDependencies": {
         "cordova-ios": "^8.1.1",
-        "cordova-acoustic-connect": "1.0.7",
-        "cordova-android": "^15.0.0"
+        "cordova-acoustic-connect": "1.0.8",
+        "cordova-android": "^15.1.0"
     },
     "keywords": [
         "ecosystem:cordova"

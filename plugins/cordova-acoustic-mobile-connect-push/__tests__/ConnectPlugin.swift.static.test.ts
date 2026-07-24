@@ -4,8 +4,10 @@
  * Static-source checks against `src/ios/ConnectPlugin.swift`.
  *
  * Covers ACs testable without running XCTest / a real iOS SDK:
- *  - Kill-switch bypass: setConfigurableItem("KillSwitchEnabled", ...) is
- *    called twice inside enable() — before and after ConnectSDK.enable().
+ *  - Kill-switch config: applyKillSwitchConfig() is called twice inside
+ *    enable() — before and after ConnectSDK.enable() — and applies the
+ *    configured killSwitchEnabled/killSwitchUrl (from ConnectConfig.json via
+ *    AcousticConnectNativeConfig.json), not a hardcoded value.
  *  - Readiness guard: _connectIsReadyForLogging() gates both waitForEnabled
  *    and logIdentificationEvent so calls before kill-switch completion are
  *    rejected with a clear error rather than silently returning false.
@@ -43,8 +45,8 @@ const SWIFT = stripSwiftComments(SWIFT_RAW);
 
 // ── Kill-switch bypass ─────────────────────────────────────────────────────
 
-describe('ConnectPlugin.swift — kill-switch bypass', () => {
-    test('setConfigurableItem("KillSwitchEnabled") appears twice in enable()', () => {
+describe('ConnectPlugin.swift — kill-switch config', () => {
+    test('applyKillSwitchConfig() appears twice in enable()', () => {
         // Scope to enable() body so a future call in another method doesn't
         // satisfy this count. Terminates at the first class-body-level `}` which
         // is the function's own closing brace (inner guards close at 8+ spaces).
@@ -52,23 +54,37 @@ describe('ConnectPlugin.swift — kill-switch bypass', () => {
             /func\s+enable\s*\([\s\S]*?(?=\n(?:    |\t)\})/
         )?.[0];
         expect(enableBlock).toBeDefined();
-        const matches = enableBlock!.match(/setConfigurableItem\s*\(\s*"KillSwitchEnabled"/g);
+        const matches = enableBlock!.match(/applyKillSwitchConfig\s*\(\s*\)/g);
         expect(matches).not.toBeNull();
         expect(matches!.length).toBe(2);
     });
 
-    test('KillSwitchEnabled is set to false (not true)', () => {
-        const enableBlock = SWIFT.match(
-            /func\s+enable\s*\([\s\S]*?(?=\n(?:    |\t)\})/
+    test('applyKillSwitchConfig applies the configured value, not a hardcoded literal', () => {
+        const block = SWIFT.match(
+            /func\s+applyKillSwitchConfig[\s\S]*?(?=\n(?:    |\t)(?:private |internal |public |open |fileprivate |@objc\b|@objc\(|func |\/\/\s*MARK:|\}))/
         )?.[0];
-        expect(enableBlock).toBeDefined();
-        const matches = [...enableBlock!.matchAll(
-            /setConfigurableItem\s*\(\s*"KillSwitchEnabled"\s*,\s*value:\s*(\w+)/g
-        )];
-        expect(matches.length).toBe(2);
-        for (const m of matches) {
-            expect(m[1]).toBe('false');
-        }
+        expect(block).toBeDefined();
+        expect(block).toMatch(/setConfigurableItem\s*\(\s*"KillSwitchEnabled"\s*,\s*value:\s*killSwitchEnabled\b/);
+        // Must not be a hardcoded true/false literal.
+        expect(block).not.toMatch(/setConfigurableItem\s*\(\s*"KillSwitchEnabled"\s*,\s*value:\s*(true|false)\b/);
+    });
+
+    test('applyKillSwitchConfig applies KillSwitchUrl via setKillSwitchURL only when enabled', () => {
+        const block = SWIFT.match(
+            /func\s+applyKillSwitchConfig[\s\S]*?(?=\n(?:    |\t)(?:private |internal |public |open |fileprivate |@objc\b|@objc\(|func |\/\/\s*MARK:|\}))/
+        )?.[0];
+        expect(block).toBeDefined();
+        expect(block).toMatch(/setKillSwitchURL\s*\(/);
+        expect(block).toMatch(/killSwitchEnabled/);
+    });
+
+    test('killSwitchEnabled/killSwitchUrl are populated from AcousticConnectNativeConfig.json in applyRuntimeConfig', () => {
+        const block = SWIFT.match(
+            /func\s+applyRuntimeConfig[\s\S]*?(?=\n(?:    |\t)(?:private |internal |public |open |fileprivate |@objc\b|@objc\(|func |\/\/\s*MARK:|\}))/
+        )?.[0];
+        expect(block).toBeDefined();
+        expect(block).toMatch(/killSwitchEnabled\s*=\s*config\[\s*"killSwitchEnabled"\s*\]/);
+        expect(block).toMatch(/killSwitchUrl\s*=\s*config\[\s*"killSwitchUrl"\s*\]/);
     });
 });
 
