@@ -85,7 +85,7 @@ class ConnectPlugin : CordovaPlugin() {
     // applyKillSwitchConfig's re-apply runnable, tracked the same way as
     // autoInitRunnable so onDestroy() can cancel it — mainHandler is bound to
     // the process-wide main Looper, not this plugin instance's lifecycle, so a
-    // pending postDelayed(..., KILL_SWITCH_REAPPLY_DELAY_MS) would otherwise
+    // pending postDelayed(..., CONFIG_REAPPLY_DELAY_MS) would otherwise
     // still fire after the WebView/Activity that created this plugin is gone.
     @Volatile private var killSwitchRunnable: Runnable? = null
 
@@ -207,14 +207,38 @@ class ConnectPlugin : CordovaPlugin() {
                 "Connect.init/enable must run on the main looper"
             }
             try {
-                // Guard against double-init: tryBundledConfigInit may have already
-                // completed on the main thread before removeCallbacks() could cancel it.
-                if (!Connect.isEnabled()) {
+                // Captured once, up front: whether the SDK was already fully set up
+                // before this call — e.g. tryBundledConfigInit won the race against
+                // this handleEnable call despite the removeCallbacks() above (see its
+                // own comment). Previously only Connect.init/enable were guarded by
+                // this check; push.enable/turnOnPush/requestNotificationPermission
+                // below ran unconditionally every time handleEnable was invoked. That
+                // let the auto-init path AND a racing handleEnable call both run the
+                // full push-init sequence, registering a second
+                // ActivityLifecycleCallbacks/BroadcastReceiver in the native SDK
+                // (com.acoustic...push.ConnectPush — registerActivityLifecycleCallbacks
+                // and registerReceiver are both additive, not idempotent) and
+                // requesting notification permission twice — producing duplicate
+                // "Create token registration event"/"New token received" logs and the
+                // "Attempted to send a second callback" Cordova bridge warning from a
+                // second requestNotificationPermission call. Skipping the whole
+                // sequence (not just init/enable) when already enabled fixes this at
+                // the source instead of just deduplicating the resulting logs.
+                val alreadyEnabled = Connect.isEnabled()
+                if (!alreadyEnabled) {
                     Connect.init(activity.application)
                     val nativeConfig = readNativeConfig(activity.application)
                     applyDisplayLoggingConfig(activity.application, nativeConfig)
                     Connect.enable(appKey, postURL)
                     applyKillSwitchConfig(activity.application, nativeConfig)
+                    // Screen/layout capture is deliberately left at the SDK's own
+                    // default (on) here — see applyScreenCaptureConfig's doc comment
+                    // for why it exists but isn't invoked.
+                } else {
+                    // Push setup already ran via whichever path enabled the SDK
+                    // first — resolve success without repeating it.
+                    workWrapper.success(callbackContext)
+                    return@runOnUiThread
                 }
 
                 val iconRes = resolveIconRes(activity, options)
@@ -624,6 +648,8 @@ class ConnectPlugin : CordovaPlugin() {
                 // exact pinned Maven artifact.
                 Connect.enable()
                 applyKillSwitchConfig(activity.application, nativeConfig)
+                // Screen/layout capture left at the SDK default here too — see
+                // applyScreenCaptureConfig's doc comment.
                 pushMode = PUSH_MODE_AUTOMATIC
                 val iconRes = resolveIconRes(activity, JSONObject())
                 Connect.push.enable(
@@ -725,7 +751,7 @@ class ConnectPlugin : CordovaPlugin() {
      * `Handler.postDelayed(..., 100)` that unconditionally sets `KillSwitchEnabled=true` and
      * computes its own kill-switch URL, once, ~100ms after being called. So whatever value
      * the app actually wants (on OR off) must be re-applied *after* that window to stick —
-     * this schedules the re-apply at [KILL_SWITCH_REAPPLY_DELAY_MS], comfortably past the
+     * this schedules the re-apply at [CONFIG_REAPPLY_DELAY_MS], comfortably past the
      * SDK's own 100ms delay.
      *
      * Targets the "Tealeaf" lifecycle-object bucket, not EOCore's — confirmed via
@@ -765,7 +791,53 @@ class ConnectPlugin : CordovaPlugin() {
             }
         }
         killSwitchRunnable = r
-        mainHandler.postDelayed(r, KILL_SWITCH_REAPPLY_DELAY_MS)
+        mainHandler.postDelayed(r, CONFIG_REAPPLY_DELAY_MS)
+    }
+
+    /**
+     * Disables native screen-layout capture (`LogViewLayoutOnScreenTransition`), unconditionally.
+     *
+     * NOT CURRENTLY CALLED — kept, unused, pending product confirmation. This was written on
+     * the assumption that "the Cordova plugin offers push + identity signals only, so the
+     * SDK's own default of capturing the full native view hierarchy on every screen transition
+     * adds payload size and collector storage cost with no benefit here." That's a scope
+     * assumption, not a confirmed requirement — pending confirmation from product (does the
+     * team actually want this disabled, or should the SDK's own default, capture on, stay in
+     * effect?), the default is left alone and this function isn't invoked from `handleEnable`
+     * or `tryBundledConfigInit`. Wire it back in with a single call if/when disabling is
+     * confirmed as wanted.
+     *
+     * Targets the same "Tealeaf" lifecycle-object bucket as [applyKillSwitchConfig], but unlike
+     * it, applies synchronously with no re-apply delay — both verified against checked-out
+     * `Tealeaf.java`/`TealeafEOLifecycleObject.java`/`EOCore.java` source:
+     *  - The "Tealeaf" module is registered into EOCore's module registry synchronously inside
+     *    `Connect.init()` (`Tealeaf`'s constructor -> `TealeafEOLifecycleObject.init()` ->
+     *    `EOCore.addModule(...)`), which this plugin always calls before `Connect.enable(...)`.
+     *    It is never gated by `enable()`'s internal 100ms-delayed callback, so
+     *    `Connect.getLifecycleObject("Tealeaf")` already resolves immediately, at t=0.
+     *  - `TLF_LOG_SCREENLAYOUT` ("LogViewLayoutOnScreenTransition") is only ever *read* by
+     *    `Tealeaf.java` (inside its `logScreenLayout*` methods, at actual screen-transition
+     *    time) — never written by `enable()`'s synchronous body or its delayed callback, unlike
+     *    `KillSwitchEnabled`. There is no reset race here to guard against.
+     *
+     * Note: this does NOT suppress screenshot capture. That's gated by a separate, cached
+     * `AutoLayout.GlobalScreenSettings.ScreenShot` JSON field with no confirmed live/flat
+     * runtime toggle (unlike this key) — attempting to override it via the nested
+     * `Connect.updateConfig(module, JSONObject)` path risks silently dropping other nested
+     * fields (e.g. sensitive-data masking config) it isn't safe to guess the full shape of.
+     * Left as a known follow-up, not attempted here.
+     */
+    internal fun applyScreenCaptureConfig(context: Context) {
+        try {
+            val module = Connect.getLifecycleObject("Tealeaf")
+            if (module == null) {
+                Log.w(TAG, "applyScreenCaptureConfig: \"Tealeaf\" lifecycle object not found — skipping")
+                return
+            }
+            Connect.updateConfig("LogViewLayoutOnScreenTransition", "false", module)
+        } catch (t: Throwable) {
+            Log.w(TAG, "applyScreenCaptureConfig failed — leaving native SDK layout capture at its default: ${t.message}")
+        }
     }
 
     private fun logFcmAvailability() {
@@ -827,7 +899,7 @@ class ConnectPlugin : CordovaPlugin() {
         // Tealeaf.java's 2-arg enable(appKey, postMessageUrl) overload internally
         // schedules a KillSwitchEnabled=true / KillSwitchUrl overwrite 100ms after
         // being called (its own ENABLE_DELAY). This must run comfortably after that.
-        internal const val KILL_SWITCH_REAPPLY_DELAY_MS = 300L
+        internal const val CONFIG_REAPPLY_DELAY_MS = 300L
 
         private const val CONNECT_PUSH_FCM_PROBE_CLASS =
             "com.acoustic.connect.android.connectmod.push.services.fcm.FCMPushService"

@@ -16,10 +16,6 @@
         <hook type="before_build" src="hooks/before_build_check_credentials.js" />
         <hook type="after_prepare" src="hooks/after_prepare_icons.js" />
 
-        <preference name="AndroidJavaSourceCompatibility" value="17" />
-        <preference name="AndroidJavaTargetCompatibility" value="17" />
-        <preference name="AndroidKotlinJVMTarget" value="17" />
-
         <preference name="GradlePluginGoogleServicesEnabled" value="true" />
         <preference name="GradlePluginGoogleServicesVersion" value="4.4.2" />
 

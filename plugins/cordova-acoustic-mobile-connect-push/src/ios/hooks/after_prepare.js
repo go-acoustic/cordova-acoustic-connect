@@ -33,6 +33,26 @@ function resolveAppBundleId(projectRoot) {
     return m[1];
 }
 
+// Source of truth for the NSE/NCE extensions' MARKETING_VERSION/CURRENT_PROJECT_VERSION
+// (see add_ios_push_extensions.rb) — cordova-ios sets the App target's own
+// MARKETING_VERSION and CURRENT_PROJECT_VERSION to this same <widget version="...">
+// value, and Apple requires an extension's CFBundleVersion to match its containing app's.
+//
+// Falls back to '1.0.0' (matching the Ruby script's own ENV.fetch default) rather than
+// throwing when the attribute is absent — unlike the widget id (resolveAppBundleId) or
+// App Group identifier, a missing version has a safe default and shouldn't abort the
+// entire NSE/NCE setup over it.
+function resolveAppVersion(projectRoot) {
+    const configXml = path.join(projectRoot, 'config.xml');
+    const content   = fs.readFileSync(configXml, 'utf8');
+    const m = content.match(/<widget\b[^>]*\sversion="([^"]+)"/);
+    if (!m) {
+        console.warn('[after_prepare] No <widget version="..."> in config.xml — defaulting NSE/NCE version to 1.0.0');
+        return '1.0.0';
+    }
+    return m[1];
+}
+
 function resolveConnectConfigPath(projectRoot) {
     const configPath = path.join(projectRoot, 'ConnectConfig.json');
     if (fs.existsSync(configPath)) return configPath;
@@ -650,9 +670,11 @@ module.exports = function (context) {
 
     let appGroupIdentifier;
     let appBundleId;
+    let appVersion;
     try {
         appGroupIdentifier = resolveAppGroupIdentifier(projectRoot);
         appBundleId        = resolveAppBundleId(projectRoot);
+        appVersion         = resolveAppVersion(projectRoot);
     } catch (e) {
         console.warn('[after_prepare] Skipping iOS NSE/NCE setup:', e.message);
         return;
@@ -688,6 +710,7 @@ module.exports = function (context) {
         ACOUSTIC_APP_TARGET:    projectName,
         ACOUSTIC_APP_BUNDLE_ID: appBundleId,
         ACOUSTIC_SDK_VARIANT:   pod.name,
+        ACOUSTIC_APP_VERSION:   appVersion,
     });
     if (developmentTeam) rubyEnv.ACOUSTIC_DEVELOPMENT_TEAM = developmentTeam;
     execSync('ruby "' + rubyScript + '"', { cwd: iosDir, stdio: 'inherit', env: rubyEnv });
@@ -744,6 +767,7 @@ module.exports._internal = {
     patchXcframeworksScriptPhases,
     resolveConnectConfigPath,
     resolveIosDevelopmentTeam,
+    resolveAppVersion,
     addApsEnvironmentToEntitlementsFile,
     resolveApsEnvironmentForEntitlementsFile,
 };

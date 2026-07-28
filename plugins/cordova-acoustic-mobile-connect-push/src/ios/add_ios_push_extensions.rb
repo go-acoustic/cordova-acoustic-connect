@@ -34,6 +34,10 @@ APP_BUNDLE_ID      = env!('ACOUSTIC_APP_BUNDLE_ID')
 DEPLOYMENT_TARGET  = ENV.fetch('ACOUSTIC_DEPLOYMENT_TARGET', '15.1')
 SWIFT_VERSION      = ENV.fetch('ACOUSTIC_SWIFT_VERSION', '5.0')
 SDK_VARIANT        = ENV.fetch('ACOUSTIC_SDK_VARIANT', 'AcousticConnectDebug')
+# Host app's <widget version="..."> from config.xml — must match the App target's own
+# MARKETING_VERSION/CURRENT_PROJECT_VERSION (cordova-ios sets both to this same value),
+# since Apple requires an extension's CFBundleVersion to match its containing app's.
+APP_VERSION        = ENV.fetch('ACOUSTIC_APP_VERSION', '1.0.0')
 DEVELOPMENT_TEAM   = ENV['ACOUSTIC_DEVELOPMENT_TEAM'].to_s.strip
 TEAM_SET           = !DEVELOPMENT_TEAM.empty? && DEVELOPMENT_TEAM != 'YOUR_TEAM_ID'
 
@@ -100,6 +104,77 @@ app_target ||= project.targets.find { |t| t.product_type == 'com.apple.product-t
 raise "No application target found in #{PROJECT_PATH} (looked for '#{APP_TARGET_NAME}')" unless app_target
 
 # ---------------------------------------------------------------------------
+# 0. Legacy CordovaLib.xcodeproj deployment target (cordova-ios <8.0 only)
+# ---------------------------------------------------------------------------
+#
+# cordova-ios 8.0+ vends CordovaLib as a local Swift Package instead
+# (packages/cordova-ios/Package.swift declares `.iOS(.v13)`) with no
+# .xcodeproj anywhere in the App project's build graph — project_references
+# is empty and this loop is a verified no-op against that layout.
+#
+# On cordova-ios <8.0 — still within this plugin's stated
+# `<engine name="cordova-ios" version=">=7.0.0">` — CordovaLib is instead an
+# embedded PBXProject subproject reference whose own IPHONEOS_DEPLOYMENT_TARGET
+# ships hardcoded well below the 12.0 Xcode 15+ requires. The App target's own
+# deployment-target preference never reaches it: cordova-ios's
+# updateBuildProperty() call only ever patches App.xcodeproj itself, not a
+# project it references.
+#
+# NOTE on the related "import Cordova fails — no such module 'Cordova'"
+# report: that failure mode is specific to the same legacy subproject
+# architecture (a plain static-library target with no generated modulemap).
+# It is intentionally NOT patched here — synthesizing a correct
+# module.modulemap + SWIFT_INCLUDE_PATHS blind, with no cordova-ios <8.0
+# checkout available in this repo to build and verify against, risks
+# corrupting the working cordova-ios 8.x/SPM case (where `import Cordova`
+# already works via the package's auto-vended module) for an unverified fix
+# to a path this plugin cannot test. Flagged as a known gap rather than guessed.
+MIN_XCODE15_DEPLOYMENT_TARGET = '12.0'
+
+project.root_object.project_references.each do |ref|
+  file_ref = ref[:project_ref]
+  next unless file_ref && File.basename(file_ref.real_path.to_s) == 'CordovaLib.xcodeproj'
+
+  cordovalib_path = file_ref.real_path.to_s
+  unless File.exist?(cordovalib_path)
+    puts "CordovaLib: referenced project not found on disk at #{cordovalib_path} — skipping."
+    next
+  end
+
+  # This whole block is best-effort defense for a legacy (cordova-ios <8.0)
+  # layout that doesn't exist in any project this plugin is actually tested
+  # against (see note above) — it must never be able to abort the surrounding
+  # `cordova prepare` run. A permissions error, a locked file, or a read-only
+  # checkout should surface as a clear one-line diagnostic and let the rest of
+  # this script (App target settings, NSE/NCE creation) proceed normally.
+  begin
+    cordovalib_project = Xcodeproj::Project.open(cordovalib_path)
+    changed = false
+    cordovalib_project.targets.each do |t|
+      t.build_configurations.each do |config|
+        current = config.build_settings['IPHONEOS_DEPLOYMENT_TARGET']
+        if current.nil? || Gem::Version.new(current.to_s) < Gem::Version.new(MIN_XCODE15_DEPLOYMENT_TARGET)
+          config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = MIN_XCODE15_DEPLOYMENT_TARGET
+          changed = true
+        end
+      end
+    end
+
+    if changed
+      cordovalib_project.save
+      puts "CordovaLib: bumped legacy subproject's IPHONEOS_DEPLOYMENT_TARGET to " \
+           "#{MIN_XCODE15_DEPLOYMENT_TARGET} at #{cordovalib_path}."
+    else
+      puts 'CordovaLib: legacy subproject found but deployment target already '\
+           "meets #{MIN_XCODE15_DEPLOYMENT_TARGET} — no change."
+    end
+  rescue StandardError => e
+    puts "CordovaLib: could not patch deployment target at #{cordovalib_path} " \
+         "(#{e.class}: #{e.message}) — skipping, App build will proceed unpatched."
+  end
+end
+
+# ---------------------------------------------------------------------------
 # 1. Ensure "Embed Foundation Extensions" copy-files phase on App target
 # ---------------------------------------------------------------------------
 
@@ -117,6 +192,39 @@ end
 app_target.build_configurations.each do |config|
   MAC_CATALYST_SETTINGS.each { |k, v| config.build_settings[k] = v }
   config.build_settings['DEVELOPMENT_TEAM'] = DEVELOPMENT_TEAM if TEAM_SET
+
+  # Defensive default only, never an overwrite — cordova-ios's own
+  # App.xcodeproj template has set SWIFT_VERSION on every configuration for
+  # years (verified: already 5.0 here). Guards this plugin's stated
+  # `cordova-ios >=7.0.0` minimum against an older/blank template that leaves
+  # it unset, which defaults new/edited targets to Swift 3 and fails to
+  # compile ConnectPlugin.swift.
+  if config.build_settings['SWIFT_VERSION'].to_s.strip.empty?
+    config.build_settings['SWIFT_VERSION'] = SWIFT_VERSION
+    puts "App: SWIFT_VERSION was unset — defaulted to #{SWIFT_VERSION}."
+  end
+
+  # $(inherited) guard, not an unconditional overwrite — the App target's
+  # LD_RUNPATH_SEARCH_PATHS is normally owned by CocoaPods' generated
+  # xcconfig include (verified: already includes $(inherited) here via
+  # `pod install`), so this only ever fires against a template/CocoaPods
+  # setup that dropped it, and never clobbers paths CocoaPods added.
+  runpaths = config.build_settings['LD_RUNPATH_SEARCH_PATHS']
+  case runpaths
+  when Array
+    unless runpaths.include?('$(inherited)')
+      config.build_settings['LD_RUNPATH_SEARCH_PATHS'] = ['$(inherited)'] + runpaths
+      puts 'App: LD_RUNPATH_SEARCH_PATHS was missing $(inherited) — prepended it.'
+    end
+  when String
+    unless runpaths.include?('$(inherited)')
+      config.build_settings['LD_RUNPATH_SEARCH_PATHS'] = "$(inherited) #{runpaths}"
+      puts 'App: LD_RUNPATH_SEARCH_PATHS was missing $(inherited) — prepended it.'
+    end
+  when nil
+    config.build_settings['LD_RUNPATH_SEARCH_PATHS'] = ['$(inherited)', '@executable_path/Frameworks']
+    puts 'App: LD_RUNPATH_SEARCH_PATHS was unset — defaulted with $(inherited).'
+  end
 end
 
 project.build_configuration_list.build_configurations.each do |config|
@@ -156,8 +264,8 @@ EXTENSIONS.each do |ext|
       bs['SKIP_INSTALL']                 = 'YES'
       bs['APPLICATION_EXTENSION_API_ONLY'] = 'YES'
       bs['CLANG_ENABLE_MODULES']         = 'YES'
-      bs['MARKETING_VERSION']            = '1.0'
-      bs['CURRENT_PROJECT_VERSION']      = '1'
+      # MARKETING_VERSION/CURRENT_PROJECT_VERSION are set below, unconditionally
+      # on every run (not just here at first creation) — see the comment there.
       bs['TARGETED_DEVICE_FAMILY']       = '1,2'
       bs['LD_RUNPATH_SEARCH_PATHS']      = [
         '$(inherited)',
@@ -177,6 +285,15 @@ EXTENSIONS.each do |ext|
   # Refresh reference after possible creation above
   target = project.targets.find { |t| t.name == ext[:name] }
   next unless target
+
+  # Re-applied on every run (not just first creation, unlike the settings block
+  # above): the host app's version can change between prepares, and a stale
+  # extension version silently reintroduces the CFBundleVersion mismatch Apple
+  # rejects at App Store submission.
+  target.build_configurations.each do |config|
+    config.build_settings['MARKETING_VERSION']       = APP_VERSION
+    config.build_settings['CURRENT_PROJECT_VERSION'] = APP_VERSION
+  end
 
   # ── Purge Cordova-injected sources ───────────────────────────────────────
   # Cordova's plugin-add injects plugin ObjC/Swift files into ALL targets,
@@ -226,6 +343,45 @@ EXTENSIONS.each do |ext|
       phases.insert(src_idx, xcfw_phase) if src_idx
     end
     puts "#{ext[:name]}: added xcframeworks locking script phase"
+  end
+
+  # Silences "will be run during every build because it does not specify any
+  # outputs" WITHOUT declaring outputs. Declaring output_paths here was tried
+  # and reverted: ${PODS_XCFRAMEWORKS_BUILD_DIR}/.../Core/Connect.framework is
+  # produced by THREE racing script phases (this one on both NSE and NCE, plus
+  # the App target's own CocoaPods-generated "[CP] Copy XCFrameworks" phase)
+  # coordinated via the lock file in XCFRAMEWORKS_SCRIPT_TEMPLATE above
+  # specifically so only one of them does the work — Xcode requires each
+  # declared output to have exactly one producer, so that caused "Multiple
+  # commands produce ... Connect.framework" and failed the build outright.
+  #
+  # always_out_of_date is the pbxproj attribute behind "Based on dependency
+  # analysis" in Xcode's own UI — the warning's own suggested alternative fix
+  # ("...or configure it to run in every build by unchecking Based on
+  # dependency analysis"). Setting it tells Xcode this phase is *intentionally*
+  # always-run, which suppresses the warning without touching outputs at all —
+  # no collision risk. The phase's own shell script already exits immediately
+  # once the frameworks exist (see the `if [ -d ... ]; then exit 0; fi` guard
+  # in XCFRAMEWORKS_SCRIPT_TEMPLATE), so this doesn't add meaningful build time
+  # — it just stops Xcode from second-guessing a script that already runs on
+  # every build today, just with a warning attached.
+  #
+  # Explicitly cleared output_paths (not just left unset) because an earlier,
+  # reverted version of this script did declare it — pbxproj is a persistent
+  # file, so simply no longer assigning it here would leave that stale value
+  # in place for any project prepared while that version was active.
+  xcfw_phase = target.build_phases.find { |p| p.respond_to?(:name) && p.name == xcfw_phase_name }
+  if xcfw_phase
+    xcfw_phase.output_paths = []
+    xcfw_phase.always_out_of_date = '1'
+  else
+    # Should be unreachable — the phase was just created or already existed
+    # under this exact name a few lines above. Logged rather than silently
+    # skipped so a future rename/refactor that breaks this lookup shows up in
+    # `cordova prepare` output instead of quietly leaving the Xcode warning in
+    # place with zero diagnostic.
+    puts "#{ext[:name]}: WARNING — xcframeworks phase '#{xcfw_phase_name}' not found; " \
+         "always_out_of_date not applied, Xcode's every-build warning will persist."
   end
 
   # ── System frameworks ─────────────────────────────────────────────────────

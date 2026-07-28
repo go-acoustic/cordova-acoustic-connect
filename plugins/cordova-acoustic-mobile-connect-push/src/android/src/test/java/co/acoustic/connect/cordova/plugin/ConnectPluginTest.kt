@@ -652,7 +652,7 @@ class ConnectPluginTest {
             ConnectPlugin.NativeConfig(useRelease = false, killSwitchEnabled = false, killSwitchUrl = null)
         )
         shadowOf(Looper.getMainLooper()).idleFor(
-            Duration.ofMillis(ConnectPlugin.KILL_SWITCH_REAPPLY_DELAY_MS - 1)
+            Duration.ofMillis(ConnectPlugin.CONFIG_REAPPLY_DELAY_MS - 1)
         )
         assertTrue(
             "expected no applyKillSwitchConfig log before the configured delay elapses",
@@ -672,7 +672,7 @@ class ConnectPluginTest {
         // null-module-guard inside the scheduled work must absorb whatever the
         // real SDK singletons do when uninitialized.
         shadowOf(Looper.getMainLooper()).idleFor(
-            Duration.ofMillis(ConnectPlugin.KILL_SWITCH_REAPPLY_DELAY_MS + 50)
+            Duration.ofMillis(ConnectPlugin.CONFIG_REAPPLY_DELAY_MS + 50)
         )
         assertTrue(
             "expected the scheduled work to have run (and logged) once the delay elapsed",
@@ -688,7 +688,7 @@ class ConnectPluginTest {
             ConnectPlugin.NativeConfig(useRelease = false, killSwitchEnabled = false, killSwitchUrl = null)
         )
         shadowOf(Looper.getMainLooper()).idleFor(
-            Duration.ofMillis(ConnectPlugin.KILL_SWITCH_REAPPLY_DELAY_MS + 50)
+            Duration.ofMillis(ConnectPlugin.CONFIG_REAPPLY_DELAY_MS + 50)
         )
         assertTrue(logsMentioning("applyKillSwitchConfig").isNotEmpty())
     }
@@ -704,11 +704,34 @@ class ConnectPluginTest {
         // mainHandler is bound to the process-wide main Looper, not this plugin
         // instance — without cancellation the callback would still fire here.
         shadowOf(Looper.getMainLooper()).idleFor(
-            Duration.ofMillis(ConnectPlugin.KILL_SWITCH_REAPPLY_DELAY_MS + 50)
+            Duration.ofMillis(ConnectPlugin.CONFIG_REAPPLY_DELAY_MS + 50)
         )
         assertTrue(
             "expected onDestroy() to cancel the pending applyKillSwitchConfig callback",
             logsMentioning("applyKillSwitchConfig").isEmpty()
+        )
+    }
+
+    // ── applyScreenCaptureConfig ───────────────────────────────────────────
+    //
+    // Unlike applyKillSwitchConfig, this runs synchronously — verified against
+    // checked-out SDK source that "Tealeaf" is registered into EOCore's module
+    // registry synchronously inside Connect.init() (independent of enable()'s
+    // internal 100ms-delayed callback) and that LogViewLayoutOnScreenTransition
+    // is only ever read by Tealeaf.java, never reset by enable(). No reset race
+    // or module-availability race to guard against, so no re-apply delay.
+    // Connect/EOCore are real SDK singletons, not mockable here, so this still
+    // drives ShadowLog to verify the observable contract (runs immediately,
+    // safe against an uninitialized SDK) rather than asserting exact
+    // Connect.updateConfig(...) call arguments.
+
+    @Test
+    fun applyScreenCaptureConfig_runsSynchronously_withoutThrowing_whenSdkNotInitialized() {
+        ShadowLog.clear()
+        plugin.applyScreenCaptureConfig(mock())
+        assertTrue(
+            "expected applyScreenCaptureConfig to log synchronously, with no looper idling needed",
+            logsMentioning("applyScreenCaptureConfig").isNotEmpty()
         )
     }
 

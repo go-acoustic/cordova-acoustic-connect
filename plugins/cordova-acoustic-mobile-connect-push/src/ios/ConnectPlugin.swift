@@ -66,13 +66,52 @@ public class ConnectPlugin: CDVPlugin {
         pushMode = modeString
         let mode = mapPushMode(modeString)
         let pushConfig = ConnectPushConfig(mode: mode, appGroupIdentifier: appGroupId)
-        // Apply the configured kill-switch state before enabling so the bundled plist's
-        // KillSwitchEnabled=true default doesn't take effect ahead of our value.
-        applyKillSwitchConfig()
-        ConnectSDK.shared.enable(appKey: appKey, postURL: postURL, push: pushConfig)
-        // Re-apply after enable() in case the SDK re-loaded bundle defaults internally.
-        applyKillSwitchConfig()
-        waitForEnabled(command)
+
+        // Captured by value (not via self) so the JS Promise can still be resolved
+        // from the guard-else branch below even if self is deallocated before the
+        // Task runs — same reasoning as waitForEnabled()'s own capture-by-value.
+        let delegate = commandDelegate
+        let callbackId: String = command.callbackId ?? ""
+
+        // Dispatched to the next main-thread run-loop turn rather than called inline:
+        // Cordova's own thread watchdog flags any plugin action that blocks the calling
+        // (main) thread for too long, and ConnectSDK.shared.enable(...) — an
+        // @MainActor-isolated, non-trivial SDK init — routinely takes 13-23ms. The
+        // actual SDK call still runs on the main thread (required — ConnectSDK is
+        // @MainActor), just one run-loop turn later, which satisfies the watchdog
+        // without violating ConnectSDK's own threading requirement.
+        Task { @MainActor [weak self] in
+            guard let self else {
+                // Plugin was deallocated (e.g. WebView torn down) before this run-loop
+                // turn ran — reject the JS Promise instead of leaving it pending forever.
+                guard !callbackId.isEmpty else { return }
+                let payload: [String: Any] = [
+                    "code": Constants.codeInternalError,
+                    "message": "enable: plugin was deallocated before SDK init could run"
+                ]
+                let result = CDVPluginResult(status: .error, messageAs: payload as [AnyHashable: Any])
+                delegate?.send(result, callbackId: callbackId)
+                return
+            }
+            // Apply the configured kill-switch state before enabling, so the bundled
+            // plist's default (KillSwitchEnabled=true) doesn't take effect ahead of
+            // our value. No re-apply after enable(): that was a defensive guess (by
+            // analogy to a confirmed Android SDK behavior, not verified against this
+            // closed-source iOS binary) rather than a fix for an observed issue —
+            // dropped until there's evidence the iOS SDK actually needs it (e.g. a
+            // Connect dashboard Raw Data check showing the pre-enable value doesn't
+            // stick).
+            //
+            // applyScreenCaptureConfig() is intentionally NOT called here: disabling
+            // screen/layout capture was a scope assumption ("this integration only
+            // needs push + identity"), not a confirmed product requirement — pending
+            // confirmation, the SDK's own default (capture on) stays in effect. The
+            // function is kept below, unused, so this can be turned on with a single
+            // call if that's later confirmed as wanted.
+            self.applyKillSwitchConfig()
+            ConnectSDK.shared.enable(appKey: appKey, postURL: postURL, push: pushConfig)
+            self.waitForEnabled(command)
+        }
     }
 
     /// JS: `AcousticConnect.disable()`
@@ -304,14 +343,38 @@ public class ConnectPlugin: CDVPlugin {
         killSwitchUrl = config["killSwitchUrl"] as? String
     }
 
-    /// Applies the configured kill-switch state to the SDK. Called both before and after
-    /// `ConnectSDK.shared.enable(...)` in `enable()`, because the SDK may re-load its
-    /// bundled plist defaults (`KillSwitchEnabled=true`) internally during that call.
+    /// Applies the configured kill-switch state to the SDK. Called once, before
+    /// `ConnectSDK.shared.enable(...)` in `enable()`, to override the bundled
+    /// plist's default (`KillSwitchEnabled=true`) ahead of it.
     private func applyKillSwitchConfig() {
         ConnectSDK.shared.setConfigurableItem("KillSwitchEnabled", value: killSwitchEnabled)
         if killSwitchEnabled, let url = killSwitchUrl, !url.isEmpty {
             ConnectSDK.shared.setKillSwitchURL(url)
         }
+    }
+
+    /// Disables native screen-capture instrumentation, unconditionally.
+    ///
+    /// NOT CURRENTLY CALLED — kept, unused, pending product confirmation. This was
+    /// written on the assumption that "the Cordova plugin offers push + identity
+    /// signals only, so the SDK's own default of capturing full UIKit view
+    /// hierarchies and screenshots on every screen adds payload size and collector
+    /// storage cost with no benefit here." That's a scope assumption, not a
+    /// confirmed requirement — pending confirmation from product (raised: does the
+    /// team actually want this data disabled, or should the SDK's own default,
+    /// capture on, stay in effect for this integration?), the default is left alone
+    /// and this function is not invoked. Wire it back into `enable()` with a single
+    /// call if/when disabling is confirmed as wanted.
+    ///
+    /// `DisableAutoInstrumentation` is documented (`TLFPublicDefinitions.h`) as a flat
+    /// configurable item in the same enumeration as `KillSwitchEnabled`, so it would be
+    /// applied via the same `setConfigurableItem` call, once, before enable() — but
+    /// unlike `KillSwitchEnabled`, its actual gating effect inside the SDK isn't
+    /// verifiable from headers alone (binary framework); confirm via a runtime check
+    /// (e.g. Connect session Raw Data tab) that no screenshot/layout payloads appear
+    /// after enabling, if this is turned on.
+    private func applyScreenCaptureConfig() {
+        ConnectSDK.shared.setConfigurableItem("DisableAutoInstrumentation", value: true)
     }
 
     // MARK: - Helpers

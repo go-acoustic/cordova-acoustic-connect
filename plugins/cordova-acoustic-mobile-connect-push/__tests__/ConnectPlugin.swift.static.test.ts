@@ -43,20 +43,49 @@ function stripSwiftComments(src: string): string {
 
 const SWIFT = stripSwiftComments(SWIFT_RAW);
 
+// Extracts a `{ ... }` block by counting braces from an opening brace, instead of
+// guessing at indentation. `anchorPattern` must match text ending in the literal
+// `{` that opens the block (e.g. /func\s+enable\s*\([^)]*\)\s*\{/ or
+// /guard\s+let\s+self\s+else\s*\{/). A lazy regex like [\s\S]*?(?=\n    }) breaks
+// as soon as ANY nested closure/guard happens to close at the same indentation as
+// the outer block — which is exactly what happened when enable() grew a
+// multi-line guard-else body: its closing brace could be mistaken for enable()'s
+// own, silently truncating the extracted block. Brace-counting has no such
+// indentation dependency, so it stays correct regardless of nesting depth.
+function extractBlock(source: string, anchorPattern: RegExp): string | undefined {
+    const match = anchorPattern.exec(source);
+    if (!match) return undefined;
+    const openBraceIndex = match.index + match[0].length - 1;
+    if (source[openBraceIndex] !== '{') return undefined;
+    let depth = 0;
+    for (let i = openBraceIndex; i < source.length; i++) {
+        if (source[i] === '{') depth++;
+        else if (source[i] === '}') {
+            depth--;
+            if (depth === 0) return source.slice(match.index, i + 1);
+        }
+    }
+    return undefined; // unbalanced braces — anchor's block never closes
+}
+
+const ENABLE_HEADER = /func\s+enable\s*\([^)]*\)\s*\{/;
+
 // ── Kill-switch bypass ─────────────────────────────────────────────────────
 
 describe('ConnectPlugin.swift — kill-switch config', () => {
-    test('applyKillSwitchConfig() appears twice in enable()', () => {
+    test('applyKillSwitchConfig() appears exactly once in enable(), before ConnectSDK.shared.enable(...)', () => {
         // Scope to enable() body so a future call in another method doesn't
-        // satisfy this count. Terminates at the first class-body-level `}` which
-        // is the function's own closing brace (inner guards close at 8+ spaces).
-        const enableBlock = SWIFT.match(
-            /func\s+enable\s*\([\s\S]*?(?=\n(?:    |\t)\})/
-        )?.[0];
+        // satisfy this count.
+        const enableBlock = extractBlock(SWIFT, ENABLE_HEADER);
         expect(enableBlock).toBeDefined();
         const matches = enableBlock!.match(/applyKillSwitchConfig\s*\(\s*\)/g);
         expect(matches).not.toBeNull();
-        expect(matches!.length).toBe(2);
+        expect(matches!.length).toBe(1);
+        // No re-apply after enable(): that was a defensive guess, not a fix for an
+        // observed issue on this closed-source iOS binary — dropped until there's
+        // evidence the SDK actually needs it.
+        expect(enableBlock!.indexOf('applyKillSwitchConfig()'))
+            .toBeLessThan(enableBlock!.indexOf('ConnectSDK.shared.enable('));
     });
 
     test('applyKillSwitchConfig applies the configured value, not a hardcoded literal', () => {
@@ -85,6 +114,74 @@ describe('ConnectPlugin.swift — kill-switch config', () => {
         expect(block).toBeDefined();
         expect(block).toMatch(/killSwitchEnabled\s*=\s*config\[\s*"killSwitchEnabled"\s*\]/);
         expect(block).toMatch(/killSwitchUrl\s*=\s*config\[\s*"killSwitchUrl"\s*\]/);
+    });
+});
+
+// ── Screen-capture config ──────────────────────────────────────────────────
+
+describe('ConnectPlugin.swift — screen-capture config', () => {
+    test('applyScreenCaptureConfig() is defined but NOT called from enable() — capture stays at the SDK default pending product confirmation', () => {
+        const enableBlock = extractBlock(SWIFT, ENABLE_HEADER);
+        expect(enableBlock).toBeDefined();
+        expect(enableBlock).not.toMatch(/applyScreenCaptureConfig\s*\(\s*\)/);
+        // The function itself must still exist (kept for future use), just unused.
+        expect(SWIFT).toMatch(/func\s+applyScreenCaptureConfig\s*\(/);
+    });
+
+    test('applyScreenCaptureConfig sets DisableAutoInstrumentation to true unconditionally', () => {
+        // Brace-counted (extractBlock), not indentation-guessed — a lazy regex
+        // terminating at the first same-indent `}` would truncate early if this
+        // function ever grows a nested closure/guard, silently passing on a
+        // partial match. See the ENABLE_HEADER/extractBlock comment above for why.
+        const block = extractBlock(SWIFT, /func\s+applyScreenCaptureConfig\s*\([^)]*\)\s*\{/);
+        expect(block).toBeDefined();
+        expect(block).toMatch(/setConfigurableItem\s*\(\s*"DisableAutoInstrumentation"\s*,\s*value:\s*true\b/);
+    });
+});
+
+// ── enable() thread dispatch ────────────────────────────────────────────────
+
+describe('ConnectPlugin.swift — enable() thread dispatch', () => {
+    test('enable() dispatches SDK work via Task, not inline, so the action handler returns immediately', () => {
+        const enableBlock = extractBlock(SWIFT, ENABLE_HEADER);
+        expect(enableBlock).toBeDefined();
+        expect(enableBlock).toMatch(/Task\s*\{\s*@MainActor\s*\[weak self\]/);
+        // ConnectSDK.shared.enable(...) itself must be inside that Task, not called
+        // synchronously before it (that would defeat the point of deferring).
+        const taskBody = enableBlock!.split(/Task\s*\{\s*@MainActor\s*\[weak self\]\s*in/)[1];
+        expect(taskBody).toBeDefined();
+        expect(taskBody).toMatch(/ConnectSDK\.shared\.enable\s*\(/);
+    });
+
+    test('argument validation (appKey/postURL/pushMode) still happens synchronously, before the Task', () => {
+        const enableBlock = extractBlock(SWIFT, ENABLE_HEADER);
+        expect(enableBlock).toBeDefined();
+        const taskIndex = enableBlock!.search(/Task\s*\{\s*@MainActor\s*\[weak self\]/);
+        expect(taskIndex).toBeGreaterThan(-1);
+        const beforeTask = enableBlock!.slice(0, taskIndex);
+        expect(beforeTask).toMatch(/appKey\.isEmpty/);
+        expect(beforeTask).toMatch(/postURL\.isEmpty/);
+        expect(beforeTask).toMatch(/validPushModes\.contains/);
+    });
+
+    test('enable() captures commandDelegate and callbackId before the Task, so the guard-else branch can still resolve the JS Promise if the plugin is deallocated', () => {
+        const enableBlock = extractBlock(SWIFT, ENABLE_HEADER);
+        expect(enableBlock).toBeDefined();
+        const taskIndex = enableBlock!.search(/Task\s*\{\s*@MainActor\s*\[weak self\]/);
+        expect(taskIndex).toBeGreaterThan(-1);
+        const beforeTask = enableBlock!.slice(0, taskIndex);
+        expect(beforeTask).toMatch(/let\s+delegate\s*=\s*commandDelegate/);
+        expect(beforeTask).toMatch(/let\s+callbackId[^=]*=\s*command\.callbackId/);
+
+        // The guard-else (self deallocated) branch must send a failure result via
+        // the captured `delegate`, not silently `return` — otherwise the JS Promise
+        // from AcousticConnect.enable(...) hangs forever with no resolve/reject.
+        // Brace-counted rather than split on a fixed indentation depth, so this
+        // stays correct regardless of how the guard-else body is indented.
+        const guardElseBody = extractBlock(enableBlock!, /guard\s+let\s+self\s+else\s*\{/);
+        expect(guardElseBody).toBeDefined();
+        expect(guardElseBody).toMatch(/delegate\??\.send/);
+        expect(guardElseBody).toMatch(/status:\s*\.error/);
     });
 });
 
