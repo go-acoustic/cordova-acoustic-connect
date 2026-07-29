@@ -29,6 +29,9 @@ public class ConnectPlugin: CDVPlugin {
     private var bridgeLogLevel: String = Constants.logLevelDefault
     private var killSwitchEnabled: Bool = false
     private var killSwitchUrl: String?
+    // nil = not configured by the app — leave the SDK's own default alone. Unlike
+    // killSwitchEnabled, this plugin does not decide a default for location logging.
+    private var locationLoggingEnabled: Bool?
 
     // MARK: - Lifecycle
 
@@ -109,6 +112,7 @@ public class ConnectPlugin: CDVPlugin {
             // function is kept below, unused, so this can be turned on with a single
             // call if that's later confirmed as wanted.
             self.applyKillSwitchConfig()
+            self.applyLocationLoggingConfig()
             ConnectSDK.shared.enable(appKey: appKey, postURL: postURL, push: pushConfig)
             self.waitForEnabled(command)
         }
@@ -314,6 +318,10 @@ public class ConnectPlugin: CDVPlugin {
     ///   killSwitchEnabled / killSwitchUrl → stored for applyKillSwitchConfig() to apply
     ///     around enable(). Default false/nil — the SDK's own bundled plist default is
     ///     `true`, so apps must opt in explicitly via ConnectConfig.json.
+    ///   locationLoggingEnabled → stored for applyLocationLoggingConfig() to apply once,
+    ///     before enable(). nil (not configured) means the SDK's own bundled default is
+    ///     left untouched — unlike killSwitchEnabled, this plugin does not force a
+    ///     default either way for location data collection.
     private func applyRuntimeConfig() {
         guard let url = Bundle.main.url(forResource: "AcousticConnectNativeConfig",
                                          withExtension: "json",
@@ -341,6 +349,10 @@ public class ConnectPlugin: CDVPlugin {
 
         killSwitchEnabled = config["killSwitchEnabled"] as? Bool ?? false
         killSwitchUrl = config["killSwitchUrl"] as? String
+        // config["locationLoggingEnabled"] is JSON `null` when not configured, which
+        // JSONSerialization surfaces as NSNull, not Swift nil — `as? Bool` correctly
+        // yields nil for both "absent" and "explicit null" cases.
+        locationLoggingEnabled = config["locationLoggingEnabled"] as? Bool
     }
 
     /// Applies the configured kill-switch state to the SDK. Called once, before
@@ -351,6 +363,27 @@ public class ConnectPlugin: CDVPlugin {
         if killSwitchEnabled, let url = killSwitchUrl, !url.isEmpty {
             ConnectSDK.shared.setKillSwitchURL(url)
         }
+    }
+
+    /// Applies the configured location-logging state to the SDK, once, before
+    /// `ConnectSDK.shared.enable(...)` — a no-op unless the app has explicitly opted
+    /// in or out via `ConnectConfig.json`'s `LocationLoggingEnabled`.
+    ///
+    /// Unlike `applyKillSwitchConfig()`, this is NOT re-applied after `enable()`:
+    /// `LogLocationEnabled` gates whether the SDK starts its location task, checked
+    /// once as part of `enable()` itself (see the Android-side equivalent,
+    /// `TLF_LOG_LOCATION_ENABLED`, read once inside `Tealeaf.java`'s `enable(String)`)
+    /// — there's no evidence of a delayed reset the way `KillSwitchEnabled` has, so a
+    /// single pre-enable apply is sufficient.
+    ///
+    /// Note: this only stops location data reaching the collector. It does NOT remove
+    /// `CoreLocation` linkage from the compiled `AcousticConnect` xcframework, so on its
+    /// own it does not resolve Apple's ITMS-90683 App Store warning (missing
+    /// `NSLocationWhenInUseUsageDescription`) — that needs either the Info.plist key
+    /// declared, or an SDK-side build variant that doesn't link CoreLocation at all.
+    private func applyLocationLoggingConfig() {
+        guard let locationLoggingEnabled else { return }
+        ConnectSDK.shared.setConfigurableItem("LogLocationEnabled", value: locationLoggingEnabled)
     }
 
     /// Disables native screen-capture instrumentation, unconditionally.

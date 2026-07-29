@@ -229,6 +229,9 @@ class ConnectPlugin : CordovaPlugin() {
                     Connect.init(activity.application)
                     val nativeConfig = readNativeConfig(activity.application)
                     applyDisplayLoggingConfig(activity.application, nativeConfig)
+                    // Must run before Connect.enable(): LogLocationEnabled is read once
+                    // inside the SDK's own enable() body (see the function's own doc).
+                    applyLocationLoggingConfig(activity.application, nativeConfig)
                     Connect.enable(appKey, postURL)
                     applyKillSwitchConfig(activity.application, nativeConfig)
                     // Screen/layout capture is deliberately left at the SDK's own
@@ -646,6 +649,11 @@ class ConnectPlugin : CordovaPlugin() {
                 // as a safety net against a future SDK version changing that internal
                 // behavior — this was verified against checked-out SDK source, not the
                 // exact pinned Maven artifact.
+                //
+                // applyLocationLoggingConfig must run before Connect.enable() too — the
+                // 0-arg path still reaches Tealeaf's enable(String sessionId) body (via
+                // enable(null)) that reads LogLocationEnabled once.
+                applyLocationLoggingConfig(activity.application, nativeConfig)
                 Connect.enable()
                 applyKillSwitchConfig(activity.application, nativeConfig)
                 // Screen/layout capture left at the SDK default here too — see
@@ -690,7 +698,10 @@ class ConnectPlugin : CordovaPlugin() {
     internal data class NativeConfig(
         val useRelease: Boolean,
         val killSwitchEnabled: Boolean,
-        val killSwitchUrl: String?
+        val killSwitchUrl: String?,
+        // null = not configured by the app — leave the SDK's own default alone. Unlike
+        // killSwitchEnabled, this plugin does not decide a default for location logging.
+        val locationLoggingEnabled: Boolean? = null
     )
 
     private fun readNativeConfig(context: Context): NativeConfig {
@@ -713,7 +724,12 @@ class ConnectPlugin : CordovaPlugin() {
             NativeConfig(
                 useRelease = obj.optBoolean("useRelease", false),
                 killSwitchEnabled = obj.optBoolean("killSwitchEnabled", false),
-                killSwitchUrl = obj.optString("killSwitchUrl", "").ifBlank { null }
+                killSwitchUrl = obj.optString("killSwitchUrl", "").ifBlank { null },
+                locationLoggingEnabled = if (obj.has("locationLoggingEnabled") && !obj.isNull("locationLoggingEnabled")) {
+                    obj.getBoolean("locationLoggingEnabled")
+                } else {
+                    null
+                }
             )
         } catch (t: Throwable) {
             NativeConfig(useRelease = false, killSwitchEnabled = false, killSwitchUrl = null)
@@ -792,6 +808,40 @@ class ConnectPlugin : CordovaPlugin() {
         }
         killSwitchRunnable = r
         mainHandler.postDelayed(r, CONFIG_REAPPLY_DELAY_MS)
+    }
+
+    /**
+     * Applies `locationLoggingEnabled` as the native SDK's `LogLocationEnabled` config —
+     * a no-op unless the app has explicitly opted in or out via `ConnectConfig.json`'s
+     * `LocationLoggingEnabled`.
+     *
+     * Must be called synchronously, BEFORE `Connect.enable(appKey, postURL)` — the
+     * opposite timing requirement from [applyKillSwitchConfig]. Confirmed via checked-out
+     * `Tealeaf.java` source: `TLF_LOG_LOCATION_ENABLED` is read exactly once, inside
+     * `enable(String sessionId)`, to decide whether to start the SDK's geolocation task —
+     * there is no delayed reset the way `KillSwitchEnabled` has, so setting it after
+     * `enable()` would be too late (the task would already have started or not, based on
+     * whatever the SDK's own default was). The "Tealeaf" module resolves immediately here
+     * too — registered synchronously inside `Connect.init()`, which this plugin always
+     * calls first — so no scheduling delay is needed for module availability either.
+     *
+     * Note: this only stops location data reaching the collector. It does NOT remove the
+     * `ACCESS_FINE_LOCATION`/`ACCESS_COARSE_LOCATION` permissions the Tealeaf AAR's own
+     * manifest declares (auto-merged into the host app's manifest regardless of this
+     * flag) — those still show up in the merged manifest either way.
+     */
+    internal fun applyLocationLoggingConfig(context: Context, config: NativeConfig) {
+        val locationLoggingEnabled = config.locationLoggingEnabled ?: return
+        try {
+            val module = Connect.getLifecycleObject("Tealeaf")
+            if (module == null) {
+                Log.w(TAG, "applyLocationLoggingConfig: \"Tealeaf\" lifecycle object not found — skipping")
+                return
+            }
+            Connect.updateConfig("LogLocationEnabled", locationLoggingEnabled.toString(), module)
+        } catch (t: Throwable) {
+            Log.w(TAG, "applyLocationLoggingConfig failed — leaving native SDK location logging at its default: ${t.message}")
+        }
     }
 
     /**

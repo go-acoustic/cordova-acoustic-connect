@@ -322,6 +322,26 @@ EXTENSIONS.each do |ext|
 
   # ── xcframeworks locking script phase (before Compile Sources) ───────────
   xcfw_phase_name = "[CP] Prepare #{SDK_VARIANT} xcframeworks"
+
+  # Remove any stale phase left over from a previous SDK_VARIANT. A
+  # Debug<->Release pod switch (useRelease toggled, then `cordova plugin
+  # rm`/`add`) changes SDK_VARIANT (AcousticConnectDebug <-> AcousticConnect)
+  # but previously left the OLD variant's phase in place — this check only
+  # ever looked for the CURRENT variant's exact name, never cleaned up a
+  # mismatched one. The stale phase's input_file_list_paths then points at a
+  # Target Support Files directory for a pod that's no longer installed, and
+  # Xcode fails hard with "Unable to load contents of file list: ...
+  # .xcfilelist" (in target 'ConnectNSE'/'ConnectNCE'). Removing any
+  # non-matching "[CP] Prepare ... xcframeworks" phase here lets a
+  # Debug<->Release switch via plugin rm/add clean up after itself, instead
+  # of requiring a full `cordova platform rm/add ios` rebuild.
+  target.build_phases.select do |p|
+    p.respond_to?(:name) && p.name.to_s.match?(/\A\[CP\] Prepare .+ xcframeworks\z/) && p.name != xcfw_phase_name
+  end.each do |stale_phase|
+    puts "#{ext[:name]}: removing stale xcframeworks phase '#{stale_phase.name}' (SDK variant changed to #{SDK_VARIANT})"
+    stale_phase.remove_from_project
+  end
+
   has_xcfw = target.build_phases.any? do |p|
     p.respond_to?(:name) && p.name == xcfw_phase_name
   end

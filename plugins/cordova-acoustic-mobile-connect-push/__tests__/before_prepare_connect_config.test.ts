@@ -27,6 +27,7 @@ function readNativeConfig(projectRoot: string): {
     useRelease: boolean;
     killSwitchEnabled: boolean;
     killSwitchUrl: string | null;
+    locationLoggingEnabled: boolean | null;
 } {
     return JSON.parse(
         fs.readFileSync(path.join(projectRoot, 'www', 'AcousticConnectNativeConfig.json'), 'utf8')
@@ -227,6 +228,31 @@ describe('ConnectBasicConfig.properties — KillSwitchEnabled (Android)', () => 
         writeConfig(tmpDir, { Connect: { ...VALID_CONFIG.Connect, KillSwitchEnabled: true } });
         hook(makeContext(tmpDir));
         expect(readProperties(tmpDir)).toContain('KillSwitchEnabled=true');
+    });
+});
+
+describe('AcousticConnectNativeConfig.json generation (locationLoggingEnabled, both platforms)', () => {
+    it('defaults locationLoggingEnabled to null when omitted — plugin does not decide for the app', () => {
+        writeConfig(tmpDir, { Connect: { ...VALID_CONFIG.Connect } });
+        hook(makeContext(tmpDir));
+        expect(readNativeConfig(tmpDir).locationLoggingEnabled).toBeNull();
+    });
+
+    it('writes locationLoggingEnabled=false when explicitly opted out', () => {
+        writeConfig(tmpDir, { Connect: { ...VALID_CONFIG.Connect, LocationLoggingEnabled: false } });
+        hook(makeContext(tmpDir));
+        expect(readNativeConfig(tmpDir).locationLoggingEnabled).toBe(false);
+    });
+
+    it('writes locationLoggingEnabled=true when explicitly opted in', () => {
+        writeConfig(tmpDir, { Connect: { ...VALID_CONFIG.Connect, LocationLoggingEnabled: true } });
+        hook(makeContext(tmpDir));
+        expect(readNativeConfig(tmpDir).locationLoggingEnabled).toBe(true);
+    });
+
+    it('throws when LocationLoggingEnabled is not a boolean', () => {
+        writeConfig(tmpDir, { Connect: { ...VALID_CONFIG.Connect, LocationLoggingEnabled: 'false' } });
+        expect(() => hook(makeContext(tmpDir))).toThrow('Connect.LocationLoggingEnabled must be a boolean');
     });
 });
 

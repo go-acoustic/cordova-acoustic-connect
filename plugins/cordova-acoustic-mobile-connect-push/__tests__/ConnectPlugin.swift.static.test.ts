@@ -117,6 +117,39 @@ describe('ConnectPlugin.swift — kill-switch config', () => {
     });
 });
 
+// ── Location-logging config ─────────────────────────────────────────────────
+
+describe('ConnectPlugin.swift — location-logging config', () => {
+    test('applyLocationLoggingConfig() appears exactly once in enable(), before ConnectSDK.shared.enable(...)', () => {
+        const enableBlock = extractBlock(SWIFT, ENABLE_HEADER);
+        expect(enableBlock).toBeDefined();
+        const matches = enableBlock!.match(/applyLocationLoggingConfig\s*\(\s*\)/g);
+        expect(matches).not.toBeNull();
+        expect(matches!.length).toBe(1);
+        expect(enableBlock!.indexOf('applyLocationLoggingConfig()'))
+            .toBeLessThan(enableBlock!.indexOf('ConnectSDK.shared.enable('));
+    });
+
+    test('applyLocationLoggingConfig is a no-op when locationLoggingEnabled is unset (tri-state, not forced on/off)', () => {
+        const block = extractBlock(SWIFT, /func\s+applyLocationLoggingConfig\s*\([^)]*\)\s*\{/);
+        expect(block).toBeDefined();
+        expect(block).toMatch(/guard\s+let\s+locationLoggingEnabled\s+else\s*\{\s*return\s*\}/);
+    });
+
+    test('applyLocationLoggingConfig applies the configured value, not a hardcoded literal', () => {
+        const block = extractBlock(SWIFT, /func\s+applyLocationLoggingConfig\s*\([^)]*\)\s*\{/);
+        expect(block).toBeDefined();
+        expect(block).toMatch(/setConfigurableItem\s*\(\s*"LogLocationEnabled"\s*,\s*value:\s*locationLoggingEnabled\b/);
+        expect(block).not.toMatch(/setConfigurableItem\s*\(\s*"LogLocationEnabled"\s*,\s*value:\s*(true|false)\b/);
+    });
+
+    test('locationLoggingEnabled is populated from AcousticConnectNativeConfig.json in applyRuntimeConfig', () => {
+        const block = extractBlock(SWIFT, /func\s+applyRuntimeConfig\s*\([^)]*\)\s*\{/);
+        expect(block).toBeDefined();
+        expect(block).toMatch(/locationLoggingEnabled\s*=\s*config\[\s*"locationLoggingEnabled"\s*\]\s*as\?\s*Bool/);
+    });
+});
+
 // ── Screen-capture config ──────────────────────────────────────────────────
 
 describe('ConnectPlugin.swift — screen-capture config', () => {

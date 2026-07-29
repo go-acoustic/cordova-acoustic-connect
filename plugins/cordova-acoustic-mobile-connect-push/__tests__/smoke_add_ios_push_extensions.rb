@@ -107,5 +107,23 @@ Dir.mktmpdir('acoustic-smoke-') do |tmp|
   embed3_ct = embed3&.files&.count { |f| %w[ConnectNSE ConnectNCE].any? { |n| f.display_name.include?(n) } }
   assert embed3_ct == 2, 'no duplicate embed entries (exactly 2 extension files)'
 
+  # ── Run 3 (SDK variant switch, e.g. useRelease false -> true) ───────────────
+  # Regression coverage for: stale "[CP] Prepare <old variant> xcframeworks"
+  # phase left behind after a Debug<->Release pod switch, whose xcfilelist no
+  # longer exists post-switch and fails the Xcode build outright.
+  new_variant = 'AcousticConnect'
+  puts "\nRun 3 (SDK variant switch #{VARIANT} -> #{new_variant}):"
+  ok3 = system(env.merge('ACOUSTIC_SDK_VARIANT' => new_variant), 'ruby', SCRIPT, exception: false)
+  assert ok3, 'third run (variant switch) exits 0'
+
+  proj4 = Xcodeproj::Project.open(proj_path)
+  %w[ConnectNSE ConnectNCE].each do |name|
+    t = proj4.targets.find { |x| x.name == name }
+    xcfw_phases = t.build_phases.select { |p| p.respond_to?(:name) && p.name&.include?('xcframeworks') }
+    assert xcfw_phases.length == 1, "#{name} has exactly one xcframeworks phase after variant switch"
+    assert xcfw_phases.first.name.include?(new_variant), "#{name}'s xcframeworks phase reflects the new variant (#{new_variant})"
+    assert xcfw_phases.none? { |p| p.name.include?(VARIANT) }, "#{name} has no stale #{VARIANT} xcframeworks phase left behind"
+  end
+
   puts "\nAll smoke tests passed.\n"
 end

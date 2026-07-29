@@ -590,6 +590,36 @@ class ConnectPluginTest {
         assertFalse(config.useRelease)
         assertFalse(config.killSwitchEnabled)
         assertEquals(null, config.killSwitchUrl)
+        assertEquals(null, config.locationLoggingEnabled)
+    }
+
+    @Test
+    fun parseNativeConfig_locationLoggingEnabled_missing_defaultsToNull() {
+        assertEquals(null, plugin.parseNativeConfig("{}").locationLoggingEnabled)
+    }
+
+    @Test
+    fun parseNativeConfig_locationLoggingEnabled_explicitNull_parsesAsNull() {
+        assertEquals(
+            null,
+            plugin.parseNativeConfig("""{"locationLoggingEnabled":null}""").locationLoggingEnabled
+        )
+    }
+
+    @Test
+    fun parseNativeConfig_locationLoggingEnabled_true_parsesAsTrue() {
+        assertEquals(
+            true,
+            plugin.parseNativeConfig("""{"locationLoggingEnabled":true}""").locationLoggingEnabled
+        )
+    }
+
+    @Test
+    fun parseNativeConfig_locationLoggingEnabled_false_parsesAsFalse() {
+        assertEquals(
+            false,
+            plugin.parseNativeConfig("""{"locationLoggingEnabled":false}""").locationLoggingEnabled
+        )
     }
 
     @Test
@@ -732,6 +762,49 @@ class ConnectPluginTest {
         assertTrue(
             "expected applyScreenCaptureConfig to log synchronously, with no looper idling needed",
             logsMentioning("applyScreenCaptureConfig").isNotEmpty()
+        )
+    }
+
+    // ── applyLocationLoggingConfig ─────────────────────────────────────────
+    //
+    // Same synchronous-application reasoning as applyScreenCaptureConfig — plus a
+    // tri-state contract unique to this key: null (not configured by the app) must
+    // be a true no-op, since this plugin never decides a default for location
+    // logging the way it does for the kill switch.
+
+    @Test
+    fun applyLocationLoggingConfig_isNoOp_whenNotConfigured() {
+        ShadowLog.clear()
+        plugin.applyLocationLoggingConfig(
+            mock(),
+            ConnectPlugin.NativeConfig(useRelease = false, killSwitchEnabled = false, killSwitchUrl = null, locationLoggingEnabled = null)
+        )
+        assertTrue(
+            "expected no applyLocationLoggingConfig log at all when locationLoggingEnabled is null",
+            logsMentioning("applyLocationLoggingConfig").isEmpty()
+        )
+    }
+
+    @Test
+    fun applyLocationLoggingConfig_attemptsToApply_whenExplicitlyConfigured() {
+        ShadowLog.clear()
+        plugin.applyLocationLoggingConfig(
+            mock(),
+            ConnectPlugin.NativeConfig(useRelease = false, killSwitchEnabled = false, killSwitchUrl = null, locationLoggingEnabled = false)
+        )
+        // The SDK is uninitialized in this Robolectric test, so
+        // Connect.getLifecycleObject("Tealeaf") returns null and the warning branch
+        // fires — but asserting THIS SPECIFIC message (not just any log mentioning
+        // the function name) proves the guard-let-locationLoggingEnabled did NOT
+        // return early: it reached the lifecycle-object lookup instead of silently
+        // no-op'ing, which is exactly what distinguishes this from the null-config
+        // case in applyLocationLoggingConfig_isNoOp_whenNotConfigured (zero logs).
+        // A looser "any log mentioning applyLocationLoggingConfig" check would pass
+        // just as vacuously if the guard always returned early and this warning were
+        // the only reachable line — asserting the exact warning text rules that out.
+        assertTrue(
+            "expected applyLocationLoggingConfig to attempt the Tealeaf lookup (not return early) when explicitly configured",
+            logsMentioning("applyLocationLoggingConfig: \"Tealeaf\" lifecycle object not found").isNotEmpty()
         )
     }
 

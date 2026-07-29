@@ -118,6 +118,17 @@ module.exports = function (context) {
     }
     const killSwitchEnabled = connect.KillSwitchEnabled === true;
 
+    if (connect.LocationLoggingEnabled !== undefined && typeof connect.LocationLoggingEnabled !== 'boolean') {
+        throw new Error('ConnectConfig.json: Connect.LocationLoggingEnabled must be a boolean (got ' + typeof connect.LocationLoggingEnabled + ')');
+    }
+    // Tri-state, unlike killSwitchEnabled/useRelease: null means "not configured,
+    // leave the native SDK's own default alone" — this plugin does not decide
+    // whether location data collection is on or off unless the app explicitly
+    // opts in either direction.
+    const locationLoggingEnabled = connect.LocationLoggingEnabled === undefined
+        ? null
+        : connect.LocationLoggingEnabled;
+
     // ── www/js/connect-config.js (JS layer, both platforms) ──────────────
     const jsConfig = {
         AppKey:                appKey,
@@ -177,10 +188,21 @@ module.exports = function (context) {
     //       and computes its own kill-switch URL. So ConnectPlugin.kt must re-apply the
     //       configured value via Connect.updateConfig(...) AFTER that delay to make either
     //       value (true or false) actually stick.
+    //   locationLoggingEnabled (boolean|null, default null) — controls the native SDK's
+    //   location data collection (kConfigurableItemLogLocationEnabled/"LogLocationEnabled"
+    //   on iOS, TLF_LOG_LOCATION_ENABLED on Android — both read once, before enable() is
+    //   called, not re-checked afterward like KillSwitchEnabled). Unlike useRelease/
+    //   killSwitchEnabled, this plugin does NOT force a default: null means "leave the
+    //   SDK's own bundled default alone." Setting this only stops location data reaching
+    //   the collector — it does NOT remove CoreLocation linkage from the compiled iOS
+    //   xcframework, so it does not by itself resolve Apple's ITMS-90683 App Store
+    //   warning (missing NSLocationWhenInUseUsageDescription); that requires either
+    //   declaring the Info.plist key or an SDK-side build without CoreLocation linked.
     const nativeConfig = {
         useRelease: useRelease,
         killSwitchEnabled: killSwitchEnabled,
         killSwitchUrl: killSwitchUrl || null,
+        locationLoggingEnabled: locationLoggingEnabled,
     };
     const wwwDir = path.join(projectRoot, 'www');
     fs.mkdirSync(wwwDir, { recursive: true });

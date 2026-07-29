@@ -54,6 +54,7 @@ Create `ConnectConfig.json` at your Cordova project root (gitignored — never c
 | `AndroidNotificationIconResName` | Drawable resource name for the push notification icon on Android. Fallback chain: your name → the plugin's bundled `ic_notification` (correct default — launcher icons crash at delivery) → `ic_launcher` (legacy) → the SDK's own default. |
 | `KillSwitchEnabled` | `false` (default) or `true`. Controls the native SDK's remote kill switch on both platforms — see below. The SDK's own bundled default is `true`; this plugin defaults it `false` so apps must opt in explicitly. |
 | `KillSwitchUrl` | Remote kill-switch check URL. Only takes effect when `KillSwitchEnabled: true`. |
+| `LocationLoggingEnabled` | Optional. Omit the field (or set `null`) to leave the native SDK's own default untouched — unlike `KillSwitchEnabled`, this plugin does **not** force a default either way. Set `true`/`false` to explicitly opt in/out of the SDK's location data collection. Only stops location data reaching the collector — does **not** remove `CoreLocation` linkage from the compiled iOS SDK, so on its own it does not resolve Apple's `ITMS-90683` App Store warning (missing `NSLocationWhenInUseUsageDescription`); that still needs either the Info.plist key declared or an SDK-side build without CoreLocation linked. |
 
 ### Kill switch
 
@@ -71,7 +72,15 @@ The plugin's `before_prepare` hook reads this file on every `cordova prepare` / 
 
 The flag reaches Android via `www/AcousticConnectNativeConfig.json` (generated alongside the iOS native config, bundled into `assets/www/` by Cordova) — deliberately not via an app-level `EOCoreBasicConfig.properties` asset override, since Android's asset merge replaces the *entire* file on a name collision and the SDK's bundled default carries several other required keys (e.g. `PostMessageTimeInterval`) that a partial override would silently drop, crashing at `enable()` time.
 
-Android reads the flag fresh on every build; iOS bakes the CocoaPods pod name into `plugin.xml` when the plugin is installed, so after changing `useRelease` you must remove and re-add the plugin for it to take effect.
+Android reads the flag fresh on every build; iOS bakes the CocoaPods pod name into `plugin.xml` when the plugin is installed, so after changing `useRelease` you must remove and re-add the plugin for it to take effect:
+
+```sh
+npx cordova plugin rm co.acoustic.connect.push
+npx cordova plugin add cordova-acoustic-connect
+npx cordova prepare ios
+```
+
+A full `cordova platform rm ios && cordova platform add ios` is **not** required for this — earlier versions of the plugin left a stale `"[CP] Prepare AcousticConnectDebug xcframeworks"` (or `AcousticConnect`) script phase behind on the `ConnectNSE`/`ConnectNCE` targets after a Debug↔Release switch, whose referenced `.xcfilelist` no longer existed post-switch and failed the build with `Unable to load contents of file list: ...`. The plugin's `after_prepare` hook now removes any such stale phase from a previous SDK variant before adding the current one, so the lighter `plugin rm`/`add` workflow above is sufficient.
 
 Note: `useRelease` only controls the native SDK's own logcat output. The plugin bridge's own log level (`ConnectPlugin.kt`) is set separately via `AcousticConnect.setLogLevel()` from JavaScript.
 
