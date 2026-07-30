@@ -2,21 +2,32 @@ Acoustic Connect for Cordova
 
 New Features
 
-- Unified `AcousticConnect` JavaScript API (Promise-based), available both as a
-  CommonJS/ES module export and as a global `window.AcousticConnect`
-- `AcousticConnect.enable(appKey, postURL, pushMode?, options?)` — initializes the
-  native iOS and Android Connect SDKs
-- `AcousticConnect.logIdentity(...)` — logs identity signals (e.g. login,
-  registration) to Connect
-- `AcousticConnect.push` namespace — permission requests (`requestPermission`,
-  `getPermissionState`) and manual-mode forwarders (`didReceiveNotification`,
-  `didReceiveResponse`) for apps that own their own native push delegate
-- `AcousticConnect.setLogLevel(...)` and `AcousticConnect.disable()`
-- Automatic and manual push modes, selectable via `enable()`
-- `ConnectConfig.json`-driven configuration, including a `useRelease` flag that
-  switches between debug/release native SDK variants with no build-time flag
-- TypeScript type definitions shipped with the package
-- Sample Cordova app (`applications/Demo`) demonstrating setup end-to-end
+- Opt-in remote kill switch control via `KillSwitchEnabled`/`KillSwitchUrl` in
+  `ConnectConfig.json` — both native SDKs ship with the kill switch on by
+  default, but this plugin forces it off unless the app explicitly opts in
+- Opt-in location-logging control via `LocationLoggingEnabled` in
+  `ConnectConfig.json` — tri-state: omit or set `null` to leave the native
+  SDK's own default untouched, or explicitly opt in/out of location data
+  collection
+- `AndroidVersion`/`iOSVersion` config fields to pin a specific native Connect
+  SDK version instead of the plugin's bundled default
+
+Fixes
+
+- iOS rich push (NSE/NCE) extensions' `CFBundleVersion`/`CFBundleShortVersionString`
+  now automatically track the host app's own version, fixing an App Store
+  submission blocker (Apple rejects a mismatch between an app extension's
+  version and its containing app's)
+- Fixed a build failure when switching `useRelease` (Debug ↔ Release) via
+  `cordova plugin rm`/`add` — a stale xcframeworks build-phase reference left
+  over from the previous SDK variant is now cleaned up automatically, so a
+  full `cordova platform rm`/`add ios` rebuild is no longer required
+- Fixed duplicate push token-registration logs and a duplicate Cordova bridge
+  callback warning on Android, caused by a race between the bundled auto-init
+  path and an explicit `enable()` call both running push setup
+- iOS `enable()` no longer blocks Cordova's own thread watchdog — native SDK
+  initialization is now deferred by one run-loop turn instead of running
+  synchronously on the calling thread
 
 
 Known Issues
