@@ -62,7 +62,18 @@ EXTENSIONS = [
 # bridge class is compiled. The file copy is handled by after_prepare.js; this
 # script registers it in the pbxproj. The path is relative to SRCROOT.
 PLUGIN_COMPILE_FILES = [
-  { path: "App/Plugins/co.acoustic.connect.push/ConnectPlugin.swift", type: 'sourcecode.swift' },
+  {
+    path: "App/Plugins/co.acoustic.connect.push/ConnectPlugin.swift",
+    type: 'sourcecode.swift',
+    # Real, physical group a freshly-created reference is parented under —
+    # NOT a group per path segment below this point (see the fix comment at
+    # its point of use for why). Paired explicitly here rather than derived
+    # from `path` via File.dirname(File.dirname(...)): a derived depth
+    # assumption breaks silently (wrong group, no error) if `path` ever
+    # gains/loses a segment; an explicit, paired anchor fails loudly instead
+    # (see the start_with? check at its point of use).
+    group_anchor: "App/Plugins",
+  },
 ].freeze
 
 # Locking wrapper script: prevents concurrent NSE/NCE builds from racing on
@@ -431,20 +442,110 @@ end
 app_sources = app_target.source_build_phase
 if app_sources
   PLUGIN_COMPILE_FILES.each do |pf|
+    expected_path = pf[:path]
+    basename = File.basename(expected_path)
+
+    # Purge any stale reference for this file whose actual (group-hierarchy)
+    # path doesn't match the current expected, subdirectoried location — both
+    # from Compile Sources and from the project's file list generally.
+    #
+    # Previously this matched by basename suffix only ("ends_with?(basename)"),
+    # not the full path, so a stale reference at an older/wrong location (e.g.
+    # a bare "Plugins/ConnectPlugin.swift", missing the per-plugin-id
+    # subdirectory this file actually lives in on disk — see
+    # copyPluginSourceFiles() in after_prepare.js) was treated as "already
+    # present" / reused as-is, and never replaced. Xcode then tries to compile
+    # a PBXBuildFile pointing at a path that doesn't exist, failing the build
+    # with "Build input file cannot be found: .../Plugins/ConnectPlugin.swift"
+    # — reported against a real cordova-ios 7.x app after a useRelease
+    # false->true `plugin rm`/`add` cycle. pbxproj is edited in place across
+    # those cycles (never regenerated from scratch), so a stale reference like
+    # this survives indefinitely once introduced.
+    #
+    # full_path (not path, which is only relative to the immediate parent
+    # group) reconstructs the SRCROOT-relative path through the whole group
+    # hierarchy — confirmed against a real generated project that it exactly
+    # matches PLUGIN_COMPILE_FILES' own path format.
+    stale_build_files = app_sources.files.select do |bf|
+      ref = bf.file_ref
+      ref && ref.path.to_s.end_with?(basename) && ref.full_path.to_s != expected_path
+    end
+    stale_build_files.each do |bf|
+      puts "App: removing stale Compile Sources entry '#{bf.file_ref.full_path}' for #{basename} (expected #{expected_path})"
+      app_sources.remove_build_file(bf)
+    end
+
+    stale_refs = project.files.select do |f|
+      f.path.to_s.end_with?(basename) && f.full_path.to_s != expected_path
+    end
+    stale_refs.each do |f|
+      puts "App: removing stale file reference '#{f.full_path}' for #{basename} (expected #{expected_path})"
+      f.remove_from_project
+    end
+
     already_present = app_sources.files.any? do |bf|
       ref = bf.file_ref
-      ref && (ref.path || '').end_with?(File.basename(pf[:path]))
+      ref && ref.full_path.to_s == expected_path
     end
     next if already_present
 
     # Reuse an existing PBXFileReference if present anywhere in the project.
-    basename = File.basename(pf[:path])
-    ref = project.files.find { |f| (f.path || '').end_with?(basename) && (f.path || '').include?('Plugins') }
+    ref = project.files.find { |f| f.full_path.to_s == expected_path }
 
     unless ref
-      group_path = File.dirname(pf[:path])
-      group = project.main_group.find_subpath(group_path, true)
-      ref   = group.new_reference(basename)
+      # Parent under the real, physical "Plugins" group (the one Cordova's own
+      # plugman uses, with an actual .path set) — NOT a group per path segment.
+      # find_subpath(..., true) creates any missing intermediate group with
+      # .path = nil (Xcode's own convention for a name-only/virtual group,
+      # e.g. the plugin-id folder shown in the file navigator), and full_path
+      # silently skips concatenating a nil-path group. Nesting a group per
+      # segment down to the plugin ID, as an earlier version of this code did,
+      # produced a virtual "co.acoustic.connect.push" group with no .path, so
+      # the reference's full_path silently dropped that whole segment
+      # ("App/Plugins/ConnectPlugin.swift" instead of
+      # "App/Plugins/co.acoustic.connect.push/ConnectPlugin.swift") — the file
+      # reference resolved to the same nonexistent parent-level path as the
+      # original bug this code exists to purge. Confirmed by inspecting a real
+      # generated project: the correct reference has parent group "Plugins"
+      # (.path == "Plugins") and the file's own .path is
+      # "co.acoustic.connect.push/ConnectPlugin.swift" — the subdirectory is
+      # embedded in the file reference's path string, not a separate group.
+      #
+      # In every real cordova-ios-generated project "App"/"Plugins" already
+      # exist with real .path values set by cordova-ios's own template, so
+      # the walk below always finds (never creates) them here. The
+      # explicit-path helper only matters for a hypothetical project missing
+      # that structure — it keeps this script correct regardless of what
+      # already exists, rather than relying on it.
+      #
+      # group_anchor is paired explicitly with pf[:path] (not derived via
+      # File.dirname(File.dirname(...))) so a future change to path's depth
+      # fails loudly here instead of silently parenting the reference under
+      # the wrong group.
+      plugins_dir = pf.fetch(:group_anchor)
+      unless expected_path.start_with?("#{plugins_dir}/")
+        raise "PLUGIN_COMPILE_FILES misconfigured: path #{expected_path.inspect} " \
+              "does not start with group_anchor #{plugins_dir.inspect}"
+      end
+      relative_path = expected_path.sub(/\A#{Regexp.escape(plugins_dir)}\//, '')
+      group = plugins_dir.split('/').reduce(project.main_group) do |parent, segment|
+        child = parent.children.find { |c| c.respond_to?(:display_name) && c.display_name == segment }
+        if child
+          # Found by name, but verify — not just assume — its .path actually
+          # matches. Reusing a same-named group whose .path is nil or wrong
+          # would silently reproduce this exact bug one level up the
+          # hierarchy: full_path skips concatenating a mismatched/nil-path
+          # group, so the reference would resolve to a shorter path than
+          # intended, same failure mode as the original stale reference this
+          # code exists to purge.
+          child.set_path(segment) unless child.path == segment
+        else
+          child = parent.new_group(segment)
+          child.set_path(segment)
+        end
+        child
+      end
+      ref = group.new_reference(relative_path)
     end
 
     app_sources.add_file_reference(ref) if ref

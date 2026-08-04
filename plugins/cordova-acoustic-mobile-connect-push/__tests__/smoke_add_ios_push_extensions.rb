@@ -125,5 +125,67 @@ Dir.mktmpdir('acoustic-smoke-') do |tmp|
     assert xcfw_phases.none? { |p| p.name.include?(VARIANT) }, "#{name} has no stale #{VARIANT} xcframeworks phase left behind"
   end
 
+  # ── Run 4 (stale ConnectPlugin.swift reference recovery) ────────────────────
+  # Regression coverage for a real bug report: after a plugin rm/add cycle, a
+  # stale PBXFileReference/PBXBuildFile for ConnectPlugin.swift at the bare
+  # parent path ("App/Plugins/ConnectPlugin.swift", missing the per-plugin-id
+  # subdirectory the file actually lives in on disk) survived because the
+  # previous matching logic only checked basename suffix, not the full path —
+  # Xcode then failed the build with "Build input file cannot be found"
+  # since no file exists at that stale path. Reproduced end-to-end against a
+  # real generated project and confirmed a real xcodebuild fails/succeeds
+  # accordingly; this asserts the pbxproj-level recovery in isolation.
+  expected_path = 'App/Plugins/co.acoustic.connect.push/ConnectPlugin.swift'
+
+  puts "\nRun 4 (stale ConnectPlugin.swift reference recovery):"
+  proj5 = Xcodeproj::Project.open(proj_path)
+  app5  = proj5.targets.find { |t| t.name == 'App' }
+  sources5 = app5.source_build_phase
+
+  correct_ct = proj5.files.count { |f| f.full_path.to_s == expected_path }
+  assert correct_ct == 1, 'exactly one correct ConnectPlugin.swift reference before corruption'
+
+  # Simulate the bug: remove the correct reference, add a stale bare one.
+  sources5.files.select { |bf| bf.file_ref && bf.file_ref.path.to_s.include?('ConnectPlugin') }.each do |bf|
+    sources5.remove_build_file(bf)
+  end
+  proj5.files.select { |f| f.full_path.to_s == expected_path }.each(&:remove_from_project)
+  plugins_group = proj5.main_group.find_subpath('App/Plugins', false)
+  stale_ref = plugins_group.new_reference('ConnectPlugin.swift')
+  sources5.add_file_reference(stale_ref)
+  proj5.save
+
+  ok4 = system(env.merge('ACOUSTIC_SDK_VARIANT' => new_variant), 'ruby', SCRIPT, exception: false)
+  assert ok4, 'fourth run (stale reference recovery) exits 0'
+
+  proj6 = Xcodeproj::Project.open(proj_path)
+  app6  = proj6.targets.find { |t| t.name == 'App' }
+
+  matching_refs = proj6.files.select { |f| f.full_path.to_s.end_with?('ConnectPlugin.swift') }
+  assert matching_refs.length == 1, 'exactly one ConnectPlugin.swift reference after recovery (stale one purged)'
+  assert matching_refs.first.full_path.to_s == expected_path, 'surviving reference is at the correct, full subdirectoried path'
+
+  compile_sources_refs = app6.source_build_phase.files.select { |bf| bf.file_ref && bf.file_ref.full_path.to_s.end_with?('ConnectPlugin.swift') }
+  assert compile_sources_refs.length == 1, 'exactly one ConnectPlugin.swift entry in Compile Sources after recovery'
+  assert compile_sources_refs.first.file_ref.full_path.to_s == expected_path, 'Compile Sources entry is at the correct, full subdirectoried path'
+
+  # ── Run 5 (idempotency after recovery) ───────────────────────────────────────
+  # Guards against a second regression found while fixing this: creating the
+  # ConnectPlugin.swift reference via a group per path segment (rather than
+  # under the real physical "Plugins" group with the subdirectory embedded in
+  # the file's own relative path) produced a virtual, unpathed intermediate
+  # group — full_path silently dropped that segment, so every subsequent run
+  # saw a "mismatch" and re-purged/re-created the same reference forever.
+  puts "\nRun 5 (idempotency after recovery):"
+  ok5 = system(env.merge('ACOUSTIC_SDK_VARIANT' => new_variant), 'ruby', SCRIPT, exception: false)
+  assert ok5, 'fifth run exits 0'
+
+  proj7 = Xcodeproj::Project.open(proj_path)
+  app7  = proj7.targets.find { |t| t.name == 'App' }
+  final_refs = proj7.files.select { |f| f.full_path.to_s.end_with?('ConnectPlugin.swift') }
+  assert final_refs.length == 1, 'still exactly one ConnectPlugin.swift reference — no re-purge churn on a stable project'
+  final_cs = app7.source_build_phase.files.select { |bf| bf.file_ref && bf.file_ref.full_path.to_s.end_with?('ConnectPlugin.swift') }
+  assert final_cs.length == 1, 'still exactly one Compile Sources entry — no re-purge churn on a stable project'
+
   puts "\nAll smoke tests passed.\n"
 end
