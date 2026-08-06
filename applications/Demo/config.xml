@@ -26,6 +26,11 @@
     <platform name="ios">
         <preference name="deployment-target" value="15.1" />
         <preference name="SplashScreenBackgroundColor" value="0xFFFFFFFF" />
+        <!-- Demo/sample app only — never shipped to end users. Makes the WKWebView inspectable
+             (iOS 16.4+) even in release builds so Appium can attach to the WEBVIEW context for UI
+             automation (the E2E tests run against a release .ipa). Release WebViews are not
+             inspectable by default; a production app that ships to users must NOT enable this. -->
+        <preference name="InspectableWebview" value="true" />
         <hook type="after_prepare" src="hooks/after_prepare_entitlements.js" />
     </platform>
 </widget>

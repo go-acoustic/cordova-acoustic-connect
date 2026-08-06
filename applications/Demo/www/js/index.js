@@ -30,7 +30,7 @@ function onDeviceReady() {
     });
 
     // ── Notification tab ────────────────────────────────────────────
-    document.getElementById('btnEnablePush').addEventListener('click', () => {
+    document.getElementById('btn_enable_push').addEventListener('click', () => {
         exec('pushRequestPermission', [], (result) => {
             const granted = result && (result.granted === true || result.granted === 'true');
             updateAuthStatus(
@@ -48,8 +48,8 @@ function onDeviceReady() {
     document.addEventListener('resume', refreshPermissionState, false);
 
     // ── Identity tab ────────────────────────────────────────────────
-    document.getElementById('btnLogLoggedIn').addEventListener('click', logUserLoggedIn);
-    document.getElementById('btnLogRegistered').addEventListener('click', logUserRegistered);
+    document.getElementById('btn_send_identity_signal').addEventListener('click', logUserLoggedIn);
+    document.getElementById('btn_send_account_registered_signal').addEventListener('click', logUserRegistered);
 
     loadHistory();
     restoreSession();
@@ -84,9 +84,9 @@ function initSdk() {
 // Called when enable() completes (Android: turnOnPush succeeded; iOS: SDK ready).
 // Push is configured — enable all buttons and read current permission state.
 function onSdkEnabled() {
-    document.getElementById('btnLogLoggedIn').disabled  = false;
-    document.getElementById('btnLogRegistered').disabled = false;
-    document.getElementById('btnEnablePush').disabled   = false;
+    document.getElementById('btn_send_identity_signal').disabled  = false;
+    document.getElementById('btn_send_account_registered_signal').disabled = false;
+    document.getElementById('btn_enable_push').disabled   = false;
     refreshPermissionState();
 }
 
@@ -173,8 +173,8 @@ function logUserRegistered() {
 }
 
 function sendIdentitySignal(signalType, additionalParameters) {
-    const name    = document.getElementById('identName').value.trim();
-    const value   = document.getElementById('identValue').value.trim();
+    const name    = document.getElementById('et_identifier_name').value.trim();
+    const value   = document.getElementById('et_identifier_value').value.trim();
     const statusEl = document.getElementById('identStatus');
 
     if (!name || !value) {
@@ -234,8 +234,8 @@ function renderHistory() {
         li.addEventListener('click', () => {
             const entry = identityHistory[parseInt(li.dataset.index, 10)];
             if (!entry) return;
-            document.getElementById('identName').value  = entry.name;
-            document.getElementById('identValue').value = entry.value;
+            document.getElementById('et_identifier_name').value  = entry.name;
+            document.getElementById('et_identifier_value').value = entry.value;
             document.getElementById('identStatus').className = 'ident-status hidden';
         });
     });
