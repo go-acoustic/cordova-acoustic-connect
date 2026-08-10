@@ -46,7 +46,7 @@ Dir.mktmpdir('acoustic-smoke-') do |tmp|
     dir = File.join(tmp, ext)
     FileUtils.mkdir_p(dir)
     File.write(File.join(dir, src),               "// placeholder\n")
-    File.write(File.join(dir, 'Info.plist'),       "<?xml version=\"1.0\"?><plist version=\"1.0\"><dict/></plist>\n")
+    File.write(File.join(dir, "#{ext}-Info.plist"), "<?xml version=\"1.0\"?><plist version=\"1.0\"><dict/></plist>\n")
     File.write(File.join(dir, "#{ext}.entitlements"), "<?xml version=\"1.0\"?><plist version=\"1.0\"><dict/></plist>\n")
   end
 
@@ -75,6 +75,13 @@ Dir.mktmpdir('acoustic-smoke-') do |tmp|
     xcfw_idx = t.build_phases.index { |p| p.respond_to?(:name) && p.name&.include?('xcframeworks') }
     assert xcfw_idx && src_idx && xcfw_idx < src_idx,
            "#{name} xcframeworks phase is before Compile Sources"
+
+    # The entire point of this script's *-Info.plist naming is that
+    # cordova-ios's pbxproj parser requires it — assert the build setting
+    # itself, not just that the target exists.
+    expected_plist = "#{name}/#{name}-Info.plist"
+    bad_setting = t.build_configurations.reject { |c| c.build_settings['INFOPLIST_FILE'] == expected_plist }
+    assert bad_setting.empty?, "#{name} INFOPLIST_FILE is '#{expected_plist}' in every configuration"
   end
 
   app = proj2.targets.find { |t| t.name == 'App' }
@@ -186,6 +193,45 @@ Dir.mktmpdir('acoustic-smoke-') do |tmp|
   assert final_refs.length == 1, 'still exactly one ConnectPlugin.swift reference — no re-purge churn on a stable project'
   final_cs = app7.source_build_phase.files.select { |bf| bf.file_ref && bf.file_ref.full_path.to_s.end_with?('ConnectPlugin.swift') }
   assert final_cs.length == 1, 'still exactly one Compile Sources entry — no re-purge churn on a stable project'
+
+  # ── Run 6 (legacy bare "Info.plist" migration) ───────────────────────────────
+  # Simulates a project whose ConnectNSE/ConnectNCE target was created by a
+  # pre-fix version of this script: INFOPLIST_FILE pointing at the bare
+  # "Info.plist" and a matching stale group reference. The `unless target`
+  # creation block never runs again for an existing target, so this has to be
+  # healed by the "every run" migration section, not the creation path.
+  puts "\nRun 6 (legacy bare Info.plist migration):"
+  proj8 = Xcodeproj::Project.open(proj_path)
+
+  %w[ConnectNSE ConnectNCE].each do |name|
+    t = proj8.targets.find { |x| x.name == name }
+    legacy_path = "#{name}/Info.plist"
+    correct_path = "#{name}/#{name}-Info.plist"
+
+    t.build_configurations.each { |c| c.build_settings['INFOPLIST_FILE'] = legacy_path }
+
+    group = proj8.main_group.find_subpath(name, false)
+    group.files.select { |f| f.path == correct_path }.each(&:remove_from_project)
+    group.new_reference(legacy_path)
+  end
+  proj8.save
+
+  ok6 = system(env.merge('ACOUSTIC_SDK_VARIANT' => new_variant), 'ruby', SCRIPT, exception: false)
+  assert ok6, 'sixth run (legacy migration) exits 0'
+
+  proj9 = Xcodeproj::Project.open(proj_path)
+  %w[ConnectNSE ConnectNCE].each do |name|
+    t = proj9.targets.find { |x| x.name == name }
+    legacy_path = "#{name}/Info.plist"
+    correct_path = "#{name}/#{name}-Info.plist"
+
+    bad_setting = t.build_configurations.reject { |c| c.build_settings['INFOPLIST_FILE'] == correct_path }
+    assert bad_setting.empty?, "#{name} INFOPLIST_FILE migrated to '#{correct_path}'"
+
+    group = proj9.main_group.find_subpath(name, false)
+    assert group.files.none? { |f| f.path == legacy_path }, "#{name} stale '#{legacy_path}' reference removed"
+    assert group.files.one? { |f| f.path == correct_path }, "#{name} exactly one '#{correct_path}' reference"
+  end
 
   puts "\nAll smoke tests passed.\n"
 end

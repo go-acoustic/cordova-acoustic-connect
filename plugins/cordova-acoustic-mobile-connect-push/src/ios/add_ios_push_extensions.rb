@@ -259,14 +259,22 @@ EXTENSIONS.each do |ext|
     group      = project.main_group.find_subpath(ext[:name], true)
     source_ref = group.new_reference("#{ext[:name]}/#{ext[:source]}")
     target.add_file_references([source_ref])
-    group.new_reference("#{ext[:name]}/Info.plist")
-    group.new_reference("#{ext[:name]}/#{ext[:name]}.entitlements")
+    plist_path       = "#{ext[:name]}/#{ext[:name]}-Info.plist"
+    entitlements_path = "#{ext[:name]}/#{ext[:name]}.entitlements"
+    group.new_reference(plist_path)       unless group.files.any? { |f| f.path == plist_path }
+    group.new_reference(entitlements_path) unless group.files.any? { |f| f.path == entitlements_path }
 
     target.build_configurations.each do |config|
       bs = config.build_settings
       bs['PRODUCT_BUNDLE_IDENTIFIER']    = "#{APP_BUNDLE_ID}.#{ext[:suffix]}"
       bs['PRODUCT_NAME']                 = '$(TARGET_NAME)'
-      bs['INFOPLIST_FILE']               = "#{ext[:name]}/Info.plist"
+      # cordova-ios's own pbxproj parser (used on every `prepare`/`build`, not just
+      # ours) scans all native targets for a file matching *-Info.plist and throws
+      # "Could not find *-Info.plist file, or config.xml file." if a target's
+      # INFOPLIST_FILE doesn't match — a plain "Info.plist" (the usual Xcode
+      # extension-target default) fails that check on the *second* prepare, once
+      # this target already exists. Must stay prefixed with the target name.
+      bs['INFOPLIST_FILE']               = "#{ext[:name]}/#{ext[:name]}-Info.plist"
       bs['GENERATE_INFOPLIST_FILE']      = 'NO'
       bs['CODE_SIGN_ENTITLEMENTS']       = "#{ext[:name]}/#{ext[:name]}.entitlements"
       bs['CODE_SIGN_STYLE']              = 'Automatic'
@@ -304,6 +312,36 @@ EXTENSIONS.each do |ext|
   target.build_configurations.each do |config|
     config.build_settings['MARKETING_VERSION']       = APP_VERSION
     config.build_settings['CURRENT_PROJECT_VERSION'] = APP_VERSION
+  end
+
+  # ── Migrate legacy bare "Info.plist" -> "<Ext>-Info.plist" ──────────────
+  # Projects whose target predates this fix still have INFOPLIST_FILE
+  # pointing at the old bare "Info.plist" and a matching stale
+  # PBXFileReference in the group — the `unless target` block above only
+  # runs at creation, so it never touches an already-existing target.
+  # Re-applied on every run, like MARKETING_VERSION above, so upgrading the
+  # plugin heals existing projects instead of only fixing new ones.
+  legacy_plist_path  = "#{ext[:name]}/Info.plist"
+  correct_plist_path = "#{ext[:name]}/#{ext[:name]}-Info.plist"
+
+  target.build_configurations.each do |config|
+    if config.build_settings['INFOPLIST_FILE'] == legacy_plist_path
+      puts "#{ext[:name]}: migrating INFOPLIST_FILE #{legacy_plist_path} -> #{correct_plist_path}"
+      config.build_settings['INFOPLIST_FILE'] = correct_plist_path
+    end
+  end
+
+  plist_group = project.main_group.find_subpath(ext[:name], false)
+  if plist_group
+    stale_plist_ref = plist_group.files.find { |f| f.path == legacy_plist_path }
+    if stale_plist_ref
+      puts "#{ext[:name]}: removing stale file reference '#{legacy_plist_path}'"
+      stale_plist_ref.remove_from_project
+    end
+
+    unless plist_group.files.any? { |f| f.path == correct_plist_path }
+      plist_group.new_reference(correct_plist_path)
+    end
   end
 
   # ── Purge Cordova-injected sources ───────────────────────────────────────
