@@ -147,6 +147,14 @@ public class ConnectPlugin: CDVPlugin {
         commandDelegate.send(result, callbackId: command.callbackId)
     }
 
+    /// JS: `AcousticConnect.getSdkVersion()` — the native Connect SDK's own
+    /// library version, distinct from the Cordova plugin's version.
+    @objc(getSdkVersion:)
+    func getSdkVersion(command: CDVInvokedUrlCommand) {
+        let result = CDVPluginResult(status: .ok, messageAs: ConnectSDK.shared.frameworkVersion)
+        commandDelegate.send(result, callbackId: command.callbackId)
+    }
+
     /// JS: `AcousticConnect.setCurrentScreenName(name)`.
     @objc(setCurrentScreenName:)
     func setCurrentScreenName(command: CDVInvokedUrlCommand) {

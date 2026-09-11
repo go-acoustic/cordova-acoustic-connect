@@ -130,12 +130,17 @@ module.exports = function (context) {
         : connect.LocationLoggingEnabled;
 
     // ── www/js/connect-config.js (JS layer, both platforms) ──────────────
+    // PluginVersion is read from this plugin's own package.json (not ConnectConfig.json)
+    // so it always matches what's actually installed — no separate value to keep in sync.
+    const pluginVersion = require('../package.json').version;
+
     const jsConfig = {
         AppKey:                appKey,
         PostMessageUrl:        postMessageUrl,
         iOSPushMode:           connect.iOSPushMode                   || 'automatic',
         iOSAppGroupIdentifier: connect.iOSAppGroupIdentifier         || null,
         AndroidIconResName:    connect.AndroidNotificationIconResName || null,
+        PluginVersion:         pluginVersion,
     };
 
     const outDir = path.join(projectRoot, 'www', 'js');

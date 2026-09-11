@@ -18,10 +18,8 @@ import android.os.Looper
 import android.util.Log
 import androidx.activity.ComponentActivity
 import com.acoustic.connect.android.connectmod.Connect
+import com.acoustic.connect.android.connectmod.model.ConnectScreenviewType
 import com.acoustic.connect.android.connectmod.push.PushPermissionState
-import com.ibm.eo.EOCore
-import com.tl.uic.Tealeaf
-import com.tl.uic.model.ScreenviewType
 import com.acoustic.connect.android.connectmod.push.core.MobileServiceType
 import org.apache.cordova.CallbackContext
 import org.apache.cordova.CordovaInterface
@@ -153,6 +151,11 @@ class ConnectPlugin : CordovaPlugin() {
             }
             ACTION_LOG_CUSTOM_EVENT -> {
                 handleLogCustomEvent(args, callbackContext); true
+            }
+            ACTION_GET_SDK_VERSION -> {
+                callbackContext.sendPluginResult(
+                    PluginResult(PluginResult.Status.OK, Connect.getLibraryVersion())
+                ); true
             }
             else -> {
                 callbackContext.sendPluginResult(
@@ -504,7 +507,7 @@ class ConnectPlugin : CordovaPlugin() {
                 if (ok) {
                     // Flush immediately so the server sees the identity signal without
                     // waiting for the SDK's next scheduled batch upload.
-                    Tealeaf.flushAll(false)
+                    flushTealeafImmediately()
                     workWrapper.success(callbackContext)
                 } else {
                     workWrapper.error(
@@ -567,7 +570,7 @@ class ConnectPlugin : CordovaPlugin() {
                 // resumeConnect, which calls Logger.a() internally, triggers
                 // addJavascriptInterface while the page is live, and causes a
                 // WebView reload → deviceready re-fires → infinite blinking loop.
-                Connect.logScreenview(activity, name, ScreenviewType.LOAD, null)
+                Connect.logScreenview(activity, name, ConnectScreenviewType.LOAD, null)
                 callbackContext.success()
             } catch (t: Throwable) {
                 Log.w(TAG, "setCurrentScreenName threw: ${t.message}")
@@ -616,6 +619,39 @@ class ConnectPlugin : CordovaPlugin() {
             put("code", code)
             put("message", message)
         }
+
+    /**
+     * Forces an immediate server post of queued events, bypassing the SDK's normal
+     * batch-upload timer.
+     *
+     * NOT the same as `Connect.flushQueues()`: that public method delegates to
+     * `EOCore.flushQueues()` -> `QueueService.flushQueues()`, which only calls
+     * `saveToCache(true)` — it persists the in-memory queue to disk cache but does
+     * NOT trigger a network post. The old direct call this replaces,
+     * `Tealeaf.flushAll(false)`, called `TLFCache.flush(false)` AND
+     * `requestManualServerPost(true)` — the second call is what actually posts
+     * immediately. Both verified by decompiling tealeaf/eocore's classes.jar.
+     *
+     * `Tealeaf` is a runtime-only dependency of `connect` (the single-artifact
+     * merge), so it's not on the compile classpath here
+     * and there's no public `Connect` API that exposes `requestManualServerPost`.
+     * Reflection is the only way to reach it without a compile-time dependency; if it
+     * fails (e.g. a future SDK release renames/removes the method), falls back to
+     * `Connect.flushQueues()` so the event still reaches disk cache and goes out on
+     * the SDK's next scheduled batch, rather than silently doing nothing.
+     */
+    private fun flushTealeafImmediately() {
+        try {
+            val tealeafClass = Class.forName("com.tl.uic.Tealeaf")
+            val flushAll = tealeafClass.getMethod("flushAll", java.lang.Boolean::class.java)
+            flushAll.invoke(null, java.lang.Boolean.FALSE)
+        } catch (t: Throwable) {
+            Log.w(TAG, "Tealeaf.flushAll reflection failed — falling back to " +
+                "Connect.flushQueues() (queues to disk cache, posts on the SDK's next " +
+                "scheduled batch instead of immediately): ${t.message}")
+            Connect.flushQueues()
+        }
+    }
 
     /**
      * Reads credentials saved by a previous successful `enable()` call and
@@ -749,10 +785,23 @@ class ConnectPlugin : CordovaPlugin() {
      *
      * Must run after Connect.init() — that call chain is what enables EOCore and
      * loads its config service.
+     *
+     * Targets the "EOCore" module by name via the 3-arg `Connect.updateConfig(key,
+     * value, module: String)` overload — Tealeaf/EOCore are runtime-only dependencies of
+     * Connect (the single-artifact merge), so their types (e.g. `EOCore.getInstance()`)
+     * are no longer on the compile classpath.
+     * `updateConfig`'s String overload resolves the module by name internally.
      */
     private fun applyDisplayLoggingConfig(context: Context, config: NativeConfig) {
         try {
-            Connect.updateConfig("DisplayLogging", (!config.useRelease).toString(), EOCore.getInstance())
+            // See applyKillSwitchConfig — updateConfig's String-module overload
+            // returns false rather than throwing when the module isn't registered.
+            val applied = Connect.updateConfig(
+                "DisplayLogging", (!config.useRelease).toString(), "EOCore"
+            )
+            if (!applied) {
+                Log.w(TAG, "applyDisplayLoggingConfig: \"EOCore\" module update failed — skipping")
+            }
         } catch (t: Throwable) {
             Log.w(TAG, "applyDisplayLoggingConfig failed — leaving native SDK logging at its default: ${t.message}")
         }
@@ -770,11 +819,13 @@ class ConnectPlugin : CordovaPlugin() {
      * this schedules the re-apply at [CONFIG_REAPPLY_DELAY_MS], comfortably past the
      * SDK's own 100ms delay.
      *
-     * Targets the "Tealeaf" lifecycle-object bucket, not EOCore's — confirmed via
-     * `Tealeaf.java`'s own KillSwitchEnabled/KillSwitchUrl reads and writes, which all pass
-     * `TealeafEOLifecycleObject.getInstance()` as the module. `Connect.kt` doesn't re-export
-     * that singleton directly, but `Connect.getLifecycleObject("Tealeaf")` resolves to the
-     * same instance via the SDK's own module registry.
+     * Targets the "Tealeaf" module, not EOCore's — confirmed via `Tealeaf.java`'s own
+     * KillSwitchEnabled/KillSwitchUrl reads and writes, which all pass
+     * `TealeafEOLifecycleObject.getInstance()` as the module. Passed by name ("Tealeaf")
+     * to the 3-arg `Connect.updateConfig(key, value, module: String)` overload rather than
+     * resolved via `Connect.getLifecycleObject()` — Tealeaf/EOCore are runtime-only
+     * dependencies of Connect (the single-artifact merge), so `EOLifecycleObject`
+     * is no longer on the compile classpath either.
      *
      * Called from both `handleEnable()` (2-arg `Connect.enable(appKey, postURL)`) and
      * `tryBundledConfigInit()` (0-arg `Connect.enable()`). Strictly required only for the
@@ -793,14 +844,19 @@ class ConnectPlugin : CordovaPlugin() {
         val r = Runnable {
             killSwitchRunnable = null
             try {
-                val module = Connect.getLifecycleObject("Tealeaf")
-                if (module == null) {
-                    Log.w(TAG, "applyKillSwitchConfig: \"Tealeaf\" lifecycle object not found — skipping")
+                // updateConfig's String-module overload returns false (rather than
+                // throwing) when the named module isn't registered — e.g. the SDK was
+                // never initialized — so the failure must be checked explicitly; a bare
+                // try/catch around it would silently see success.
+                val applied = Connect.updateConfig(
+                    "KillSwitchEnabled", config.killSwitchEnabled.toString(), "Tealeaf"
+                )
+                if (!applied) {
+                    Log.w(TAG, "applyKillSwitchConfig: \"Tealeaf\" module update failed — skipping")
                     return@Runnable
                 }
-                Connect.updateConfig("KillSwitchEnabled", config.killSwitchEnabled.toString(), module)
                 if (config.killSwitchEnabled && !config.killSwitchUrl.isNullOrBlank()) {
-                    Connect.updateConfig("KillSwitchUrl", config.killSwitchUrl, module)
+                    Connect.updateConfig("KillSwitchUrl", config.killSwitchUrl, "Tealeaf")
                 }
             } catch (t: Throwable) {
                 Log.w(TAG, "applyKillSwitchConfig failed — leaving native SDK kill switch at its default: ${t.message}")
@@ -823,7 +879,9 @@ class ConnectPlugin : CordovaPlugin() {
      * `enable()` would be too late (the task would already have started or not, based on
      * whatever the SDK's own default was). The "Tealeaf" module resolves immediately here
      * too — registered synchronously inside `Connect.init()`, which this plugin always
-     * calls first — so no scheduling delay is needed for module availability either.
+     * calls first — so no scheduling delay is needed for module availability either. Passed
+     * by name to `Connect.updateConfig(key, value, module: String)` rather than resolved via
+     * `Connect.getLifecycleObject()` — see [applyKillSwitchConfig] for why.
      *
      * Note: this only stops location data reaching the collector. It does NOT remove the
      * `ACCESS_FINE_LOCATION`/`ACCESS_COARSE_LOCATION` permissions the Tealeaf AAR's own
@@ -833,12 +891,14 @@ class ConnectPlugin : CordovaPlugin() {
     internal fun applyLocationLoggingConfig(context: Context, config: NativeConfig) {
         val locationLoggingEnabled = config.locationLoggingEnabled ?: return
         try {
-            val module = Connect.getLifecycleObject("Tealeaf")
-            if (module == null) {
-                Log.w(TAG, "applyLocationLoggingConfig: \"Tealeaf\" lifecycle object not found — skipping")
-                return
+            // See applyKillSwitchConfig — updateConfig's String-module overload
+            // returns false rather than throwing when the module isn't registered.
+            val applied = Connect.updateConfig(
+                "LogLocationEnabled", locationLoggingEnabled.toString(), "Tealeaf"
+            )
+            if (!applied) {
+                Log.w(TAG, "applyLocationLoggingConfig: \"Tealeaf\" module update failed — skipping")
             }
-            Connect.updateConfig("LogLocationEnabled", locationLoggingEnabled.toString(), module)
         } catch (t: Throwable) {
             Log.w(TAG, "applyLocationLoggingConfig failed — leaving native SDK location logging at its default: ${t.message}")
         }
@@ -857,14 +917,14 @@ class ConnectPlugin : CordovaPlugin() {
      * or `tryBundledConfigInit`. Wire it back in with a single call if/when disabling is
      * confirmed as wanted.
      *
-     * Targets the same "Tealeaf" lifecycle-object bucket as [applyKillSwitchConfig], but unlike
-     * it, applies synchronously with no re-apply delay — both verified against checked-out
+     * Targets the same "Tealeaf" module as [applyKillSwitchConfig], but unlike it, applies
+     * synchronously with no re-apply delay — both verified against checked-out
      * `Tealeaf.java`/`TealeafEOLifecycleObject.java`/`EOCore.java` source:
      *  - The "Tealeaf" module is registered into EOCore's module registry synchronously inside
      *    `Connect.init()` (`Tealeaf`'s constructor -> `TealeafEOLifecycleObject.init()` ->
      *    `EOCore.addModule(...)`), which this plugin always calls before `Connect.enable(...)`.
-     *    It is never gated by `enable()`'s internal 100ms-delayed callback, so
-     *    `Connect.getLifecycleObject("Tealeaf")` already resolves immediately, at t=0.
+     *    It is never gated by `enable()`'s internal 100ms-delayed callback, so the module
+     *    already resolves immediately, at t=0.
      *  - `TLF_LOG_SCREENLAYOUT` ("LogViewLayoutOnScreenTransition") is only ever *read* by
      *    `Tealeaf.java` (inside its `logScreenLayout*` methods, at actual screen-transition
      *    time) — never written by `enable()`'s synchronous body or its delayed callback, unlike
@@ -879,12 +939,12 @@ class ConnectPlugin : CordovaPlugin() {
      */
     internal fun applyScreenCaptureConfig(context: Context) {
         try {
-            val module = Connect.getLifecycleObject("Tealeaf")
-            if (module == null) {
-                Log.w(TAG, "applyScreenCaptureConfig: \"Tealeaf\" lifecycle object not found — skipping")
-                return
+            // See applyKillSwitchConfig — updateConfig's String-module overload
+            // returns false rather than throwing when the module isn't registered.
+            val applied = Connect.updateConfig("LogViewLayoutOnScreenTransition", "false", "Tealeaf")
+            if (!applied) {
+                Log.w(TAG, "applyScreenCaptureConfig: \"Tealeaf\" module update failed — skipping")
             }
-            Connect.updateConfig("LogViewLayoutOnScreenTransition", "false", module)
         } catch (t: Throwable) {
             Log.w(TAG, "applyScreenCaptureConfig failed — leaving native SDK layout capture at its default: ${t.message}")
         }
@@ -932,6 +992,7 @@ class ConnectPlugin : CordovaPlugin() {
         internal const val ACTION_IS_SDK_ENABLED           = "isSdkEnabled"
         internal const val ACTION_SET_CURRENT_SCREEN_NAME  = "setCurrentScreenName"
         internal const val ACTION_LOG_CUSTOM_EVENT          = "logCustomEvent"
+        internal const val ACTION_GET_SDK_VERSION           = "getSdkVersion"
 
         internal const val PUSH_MODE_AUTOMATIC = "automatic"
         // Android Connect SDK only supports automatic mode.

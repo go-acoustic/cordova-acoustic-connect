@@ -125,6 +125,16 @@ var AcousticConnect = {
         return call('logIdentificationEvent', [identifierName, identifierValue, type, params]);
     },
 
+    /**
+     * Read the native Connect SDK's own library version — distinct from the
+     * Cordova plugin's version (`www/js/connect-config.js`'s `PluginVersion`,
+     * generated from this plugin's `package.json`).
+     * @returns {Promise<string>}
+     */
+    getSdkVersion: function () {
+        return call('getSdkVersion', []);
+    },
+
     push: {
 
         /**

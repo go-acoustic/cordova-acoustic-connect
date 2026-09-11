@@ -102,7 +102,8 @@ class ConnectPluginTest {
             "pushDidReceiveAuthorization",
             "pushDidReceiveNotification",
             "pushDidReceiveResponse",
-            "logIdentificationEvent"
+            "logIdentificationEvent",
+            "getSdkVersion"
         )
         for (action in knownActions) {
             val freshCb = mock<CallbackContext>()
@@ -574,6 +575,29 @@ class ConnectPluginTest {
         verify(activity).runOnUiThread(any())
     }
 
+    // ── getSdkVersion ────────────────────────────────────────────────────────
+
+    // Connect.getLibraryVersion() returns a hardcoded literal (verified by
+    // decompiling connect's classes.jar) with no dependency on SDK init state or
+    // an Activity, so — unlike most other Connect.* calls in this file — it's
+    // safe to execute for real rather than only asserting dispatch.
+    @Test
+    fun getSdkVersion_resolvesWithNativeLibraryVersion() {
+        plugin.execute("getSdkVersion", JSONArray(), cb)
+
+        val captor = argumentCaptor<PluginResult>()
+        verify(cb).sendPluginResult(captor.capture())
+        assertEquals(PluginResult.Status.OK.ordinal, captor.firstValue.status)
+        assertEquals(PluginResult.MESSAGE_TYPE_STRING, captor.firstValue.messageType)
+        // .message is JSON-encoded (quoted) by PluginResult for MESSAGE_TYPE_STRING;
+        // compare against the real Connect.getLibraryVersion() value rather than a
+        // hardcoded string so this doesn't need updating on every SDK version bump.
+        assertEquals(
+            org.json.JSONObject.quote(com.acoustic.connect.android.connectmod.Connect.getLibraryVersion()),
+            captor.firstValue.message
+        )
+    }
+
     @Test
     fun parseNativeConfig_useRelease_true_returnsTrue() {
         assertTrue(plugin.parseNativeConfig("""{"useRelease":true}""").useRelease)
@@ -793,18 +817,19 @@ class ConnectPluginTest {
             ConnectPlugin.NativeConfig(useRelease = false, killSwitchEnabled = false, killSwitchUrl = null, locationLoggingEnabled = false)
         )
         // The SDK is uninitialized in this Robolectric test, so
-        // Connect.getLifecycleObject("Tealeaf") returns null and the warning branch
-        // fires — but asserting THIS SPECIFIC message (not just any log mentioning
-        // the function name) proves the guard-let-locationLoggingEnabled did NOT
-        // return early: it reached the lifecycle-object lookup instead of silently
-        // no-op'ing, which is exactly what distinguishes this from the null-config
-        // case in applyLocationLoggingConfig_isNoOp_whenNotConfigured (zero logs).
-        // A looser "any log mentioning applyLocationLoggingConfig" check would pass
-        // just as vacuously if the guard always returned early and this warning were
-        // the only reachable line — asserting the exact warning text rules that out.
+        // Connect.updateConfig(..., "Tealeaf") returns false (module not registered)
+        // and the warning branch fires — but asserting THIS SPECIFIC message (not
+        // just any log mentioning the function name) proves the guard-let-
+        // locationLoggingEnabled did NOT return early: it reached the updateConfig
+        // call instead of silently no-op'ing, which is exactly what distinguishes
+        // this from the null-config case in
+        // applyLocationLoggingConfig_isNoOp_whenNotConfigured (zero logs). A looser
+        // "any log mentioning applyLocationLoggingConfig" check would pass just as
+        // vacuously if the guard always returned early and this warning were the
+        // only reachable line — asserting the exact warning text rules that out.
         assertTrue(
-            "expected applyLocationLoggingConfig to attempt the Tealeaf lookup (not return early) when explicitly configured",
-            logsMentioning("applyLocationLoggingConfig: \"Tealeaf\" lifecycle object not found").isNotEmpty()
+            "expected applyLocationLoggingConfig to attempt the Tealeaf update (not return early) when explicitly configured",
+            logsMentioning("applyLocationLoggingConfig: \"Tealeaf\" module update failed").isNotEmpty()
         )
     }
 

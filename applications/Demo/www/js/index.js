@@ -24,6 +24,8 @@ function onDeviceReady() {
     status.textContent = 'Device ready · cordova-' + cordova.platformId + '@' + cordova.version;
     status.classList.add('ready');
 
+    showVersionInfo();
+
     // Tab switching
     document.querySelectorAll('.tab-btn').forEach(btn => {
         btn.addEventListener('click', () => switchTab(btn.dataset.tab));
@@ -54,6 +56,27 @@ function onDeviceReady() {
     loadHistory();
     restoreSession();
     initSdk();
+}
+
+// ── Version info ────────────────────────────────────────────────────────
+
+// Shows the Cordova plugin version (from package.json, via CONFIG.PluginVersion)
+// and, under it, the native Connect SDK's own library version for the running
+// platform (Android/iOS have independently versioned native SDKs).
+function showVersionInfo() {
+    const el = document.getElementById('versionInfo');
+    const platformLabel = cordova.platformId === 'android' ? 'Android' : 'iOS';
+    const pluginVersion = CONFIG.PluginVersion || 'unknown';
+
+    el.textContent = 'Plugin v' + pluginVersion;
+    el.classList.remove('hidden');
+
+    exec('getSdkVersion', [], (sdkVersion) => {
+        el.textContent = 'Plugin v' + pluginVersion + ' · ' + platformLabel + ' SDK v' + sdkVersion;
+    }, () => {
+        // Leave the plugin-only line in place — native SDK version is a bonus,
+        // not required for the app to be usable.
+    });
 }
 
 // ── SDK initialisation ─────────────────────────────────────────────────

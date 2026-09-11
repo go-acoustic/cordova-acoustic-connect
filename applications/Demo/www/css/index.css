@@ -66,6 +66,14 @@ header h1 {
 
 .status.ready { color: #5A5D77; }
 
+.version-info {
+    margin: 0;
+    font-size: 11px;
+    color: #5A5D77;
+}
+
+.version-info.hidden { display: none; }
+
 /* ── Tab content ───────────────────────────────────────────────────── */
 
 .tab-content {
@@ -416,6 +424,7 @@ button.action[disabled] {
     header h1       { color: #EFEFEF; }
     .page-title     { color: #D0D1D8; }
     .status         { color: #D0D1D8; }
+    .version-info   { color: #D0D1D8; }
     .card-title     { color: #D0D1D8; }
     .card           { background: #1F1E5D; box-shadow: none; }
     .card-title     { color: #D0D1D8; }
