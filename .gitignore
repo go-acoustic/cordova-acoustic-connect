@@ -152,3 +152,4 @@ applications/Demo/ConnectConfig.json
 
 # Auto-generated from ConnectConfig.json on every cordova prepare
 applications/Demo/ConnectBasicConfig.properties
+applications/Demo/ConnectLayoutConfig.json

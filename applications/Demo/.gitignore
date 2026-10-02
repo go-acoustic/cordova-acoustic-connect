@@ -28,6 +28,7 @@ node_modules/
 /www/js/connect-config.js
 /www/AcousticConnectNativeConfig.json
 /ConnectBasicConfig.properties
+/ConnectLayoutConfig.json
 
 # Real Firebase credentials — never commit these.
 # Copy google-services.json.example to google-services.json and fill in your
@@ -35,3 +36,9 @@ node_modules/
 # Your apps → Download google-services.json).
 # The before_build hook auto-copies the .example on first build if missing.
 /google-services.json
+
+# e2e build state: saved originals (can include the real ConnectConfig.json) - see e2e/prepare.js
+/e2e/.prepare-state.json
+
+# e2e run output: raw collector captures and results (can hold app data)
+/e2e/evidence/

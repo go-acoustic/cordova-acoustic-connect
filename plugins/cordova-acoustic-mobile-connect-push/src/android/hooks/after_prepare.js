@@ -53,4 +53,17 @@ module.exports = function (context) {
         console.log('[acoustic-connect] ConnectBasicConfig.properties copied to assets');
     }
 
+    // ConnectLayoutConfig.json (generated from Connect.layoutConfig* in
+    // ConnectConfig.json) overrides the layout rules bundled in the SDK: an app asset
+    // wins over a library asset of the same name. When it is no longer configured,
+    // remove any copy left by an earlier prepare so the SDK default applies again.
+    const layoutSrc  = path.join(projectRoot, 'ConnectLayoutConfig.json');
+    const layoutDest = path.join(assetsDir, 'ConnectLayoutConfig.json');
+    if (fs.existsSync(layoutSrc)) {
+        fs.copyFileSync(layoutSrc, layoutDest);
+        console.log('[acoustic-connect] ConnectLayoutConfig.json copied to assets');
+    } else if (fs.existsSync(layoutDest)) {
+        fs.unlinkSync(layoutDest);
+    }
+
 };

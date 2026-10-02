@@ -70,9 +70,90 @@ function buildPropertiesFile(appKey, postMessageUrl, killSwitchUrl, killSwitchEn
         '# Re-evaluate if the Analytics SDK adds a Cordova-aware injection path, or if',
         '# Cordova relaxes the setWebViewClient() type check in a future major release.',
         'GoogleWebViewEnabled=false',
+        '',
+        '# This file REPLACES the SDK\'s own ConnectBasicConfig.properties (an app asset wins over a',
+        '# library asset of the same name), so the capture settings below are repeated with the SDK',
+        '# defaults. Without them the Android SDK refused every layout capture (no type 10 was ever',
+        '# sent). Cookie and location settings are left out on purpose: the SDK file holds sample',
+        '# values for them, and location is controlled by locationLoggingEnabled.',
+        'PrintScreen=3',
+        'Connection=3',
+        'MaxStringsLength=300',
+        'UseWhiteList=true',
+        'WhiteListParam=id',
+        'UseRandomSample=false',
+        'RandomSampleParam=',
+        'ScreenshotFormat=JPG',
+        'PercentOfScreenshotsSize=40',
+        'PercentToCompressImage=80',
+        'ScreenShotPixelDensity=1.5',
+        'LogViewLayoutOnScreenTransition=true',
+        'GetImageDataOnScreenLayout=false',
+        'SetGestureDetector=true',
+        'CaptureNativeGesturesOnWebview=false',
     ];
 
     return lines.join('\n') + '\n';
+}
+
+// The only layout-config sections the native SDKs consume.
+const LAYOUT_KEYS = ['AutoLayout', 'AppendMapIds'];
+
+function isPlainObject(value) {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+// Recursively merges `override` over `base` into a new object. Plain objects are
+// merged key by key; arrays and scalars in `override` replace the base value
+// outright, so a platform block can shorten or clear a shared list (e.g.
+// MaskIdList). Neither input is mutated.
+function deepMerge(base, override) {
+    const result = {};
+    Object.keys(base).forEach(function (key) {
+        result[key] = isPlainObject(base[key]) ? deepMerge(base[key], {}) : base[key];
+    });
+    Object.keys(override).forEach(function (key) {
+        if (isPlainObject(override[key]) && isPlainObject(result[key])) {
+            result[key] = deepMerge(result[key], override[key]);
+        } else if (isPlainObject(override[key])) {
+            result[key] = deepMerge({}, override[key]);
+        } else {
+            result[key] = override[key];
+        }
+    });
+    return result;
+}
+
+// Reads one layout block (layoutConfig / layoutConfigIos / layoutConfigAndroid).
+// Absent or null means "not configured"; anything else must be a JSON object.
+function readLayoutBlock(connect, name) {
+    const value = connect[name];
+    if (value === undefined || value === null) {
+        return null;
+    }
+    if (!isPlainObject(value)) {
+        throw new Error('ConnectConfig.json: Connect.' + name + ' must be a JSON object');
+    }
+    const kept = {};
+    Object.keys(value).forEach(function (key) {
+        if (LAYOUT_KEYS.indexOf(key) !== -1) {
+            kept[key] = value[key];
+        } else {
+            console.warn('[acoustic-connect] Connect.' + name + '.' + key +
+                ' is not a recognised layout key (expected ' + LAYOUT_KEYS.join(' and/or ') + ') — ignoring it');
+        }
+    });
+    return kept;
+}
+
+// Shared baseline with the platform block deep-merged over it. Null when neither
+// is configured, so the native SDK keeps the defaults from its own bundled config.
+function resolveLayoutForPlatform(shared, platform) {
+    if (shared === null && platform === null) {
+        return null;
+    }
+    const merged = deepMerge(shared || {}, platform || {});
+    return Object.keys(merged).length === 0 ? null : merged;
 }
 
 module.exports = function (context) {
@@ -128,6 +209,20 @@ module.exports = function (context) {
     const locationLoggingEnabled = connect.LocationLoggingEnabled === undefined
         ? null
         : connect.LocationLoggingEnabled;
+
+    if (connect.ScreenCaptureEnabled !== undefined && connect.ScreenCaptureEnabled !== null &&
+            typeof connect.ScreenCaptureEnabled !== 'boolean') {
+        throw new Error('ConnectConfig.json: Connect.ScreenCaptureEnabled must be a boolean (got ' + typeof connect.ScreenCaptureEnabled + ')');
+    }
+    // Tri-state like locationLoggingEnabled: null means "not configured, leave the
+    // native SDK's own default (screen/layout capture on) alone".
+    const screenCaptureEnabled = (connect.ScreenCaptureEnabled === undefined || connect.ScreenCaptureEnabled === null)
+        ? null
+        : connect.ScreenCaptureEnabled;
+
+    const sharedLayout = readLayoutBlock(connect, 'layoutConfig');
+    const layoutConfigIos = resolveLayoutForPlatform(sharedLayout, readLayoutBlock(connect, 'layoutConfigIos'));
+    const layoutConfigAndroid = resolveLayoutForPlatform(sharedLayout, readLayoutBlock(connect, 'layoutConfigAndroid'));
 
     // ── www/js/connect-config.js (JS layer, both platforms) ──────────────
     // PluginVersion is read from this plugin's own package.json (not ConnectConfig.json)
@@ -203,11 +298,28 @@ module.exports = function (context) {
     //   xcframework, so it does not by itself resolve Apple's ITMS-90683 App Store
     //   warning (missing NSLocationWhenInUseUsageDescription); that requires either
     //   declaring the Info.plist key or an SDK-side build without CoreLocation linked.
+    //   screenCaptureEnabled (boolean|null, default null) — controls the native SDK's
+    //   automatic layout/screenshot capture. Tri-state like locationLoggingEnabled: null
+    //   leaves the SDK default (capture on) alone. Only an explicit false acts:
+    //     iOS: sets AutoLayout.GlobalScreenSettings.CaptureLayoutOn = 0 right AFTER
+    //       enable() (verified on a simulator: layout + screenshot stop, screen views stay).
+    //     Android: sets LogViewLayoutOnScreenTransition=false before enable(). Not
+    //       verified: the Android SDK sent no layout message in the default config.
+    //   layoutConfigIos / layoutConfigAndroid (object|null, default null) — the resolved
+    //   screen-capture rules (AutoLayout, AppendMapIds) for each platform: the shared
+    //   Connect.layoutConfig with Connect.layoutConfigIos / layoutConfigAndroid deep-merged
+    //   over it. null leaves the native SDK's bundled layout config untouched.
+    //     iOS: applied right after enable() by ConnectPlugin.swift.
+    //     Android: also written to ConnectLayoutConfig.json (project root), which the
+    //       Android after_prepare hook copies into the app assets, overriding the SDK's own.
     const nativeConfig = {
         useRelease: useRelease,
         killSwitchEnabled: killSwitchEnabled,
         killSwitchUrl: killSwitchUrl || null,
         locationLoggingEnabled: locationLoggingEnabled,
+        screenCaptureEnabled: screenCaptureEnabled,
+        layoutConfigIos: layoutConfigIos,
+        layoutConfigAndroid: layoutConfigAndroid,
     };
     const wwwDir = path.join(projectRoot, 'www');
     fs.mkdirSync(wwwDir, { recursive: true });
@@ -216,4 +328,24 @@ module.exports = function (context) {
         JSON.stringify(nativeConfig, null, 4) + '\n'
     );
     console.log('[acoustic-connect] AcousticConnectNativeConfig.json generated from ConnectConfig.json');
+
+    // ── ConnectLayoutConfig.json (Android SDK layout rules, copied by after_prepare) ──
+    // Written only when an Android block is configured; a stale file from a previous
+    // prepare is removed so the SDK's bundled default applies again.
+    const layoutFilePath = path.join(projectRoot, 'ConnectLayoutConfig.json');
+    if (layoutConfigAndroid !== null) {
+        // The file replaces the SDK's bundled ConnectLayoutConfig.json as a whole (verified
+        // on a device: the SDK then holds only this block), unlike iOS where the block is
+        // merged over the SDK's. A block without GlobalScreenSettings drops the SDK's own.
+        const autoLayout = layoutConfigAndroid.AutoLayout;
+        if (!isPlainObject(autoLayout) || !isPlainObject(autoLayout.GlobalScreenSettings)) {
+            console.warn('[acoustic-connect] Connect.layoutConfigAndroid (with layoutConfig) replaces the Android SDK\'s ' +
+                'whole layout config and has no AutoLayout.GlobalScreenSettings — the SDK\'s own screen rules are dropped. ' +
+                'Supply a complete block, or omit the Android block to keep the SDK defaults.');
+        }
+        fs.writeFileSync(layoutFilePath, JSON.stringify(layoutConfigAndroid, null, 4) + '\n');
+        console.log('[acoustic-connect] ConnectLayoutConfig.json generated from ConnectConfig.json');
+    } else if (fs.existsSync(layoutFilePath)) {
+        fs.unlinkSync(layoutFilePath);
+    }
 };

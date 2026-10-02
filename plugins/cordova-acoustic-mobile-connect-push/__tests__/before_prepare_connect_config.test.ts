@@ -28,10 +28,17 @@ function readNativeConfig(projectRoot: string): {
     killSwitchEnabled: boolean;
     killSwitchUrl: string | null;
     locationLoggingEnabled: boolean | null;
+    screenCaptureEnabled: boolean | null;
+    layoutConfigIos: Record<string, unknown> | null;
+    layoutConfigAndroid: Record<string, unknown> | null;
 } {
     return JSON.parse(
         fs.readFileSync(path.join(projectRoot, 'www', 'AcousticConnectNativeConfig.json'), 'utf8')
     );
+}
+
+function layoutFile(projectRoot: string): string {
+    return path.join(projectRoot, 'ConnectLayoutConfig.json');
 }
 
 function readJsConfig(projectRoot: string): string {
@@ -128,6 +135,40 @@ describe('ConnectBasicConfig.properties generation', () => {
         hook(makeContext(tmpDir));
         const props = readProperties(tmpDir);
         expect(props).toContain('GoogleWebViewEnabled=false');
+    });
+    // The generated file replaces the SDK's own ConnectBasicConfig.properties (an app asset wins
+    // over a library asset of the same name), so a key left out of it is lost. Without the
+    // capture keys below the Android SDK refused every layout capture (Connect.logScreenLayout
+    // returned false and no type 10 was ever sent); with them and an SDK that publishes a WebView
+    // layout (11.1.10-beta, CA-157701) the layout arrives. Values are the SDK's defaults.
+    it('keeps the SDK default capture settings that the file would otherwise drop', () => {
+        writeConfig(tmpDir, VALID_CONFIG);
+        hook(makeContext(tmpDir));
+        const props = readProperties(tmpDir);
+        for (const line of [
+            'PrintScreen=3', 'Connection=3', 'MaxStringsLength=300',
+            'UseWhiteList=true', 'WhiteListParam=id', 'UseRandomSample=false', 'RandomSampleParam=',
+            'ScreenshotFormat=JPG', 'PercentOfScreenshotsSize=40', 'PercentToCompressImage=80',
+            'ScreenShotPixelDensity=1.5', 'LogViewLayoutOnScreenTransition=true',
+            'GetImageDataOnScreenLayout=false', 'SetGestureDetector=true', 'CaptureNativeGesturesOnWebview=false',
+        ]) {
+            expect(props).toContain(line + '\n');
+        }
+    });
+
+    it('does not write the SDK sample values for cookies or location, which would override the plugin and the app', () => {
+        writeConfig(tmpDir, VALID_CONFIG);
+        hook(makeContext(tmpDir));
+        const props = readProperties(tmpDir);
+        expect(props).not.toMatch(/^Cookie/m);
+        expect(props).not.toMatch(/^LogLocation/m);
+    });
+
+    it('writes each key once, so no later line silently overrides an earlier one', () => {
+        writeConfig(tmpDir, VALID_CONFIG);
+        hook(makeContext(tmpDir));
+        const keys = readProperties(tmpDir).split('\n').filter((l) => l && !l.startsWith('#')).map((l) => l.split('=')[0]);
+        expect(new Set(keys).size).toBe(keys.length);
     });
 });
 
@@ -256,6 +297,37 @@ describe('AcousticConnectNativeConfig.json generation (locationLoggingEnabled, b
     });
 });
 
+describe('AcousticConnectNativeConfig.json generation (screenCaptureEnabled, both platforms)', () => {
+    it('defaults screenCaptureEnabled to null when omitted — plugin does not decide for the app', () => {
+        writeConfig(tmpDir, { Connect: { ...VALID_CONFIG.Connect } });
+        hook(makeContext(tmpDir));
+        expect(readNativeConfig(tmpDir).screenCaptureEnabled).toBeNull();
+    });
+
+    it('writes screenCaptureEnabled=false when explicitly opted out', () => {
+        writeConfig(tmpDir, { Connect: { ...VALID_CONFIG.Connect, ScreenCaptureEnabled: false } });
+        hook(makeContext(tmpDir));
+        expect(readNativeConfig(tmpDir).screenCaptureEnabled).toBe(false);
+    });
+
+    it('writes screenCaptureEnabled=true when explicitly opted in', () => {
+        writeConfig(tmpDir, { Connect: { ...VALID_CONFIG.Connect, ScreenCaptureEnabled: true } });
+        hook(makeContext(tmpDir));
+        expect(readNativeConfig(tmpDir).screenCaptureEnabled).toBe(true);
+    });
+
+    it('treats an explicit null as not configured', () => {
+        writeConfig(tmpDir, { Connect: { ...VALID_CONFIG.Connect, ScreenCaptureEnabled: null } });
+        hook(makeContext(tmpDir));
+        expect(readNativeConfig(tmpDir).screenCaptureEnabled).toBeNull();
+    });
+
+    it('throws when ScreenCaptureEnabled is not a boolean', () => {
+        writeConfig(tmpDir, { Connect: { ...VALID_CONFIG.Connect, ScreenCaptureEnabled: 'false' } });
+        expect(() => hook(makeContext(tmpDir))).toThrow('Connect.ScreenCaptureEnabled must be a boolean');
+    });
+});
+
 describe('connect-config.js generation', () => {
     it('writes window.ConnectBasicConfig with correct fields', () => {
         writeConfig(tmpDir, {
@@ -284,5 +356,171 @@ describe('connect-config.js generation', () => {
         hook(makeContext(tmpDir));
         const js = readJsConfig(tmpDir);
         expect(js).toContain('"iOSPushMode": "automatic"');
+    });
+});
+
+describe('layout config (layoutConfig / layoutConfigIos / layoutConfigAndroid)', () => {
+    const AUTO = { GlobalScreenSettings: { CaptureLayoutOn: 0, CaptureLayoutDelay: 500 } };
+
+    it('writes null for both platforms when no layout block is configured', () => {
+        writeConfig(tmpDir, { Connect: { ...VALID_CONFIG.Connect } });
+        hook(makeContext(tmpDir));
+        const cfg = readNativeConfig(tmpDir);
+        expect(cfg.layoutConfigIos).toBeNull();
+        expect(cfg.layoutConfigAndroid).toBeNull();
+        expect(fs.existsSync(layoutFile(tmpDir))).toBe(false);
+    });
+
+    it('gives both platforms the shared layoutConfig', () => {
+        writeConfig(tmpDir, { Connect: { ...VALID_CONFIG.Connect, layoutConfig: { AutoLayout: AUTO } } });
+        hook(makeContext(tmpDir));
+        const cfg = readNativeConfig(tmpDir);
+        expect(cfg.layoutConfigIos).toEqual({ AutoLayout: AUTO });
+        expect(cfg.layoutConfigAndroid).toEqual({ AutoLayout: AUTO });
+    });
+
+    it('gives only the matching platform its own block', () => {
+        writeConfig(tmpDir, { Connect: { ...VALID_CONFIG.Connect, layoutConfigIos: { AutoLayout: AUTO } } });
+        hook(makeContext(tmpDir));
+        const cfg = readNativeConfig(tmpDir);
+        expect(cfg.layoutConfigIos).toEqual({ AutoLayout: AUTO });
+        expect(cfg.layoutConfigAndroid).toBeNull();
+    });
+
+    it('deep-merges the platform block over the shared one, replacing arrays outright', () => {
+        writeConfig(tmpDir, {
+            Connect: {
+                ...VALID_CONFIG.Connect,
+                layoutConfig: {
+                    AutoLayout: {
+                        GlobalScreenSettings: {
+                            CaptureLayoutDelay: 500,
+                            Masking: { MaskIdList: ['a', 'b'], HasMasking: true },
+                        },
+                    },
+                },
+                layoutConfigIos: {
+                    AutoLayout: {
+                        GlobalScreenSettings: {
+                            CaptureLayoutDelay: 100,
+                            Masking: { MaskIdList: ['c'] },
+                        },
+                    },
+                },
+            },
+        });
+        hook(makeContext(tmpDir));
+        const cfg = readNativeConfig(tmpDir);
+        expect(cfg.layoutConfigIos).toEqual({
+            AutoLayout: {
+                GlobalScreenSettings: {
+                    CaptureLayoutDelay: 100,
+                    Masking: { MaskIdList: ['c'], HasMasking: true },
+                },
+            },
+        });
+        // Android has no override: it keeps the shared baseline untouched.
+        expect(cfg.layoutConfigAndroid).toEqual({
+            AutoLayout: {
+                GlobalScreenSettings: {
+                    CaptureLayoutDelay: 500,
+                    Masking: { MaskIdList: ['a', 'b'], HasMasking: true },
+                },
+            },
+        });
+    });
+
+    it('keeps only AutoLayout and AppendMapIds and warns about anything else', () => {
+        const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+        writeConfig(tmpDir, {
+            Connect: {
+                ...VALID_CONFIG.Connect,
+                layoutConfig: { AutoLayout: AUTO, AppendMapIds: { x: { mid: 'y' } }, Bogus: 1 },
+            },
+        });
+        hook(makeContext(tmpDir));
+        const cfg = readNativeConfig(tmpDir);
+        expect(cfg.layoutConfigIos).toEqual({ AutoLayout: AUTO, AppendMapIds: { x: { mid: 'y' } } });
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining('Bogus'));
+        warn.mockRestore();
+    });
+
+    it('treats an explicit null block as not configured', () => {
+        writeConfig(tmpDir, { Connect: { ...VALID_CONFIG.Connect, layoutConfig: null, layoutConfigIos: null } });
+        hook(makeContext(tmpDir));
+        expect(readNativeConfig(tmpDir).layoutConfigIos).toBeNull();
+    });
+
+    it.each([
+        ['layoutConfig', 'a string', 'x'],
+        ['layoutConfigIos', 'an array', [1]],
+        ['layoutConfigAndroid', 'a number', 5],
+    ])('throws when %s is %s', (key, _what, value) => {
+        writeConfig(tmpDir, { Connect: { ...VALID_CONFIG.Connect, [key]: value } });
+        expect(() => hook(makeContext(tmpDir))).toThrow('Connect.' + key + ' must be a JSON object');
+    });
+
+    it('does not mutate nested values shared between platforms', () => {
+        writeConfig(tmpDir, {
+            Connect: {
+                ...VALID_CONFIG.Connect,
+                layoutConfig: { AutoLayout: { GlobalScreenSettings: { CaptureLayoutDelay: 500 } } },
+                layoutConfigAndroid: { AutoLayout: { GlobalScreenSettings: { CaptureLayoutDelay: 1 } } },
+            },
+        });
+        hook(makeContext(tmpDir));
+        const cfg = readNativeConfig(tmpDir);
+        expect(cfg.layoutConfigIos).toEqual({ AutoLayout: { GlobalScreenSettings: { CaptureLayoutDelay: 500 } } });
+        expect(cfg.layoutConfigAndroid).toEqual({ AutoLayout: { GlobalScreenSettings: { CaptureLayoutDelay: 1 } } });
+    });
+
+    it('writes the merged Android block to ConnectLayoutConfig.json for the Android asset copy', () => {
+        writeConfig(tmpDir, {
+            Connect: {
+                ...VALID_CONFIG.Connect,
+                layoutConfig: { AutoLayout: AUTO },
+                layoutConfigAndroid: { AppendMapIds: { x: { mid: 'y' } } },
+            },
+        });
+        hook(makeContext(tmpDir));
+        expect(JSON.parse(fs.readFileSync(layoutFile(tmpDir), 'utf8'))).toEqual({
+            AutoLayout: AUTO,
+            AppendMapIds: { x: { mid: 'y' } },
+        });
+    });
+
+    it('removes a stale ConnectLayoutConfig.json when the Android block is no longer configured', () => {
+        fs.writeFileSync(layoutFile(tmpDir), '{"AutoLayout":{}}');
+        writeConfig(tmpDir, { Connect: { ...VALID_CONFIG.Connect } });
+        hook(makeContext(tmpDir));
+        expect(fs.existsSync(layoutFile(tmpDir))).toBe(false);
+    });
+
+    it('warns that the Android file replaces the SDK layout config when GlobalScreenSettings is missing', () => {
+        const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+        writeConfig(tmpDir, {
+            Connect: { ...VALID_CONFIG.Connect, layoutConfigAndroid: { AppendMapIds: { x: { mid: 'y' } } } },
+        });
+        hook(makeContext(tmpDir));
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining('replaces the Android SDK'));
+        warn.mockRestore();
+    });
+
+    it('does not warn about replacement when the Android block carries GlobalScreenSettings', () => {
+        const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+        writeConfig(tmpDir, {
+            Connect: { ...VALID_CONFIG.Connect, layoutConfigAndroid: { AutoLayout: AUTO } },
+        });
+        hook(makeContext(tmpDir));
+        expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('replaces the Android SDK'));
+        warn.mockRestore();
+    });
+
+    it('does not warn about replacement when no Android block is configured', () => {
+        const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+        writeConfig(tmpDir, { Connect: { ...VALID_CONFIG.Connect, layoutConfigIos: { AutoLayout: AUTO } } });
+        hook(makeContext(tmpDir));
+        expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('replaces the Android SDK'));
+        warn.mockRestore();
     });
 });

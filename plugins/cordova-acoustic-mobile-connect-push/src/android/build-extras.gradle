@@ -37,6 +37,22 @@ if (connectConfigFile) {
     logger.warn("[Acoustic] ConnectConfig.json not found (tried: ${tried}) — using default SDK version and useRelease=false")
 }
 
+// `useRelease` decides where Connect comes from (same rule as the React Native bridge):
+//   false (default) — the GitHub-hosted Maven tree, where Connect Android betas are published (they
+//     do not reach Maven Central). google() and mavenCentral() above are still asked first, so a
+//     version Central carries resolves as before and only the rest falls through to the tree.
+//   true — Maven Central only; every beta is rejected below.
+// The content filter is not cosmetic: without it every dependency of the app would first hit
+// raw.githubusercontent.com and 404 before falling through.
+if (!useRelease) {
+    repositories {
+        maven {
+            url "https://raw.githubusercontent.com/go-acoustic/Android_Maven/master"
+            content { includeGroup "io.github.go-acoustic" }
+        }
+    }
+}
+
 if (useRelease) {
     configurations.all {
         resolutionStrategy {

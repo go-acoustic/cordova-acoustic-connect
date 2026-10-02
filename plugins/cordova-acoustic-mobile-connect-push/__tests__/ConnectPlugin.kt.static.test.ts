@@ -66,6 +66,12 @@ const EXPECTED_ACTIONS = [
     'pushDidReceiveNotification',
     'pushDidReceiveResponse',
     'logIdentificationEvent',
+    'logScreenViewContextLoad',
+    'logScreenViewContextUnload',
+    'logSignal',
+    'logExceptionEvent',
+    'setConfigItem',
+    'getConfigItem',
 ] as const;
 
 describe('ConnectPlugin.kt — static source checks', () => {
@@ -97,6 +103,14 @@ describe('ConnectPlugin.kt — static source checks', () => {
                     'ACTION_PUSH_DID_RECEIVE_NOTIFICATION',
                 'pushDidReceiveResponse': 'ACTION_PUSH_DID_RECEIVE_RESPONSE',
                 'logIdentificationEvent': 'ACTION_LOG_IDENTIFICATION_EVENT',
+                'logScreenViewContextLoad':
+                    'ACTION_LOG_SCREEN_VIEW_CONTEXT_LOAD',
+                'logScreenViewContextUnload':
+                    'ACTION_LOG_SCREEN_VIEW_CONTEXT_UNLOAD',
+                'logSignal': 'ACTION_LOG_SIGNAL',
+                'logExceptionEvent': 'ACTION_LOG_EXCEPTION_EVENT',
+                'setConfigItem': 'ACTION_SET_CONFIG_ITEM',
+                'getConfigItem': 'ACTION_GET_CONFIG_ITEM',
             };
             for (const [action, constName] of Object.entries(constNamePerAction)) {
                 expect(KOTLIN_CODE).toContain(constName);
@@ -345,5 +359,136 @@ describe('ConnectPlugin.kt — static source checks', () => {
                 /class ConnectPlugin\s*:\s*CordovaPlugin\(\)/
             );
         });
+    });
+});
+
+describe('ConnectPlugin.kt — screen view load/unload', () => {
+    const HANDLERS: Array<[string, string, string]> = [
+        ['handleLogScreenViewContextLoad', 'ACTION_LOG_SCREEN_VIEW_CONTEXT_LOAD',
+            'ConnectScreenviewType.LOAD'],
+        ['handleLogScreenViewContextUnload', 'ACTION_LOG_SCREEN_VIEW_CONTEXT_UNLOAD',
+            'ConnectScreenviewType.UNLOAD'],
+    ];
+
+    test.each(HANDLERS)(
+        '%s is dispatched from execute() for %s',
+        (handler, actionConst) => {
+            const re = new RegExp(`${actionConst}\\s*->[\\s\\S]{0,120}${handler}\\(`);
+            expect(KOTLIN_CODE).toMatch(re);
+        }
+    );
+
+    test.each(HANDLERS)(
+        '%s delegates to the shared helper with the matching screenview type (%s)',
+        (handler, _actionConst, screenviewType) => {
+            const block = KOTLIN.match(
+                new RegExp(`internal fun ${handler}[^\\n]*\\n?[\\s\\S]*?\\n {4}\\}|internal fun ${handler}[^\\n]*=[^\\n]*`)
+            )?.[0];
+            expect(block).toBeTruthy();
+            expect(block).toMatch(/logScreenViewContext\s*\(/);
+            expect(block).toContain(screenviewType);
+        }
+    );
+
+    test('shared helper validates the name, hops to the UI thread and reports a false SDK result', () => {
+        const block = KOTLIN.match(
+            /private fun logScreenViewContext\([\s\S]*?\n {4}\}/
+        )?.[0];
+        expect(block).toBeTruthy();
+        expect(block).toMatch(/CODE_INVALID_ARGS/);
+        expect(block).toMatch(/CODE_INTERNAL_ERROR/);
+        expect(block).toMatch(/activity\.runOnUiThread\s*\{/);
+        expect(block).toMatch(/Connect\.logScreenview\s*\(/);
+    });
+});
+
+describe('ConnectPlugin.kt — signal and exception events', () => {
+    test.each([
+        ['ACTION_LOG_SIGNAL', 'handleLogSignal'],
+        ['ACTION_LOG_EXCEPTION_EVENT', 'handleLogExceptionEvent'],
+    ])('%s is dispatched to %s from execute()', (actionConst, handler) => {
+        const re = new RegExp(`${actionConst}\\s*->[\\s\\S]{0,120}${handler}\\(`);
+        expect(KOTLIN_CODE).toMatch(re);
+    });
+
+    test('handleLogSignal validates, hops to the UI thread and calls Connect.logSignal', () => {
+        const block = KOTLIN.match(
+            /internal fun handleLogSignal[\s\S]*?\n {4}\}/
+        )?.[0];
+        expect(block).toBeTruthy();
+        expect(block).toMatch(/CODE_INVALID_ARGS/);
+        expect(block).toMatch(/CODE_INTERNAL_ERROR/);
+        expect(block).toMatch(/activity\.runOnUiThread\s*\{/);
+        expect(block).toMatch(/Connect\.logSignal\s*\(/);
+        expect(block).toMatch(/toSignalPayload\s*\(/);
+    });
+
+    test('handleLogExceptionEvent validates, hops to the UI thread and calls Connect.logExceptionEvent', () => {
+        const block = KOTLIN.match(
+            /internal fun handleLogExceptionEvent[\s\S]*?\n {4}\}/
+        )?.[0];
+        expect(block).toBeTruthy();
+        expect(block).toMatch(/CODE_INVALID_ARGS/);
+        expect(block).toMatch(/CODE_INTERNAL_ERROR/);
+        expect(block).toMatch(/activity\.runOnUiThread\s*\{/);
+        expect(block).toMatch(/Connect\.logExceptionEvent\s*\(/);
+    });
+
+    test('exception events are tagged with the Cordova plugin type', () => {
+        expect(KOTLIN_CODE).toMatch(/Connect\.logExceptionEvent\s*\(\s*"Cordova Plugin"/);
+    });
+});
+
+describe('ConnectPlugin.kt — screen-capture config', () => {
+    test('applyScreenCaptureConfig is applied before Connect.enable() on both init paths', () => {
+        const calls = [...KOTLIN_CODE.matchAll(/applyScreenCaptureConfig\s*\(\s*activity\.application\s*,\s*nativeConfig\s*\)/g)];
+        expect(calls.length).toBe(2);
+        for (const call of calls) {
+            const after = KOTLIN_CODE.slice(call.index! + call[0].length);
+            expect(after.indexOf('Connect.enable(')).toBeGreaterThanOrEqual(0);
+            const before = KOTLIN_CODE.slice(Math.max(0, call.index! - 400), call.index!);
+            expect(before).toMatch(/applyLocationLoggingConfig|applyDisplayLoggingConfig/);
+        }
+    });
+
+    test('applyScreenCaptureConfig is a no-op unless the app explicitly opted out, and then turns layout capture off', () => {
+        const block = KOTLIN.match(
+            /internal fun applyScreenCaptureConfig[\s\S]*?\n {4}\}/
+        )?.[0];
+        expect(block).toBeTruthy();
+        expect(block).toMatch(/config\.screenCaptureEnabled\s*\?:\s*return/);
+        expect(block).toMatch(/if\s*\(\s*screenCaptureEnabled\s*\)\s*return/);
+        expect(block).toMatch(/"LogViewLayoutOnScreenTransition"\s*,\s*"false"/);
+    });
+});
+
+describe('ConnectPlugin.kt — runtime config items', () => {
+    const block = (name: string): string =>
+        KOTLIN.match(new RegExp(`internal fun ${name}[\\s\\S]*?\\n {4}\\}`))?.[0] ?? '';
+
+    test('both actions are dispatched from execute()', () => {
+        expect(KOTLIN_CODE).toMatch(/ACTION_SET_CONFIG_ITEM\s*->[\s\S]{0,120}handleSetConfigItem\(/);
+        expect(KOTLIN_CODE).toMatch(/ACTION_GET_CONFIG_ITEM\s*->[\s\S]{0,120}handleGetConfigItem\(/);
+    });
+
+    test('handleSetConfigItem validates its arguments and writes through Connect.updateConfig', () => {
+        const b = block('handleSetConfigItem');
+        expect(b).toBeTruthy();
+        expect(b).toMatch(/CODE_INVALID_ARGS/);
+        expect(b).toMatch(/CODE_INTERNAL_ERROR/);
+        expect(b).toMatch(/Connect\.updateConfig\s*\(/);
+        expect(b).toMatch(/toConfigString\s*\(/);
+    });
+
+    test('handleGetConfigItem validates its arguments and reads the raw item as a string', () => {
+        const b = block('handleGetConfigItem');
+        expect(b).toBeTruthy();
+        expect(b).toMatch(/CODE_INVALID_ARGS/);
+        expect(b).toMatch(/Connect\.getConfigItemString\s*\(/);
+    });
+
+    test('a number is written without a trailing ".0", like the JSON config files', () => {
+        expect(KOTLIN_CODE).toMatch(/internal fun toConfigString/);
+        expect(KOTLIN_CODE).toMatch(/toLong\(\)/);
     });
 });

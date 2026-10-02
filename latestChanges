@@ -11,6 +11,20 @@ New Features
   collection
 - `AndroidVersion`/`iOSVersion` config fields to pin a specific native Connect
   SDK version instead of the plugin's bundled default
+- Analytics API in the JavaScript bridge: `logCustomEvent`, `logSignal`,
+  `setCurrentScreenName`, `logScreenViewContextLoad`/`logScreenViewContextUnload`,
+  `logClickEvent`, `logTextChangeEvent`, `logExceptionEvent`, `flushQueues`,
+  `isSdkEnabled` and `getSdkVersion`, with TypeScript types. Text passed to
+  `logTextChangeEvent` is masked by default before it leaves JavaScript
+- `setConfigItem` / `getConfigItem` in the JavaScript bridge to set and read native
+  SDK configuration items at runtime, with TypeScript types
+- `ScreenCaptureEnabled` in `ConnectConfig.json` — set `false` to turn the SDK's
+  layout and screenshot capture off on both platforms (screen views keep
+  flowing). Omit it to keep the SDK default
+- `layoutConfig`, `layoutConfigIos` and `layoutConfigAndroid` in
+  `ConnectConfig.json` to deliver the SDK's screen-capture rules (`AutoLayout`,
+  `AppendMapIds`), merged per platform
+- Demo app: the Behaviour tab now exercises the analytics API
 
 Fixes
 
@@ -33,6 +47,21 @@ Fixes
 Known Issues
 
 - Rich push cannot be end-to-end tested on the iOS Simulator — simulators don't display large icon.
+- Clicks and typing inside the page are not captured automatically — call
+  `logClickEvent`/`logTextChangeEvent` yourself. They are sent as custom events
+- Native layout masking rules do not mask text inside the WebView; use
+  `ScreenCaptureEnabled: false` to keep page content out of captures
+- `layoutConfigAndroid` replaces the Android SDK's whole layout config; the
+  effect of layout rules on Android has not been verified
+- On Android the SDK drops a screen view whose screen name is still queued, so
+  `logScreenViewContextUnload` for the screen just loaded rejects with
+  `ACOUSTIC_INTERNAL_ERROR`; unload the previous screen instead
+- `logCustomEvent` values are nested under `data.value` on iOS but flat on
+  Android, and a `logSignal` payload under `signal.data.value` on iOS but at the
+  root of `signal` on Android; `logSignal` drops a top-level number on the
+  default Android SDK (11.0.21-beta), but not on 11.1.10-beta
+- On iOS `logExceptionEvent` reports `stackTrace: (null)` and carries the stack
+  text in `data.stacktrace`
 
 Our environment for this release:
 

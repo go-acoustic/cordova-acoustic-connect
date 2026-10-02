@@ -35,6 +35,7 @@ import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.clearInvocations
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
+import org.mockito.kotlin.timeout
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 import org.robolectric.RobolectricTestRunner
@@ -103,6 +104,12 @@ class ConnectPluginTest {
             "pushDidReceiveNotification",
             "pushDidReceiveResponse",
             "logIdentificationEvent",
+            "logScreenViewContextLoad",
+            "logScreenViewContextUnload",
+            "logSignal",
+            "logExceptionEvent",
+            "setConfigItem",
+            "getConfigItem",
             "getSdkVersion"
         )
         for (action in knownActions) {
@@ -489,6 +496,260 @@ class ConnectPluginTest {
         verify(activity).runOnUiThread(any())
     }
 
+    // ── logScreenViewContextLoad / logScreenViewContextUnload handlers ─────
+
+    private val screenViewActions = listOf("logScreenViewContextLoad", "logScreenViewContextUnload")
+
+    @Test
+    fun logScreenViewContext_blankName_rejectsAcousticInvalidArgs_doesNotTouchActivity() {
+        for (action in screenViewActions) {
+            val freshCb = mock<CallbackContext>()
+            plugin.execute(action, JSONArray().apply { put("   "); put("home") }, freshCb)
+            val captor = argumentCaptor<JSONObject>()
+            verify(freshCb).error(captor.capture())
+            assertEquals(action, "ACOUSTIC_INVALID_ARGS", captor.firstValue.getString("code"))
+        }
+        verify(cordova, never()).activity
+    }
+
+    @Test
+    fun logScreenViewContext_missingName_rejectsAcousticInvalidArgs() {
+        for (action in screenViewActions) {
+            val freshCb = mock<CallbackContext>()
+            plugin.execute(action, JSONArray(), freshCb)
+            val captor = argumentCaptor<JSONObject>()
+            verify(freshCb).error(captor.capture())
+            assertEquals(action, "ACOUSTIC_INVALID_ARGS", captor.firstValue.getString("code"))
+        }
+    }
+
+    @Test
+    fun logScreenViewContext_nullActivity_rejectsInternalError() {
+        whenever(cordova.activity).thenReturn(null)
+        for (action in screenViewActions) {
+            val freshCb = mock<CallbackContext>()
+            plugin.execute(action, JSONArray().apply { put("detail"); put("home") }, freshCb)
+            val captor = argumentCaptor<JSONObject>()
+            verify(freshCb).error(captor.capture())
+            assertEquals(action, "ACOUSTIC_INTERNAL_ERROR", captor.firstValue.getString("code"))
+        }
+    }
+
+    @Test
+    fun logScreenViewContext_withActivity_dispatchesOnUiThread() {
+        for (action in screenViewActions) {
+            val activity = mock<AppCompatActivity>()
+            whenever(cordova.activity).thenReturn(activity)
+            plugin.execute(
+                action,
+                JSONArray().apply { put("detail"); put(JSONObject.NULL) },
+                mock()
+            )
+            verify(activity).runOnUiThread(any())
+        }
+    }
+
+    // ── runtime config items ───────────────────────────────────────────────
+
+    // The error may be delivered from the plugin's thread pool, so wait for it.
+    private fun errorCode(): String {
+        val captor = argumentCaptor<JSONObject>()
+        verify(cb, timeout(2000)).error(captor.capture())
+        return captor.firstValue.getString("code")
+    }
+
+    @Test
+    fun setConfigItem_missingKey_rejectsInvalidArgs() {
+        plugin.execute("setConfigItem", JSONArray().apply { put(""); put(true); put("EOCore") }, cb)
+        assertEquals("ACOUSTIC_INVALID_ARGS", errorCode())
+    }
+
+    @Test
+    fun setConfigItem_missingModule_rejectsInvalidArgs() {
+        plugin.execute("setConfigItem", JSONArray().apply { put("K"); put(true) }, cb)
+        assertEquals("ACOUSTIC_INVALID_ARGS", errorCode())
+    }
+
+    @Test
+    fun setConfigItem_objectValue_rejectsInvalidArgs() {
+        plugin.execute(
+            "setConfigItem",
+            JSONArray().apply { put("K"); put(JSONObject().put("a", 1)); put("EOCore") },
+            cb
+        )
+        assertEquals("ACOUSTIC_INVALID_ARGS", errorCode())
+    }
+
+    @Test
+    fun setConfigItem_sdkNotReady_rejectsInternalError() {
+        // updateConfig returns false while the SDK is not initialised
+        plugin.execute("setConfigItem", JSONArray().apply { put("K"); put("v"); put("EOCore") }, cb)
+        assertEquals("ACOUSTIC_INTERNAL_ERROR", errorCode())
+    }
+
+    @Test
+    fun getConfigItem_missingKey_rejectsInvalidArgs() {
+        plugin.execute("getConfigItem", JSONArray().apply { put(""); put("EOCore") }, cb)
+        assertEquals("ACOUSTIC_INVALID_ARGS", errorCode())
+    }
+
+    @Test
+    fun getConfigItem_missingModule_rejectsInvalidArgs() {
+        plugin.execute("getConfigItem", JSONArray().apply { put("K") }, cb)
+        assertEquals("ACOUSTIC_INVALID_ARGS", errorCode())
+    }
+
+    @Test
+    fun getConfigItem_itemNotSet_resolvesWithNoValue_soTheFacadeAppliesTheDefault() {
+        // The SDK is not initialised here, so it has no item to give. That must reach JS as a
+        // success without a value (the facade then returns the caller's default), not as an error
+        // and not as the string "null".
+        plugin.execute("getConfigItem", JSONArray().apply { put("NoSuchKey"); put("EOCore") }, cb)
+        org.mockito.kotlin.verify(cb, timeout(2000)).success()
+        verify(cb, never()).success(any<String>())
+        verify(cb, never()).error(any<JSONObject>())
+    }
+
+    @Test
+    fun toConfigString_rendersEachTypeTheWayTheConfigFilesSpellIt() {
+        assertEquals("true", plugin.toConfigString(true))
+        assertEquals("false", plugin.toConfigString(false))
+        assertEquals("text", plugin.toConfigString("text"))
+        assertEquals("5", plugin.toConfigString(5))
+        assertEquals("5", plugin.toConfigString(5.0))
+        assertEquals("0", plugin.toConfigString(0.0))
+        assertEquals("-3", plugin.toConfigString(-3.0))
+        assertEquals("0.5", plugin.toConfigString(0.5))
+    }
+
+    @Test
+    fun toConfigString_refusesAnythingElse() {
+        assertEquals(null, plugin.toConfigString(JSONObject()))
+        assertEquals(null, plugin.toConfigString(JSONArray()))
+        assertEquals(null, plugin.toConfigString(JSONObject.NULL))
+        assertEquals(null, plugin.toConfigString(Double.NaN))
+    }
+
+    // ── logSignal handler ──────────────────────────────────────────────────
+
+    @Test
+    fun logSignal_missingPayload_rejectsAcousticInvalidArgs_doesNotTouchActivity() {
+        plugin.execute("logSignal", JSONArray(), cb)
+        val captor = argumentCaptor<JSONObject>()
+        verify(cb).error(captor.capture())
+        assertEquals("ACOUSTIC_INVALID_ARGS", captor.firstValue.getString("code"))
+        verify(cordova, never()).activity
+    }
+
+    @Test
+    fun logSignal_nonObjectPayload_rejectsAcousticInvalidArgs() {
+        plugin.execute("logSignal", JSONArray().apply { put("not an object") }, cb)
+        val captor = argumentCaptor<JSONObject>()
+        verify(cb).error(captor.capture())
+        assertEquals("ACOUSTIC_INVALID_ARGS", captor.firstValue.getString("code"))
+    }
+
+    @Test
+    fun logSignal_nullActivity_rejectsInternalError() {
+        whenever(cordova.activity).thenReturn(null)
+        plugin.execute(
+            "logSignal",
+            JSONArray().apply { put(JSONObject().put("a", "b")); put(3) },
+            cb
+        )
+        val captor = argumentCaptor<JSONObject>()
+        verify(cb).error(captor.capture())
+        assertEquals("ACOUSTIC_INTERNAL_ERROR", captor.firstValue.getString("code"))
+    }
+
+    @Test
+    fun logSignal_withActivity_dispatchesOnUiThread() {
+        val activity = mock<AppCompatActivity>()
+        whenever(cordova.activity).thenReturn(activity)
+        plugin.execute(
+            "logSignal",
+            JSONArray().apply { put(JSONObject().put("a", "b")); put(3) },
+            cb
+        )
+        verify(activity).runOnUiThread(any())
+    }
+
+    @Test
+    fun toSignalPayload_keepsNestedObjectsArraysScalarsAndNull() {
+        val nested = JSONObject().put("signalType", "pageview")
+        val audience = JSONArray().put(JSONObject().put("name", "Account ID").put("value", "42"))
+        val payload = plugin.toSignalPayload(
+            JSONObject()
+                .put("signalContent", nested)
+                .put("audience", audience)
+                .put("flag", true)
+                .put("count", 3)
+                .put("label", "x")
+                .put("nothing", JSONObject.NULL)
+        )
+        assertEquals(6, payload.size)
+        assertEquals(nested, payload["signalContent"])
+        assertEquals(audience, payload["audience"])
+        assertEquals(true, payload["flag"])
+        assertEquals(3, payload["count"])
+        assertEquals("x", payload["label"])
+        assertTrue(payload.containsKey("nothing"))
+        assertEquals(JSONObject.NULL, payload["nothing"])
+    }
+
+    @Test
+    fun toSignalPayload_emptyObject_returnsEmptyMap() {
+        assertTrue(plugin.toSignalPayload(JSONObject()).isEmpty())
+    }
+
+    // ── logExceptionEvent handler ──────────────────────────────────────────
+
+    @Test
+    fun logExceptionEvent_blankMessage_rejectsAcousticInvalidArgs_doesNotTouchActivity() {
+        plugin.execute(
+            "logExceptionEvent",
+            JSONArray().apply { put("   "); put("stack"); put(false) },
+            cb
+        )
+        val captor = argumentCaptor<JSONObject>()
+        verify(cb).error(captor.capture())
+        assertEquals("ACOUSTIC_INVALID_ARGS", captor.firstValue.getString("code"))
+        verify(cordova, never()).activity
+    }
+
+    @Test
+    fun logExceptionEvent_missingMessage_rejectsAcousticInvalidArgs() {
+        plugin.execute("logExceptionEvent", JSONArray(), cb)
+        val captor = argumentCaptor<JSONObject>()
+        verify(cb).error(captor.capture())
+        assertEquals("ACOUSTIC_INVALID_ARGS", captor.firstValue.getString("code"))
+    }
+
+    @Test
+    fun logExceptionEvent_nullActivity_rejectsInternalError() {
+        whenever(cordova.activity).thenReturn(null)
+        plugin.execute(
+            "logExceptionEvent",
+            JSONArray().apply { put("boom"); put("stack"); put(true) },
+            cb
+        )
+        val captor = argumentCaptor<JSONObject>()
+        verify(cb).error(captor.capture())
+        assertEquals("ACOUSTIC_INTERNAL_ERROR", captor.firstValue.getString("code"))
+    }
+
+    @Test
+    fun logExceptionEvent_withActivity_dispatchesOnUiThread() {
+        val activity = mock<AppCompatActivity>()
+        whenever(cordova.activity).thenReturn(activity)
+        plugin.execute(
+            "logExceptionEvent",
+            JSONArray().apply { put("boom") },
+            cb
+        )
+        verify(activity).runOnUiThread(any())
+    }
+
     // ── logIdentificationEvent handler ─────────────────────────────────────
 
     @Test
@@ -780,12 +1041,72 @@ class ConnectPluginTest {
     // Connect.updateConfig(...) call arguments.
 
     @Test
-    fun applyScreenCaptureConfig_runsSynchronously_withoutThrowing_whenSdkNotInitialized() {
+    fun applyScreenCaptureConfig_isNoOp_whenNotConfigured() {
         ShadowLog.clear()
-        plugin.applyScreenCaptureConfig(mock())
+        plugin.applyScreenCaptureConfig(
+            mock(),
+            ConnectPlugin.NativeConfig(useRelease = false, killSwitchEnabled = false, killSwitchUrl = null, screenCaptureEnabled = null)
+        )
         assertTrue(
-            "expected applyScreenCaptureConfig to log synchronously, with no looper idling needed",
-            logsMentioning("applyScreenCaptureConfig").isNotEmpty()
+            "expected no applyScreenCaptureConfig log at all when screenCaptureEnabled is null",
+            logsMentioning("applyScreenCaptureConfig").isEmpty()
+        )
+    }
+
+    @Test
+    fun applyScreenCaptureConfig_attemptsToApply_whenOptedOut() {
+        ShadowLog.clear()
+        plugin.applyScreenCaptureConfig(
+            mock(),
+            ConnectPlugin.NativeConfig(useRelease = false, killSwitchEnabled = false, killSwitchUrl = null, screenCaptureEnabled = false)
+        )
+        // SDK is uninitialized here, so updateConfig returns false and the warning
+        // fires; asserting this exact text proves the guard did not return early.
+        assertTrue(
+            "expected applyScreenCaptureConfig to attempt the Tealeaf update when explicitly configured",
+            logsMentioning("applyScreenCaptureConfig: \"Tealeaf\" module update failed").isNotEmpty()
+        )
+    }
+
+    @Test
+    fun applyScreenCaptureConfig_isNoOp_whenOptedIn_becauseCaptureOnIsTheSdkDefault() {
+        ShadowLog.clear()
+        plugin.applyScreenCaptureConfig(
+            mock(),
+            ConnectPlugin.NativeConfig(useRelease = false, killSwitchEnabled = false, killSwitchUrl = null, screenCaptureEnabled = true)
+        )
+        assertTrue(
+            "expected no applyScreenCaptureConfig log when screenCaptureEnabled is true (SDK default)",
+            logsMentioning("applyScreenCaptureConfig").isEmpty()
+        )
+    }
+
+    @Test
+    fun parseNativeConfig_screenCaptureEnabled_missing_defaultsToNull() {
+        assertEquals(null, plugin.parseNativeConfig("{}").screenCaptureEnabled)
+    }
+
+    @Test
+    fun parseNativeConfig_screenCaptureEnabled_explicitNull_parsesAsNull() {
+        assertEquals(
+            null,
+            plugin.parseNativeConfig("""{"screenCaptureEnabled":null}""").screenCaptureEnabled
+        )
+    }
+
+    @Test
+    fun parseNativeConfig_screenCaptureEnabled_true_parsesAsTrue() {
+        assertEquals(
+            true,
+            plugin.parseNativeConfig("""{"screenCaptureEnabled":true}""").screenCaptureEnabled
+        )
+    }
+
+    @Test
+    fun parseNativeConfig_screenCaptureEnabled_false_parsesAsFalse() {
+        assertEquals(
+            false,
+            plugin.parseNativeConfig("""{"screenCaptureEnabled":false}""").screenCaptureEnabled
         )
     }
 

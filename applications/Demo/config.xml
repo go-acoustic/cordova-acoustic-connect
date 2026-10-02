@@ -12,6 +12,9 @@
     <allow-intent href="https://*/*" />
     <preference name="android-minSdkVersion" value="26" />
 
+    <!-- e2e only: acts while `node e2e/prepare.js prepare` is active, for every platform -->
+    <hook type="after_prepare" src="hooks/after_prepare_e2e.js" />
+
     <platform name="android">
         <hook type="before_build" src="hooks/before_build_check_credentials.js" />
         <hook type="after_prepare" src="hooks/after_prepare_icons.js" />

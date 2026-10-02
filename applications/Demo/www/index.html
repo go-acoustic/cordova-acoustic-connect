@@ -58,16 +58,57 @@
         <!-- ── Behaviour tab ─────────────────────────────────────────── -->
         <div id="tab-behaviour" class="tab-content">
 
+            <div class="subtab-bar" role="tablist" aria-label="Behaviour sections">
+                <button class="subtab-btn active" data-subtab="actions" role="tab">Actions</button>
+                <button class="subtab-btn" data-subtab="showcase" role="tab">Showcase</button>
+                <button class="subtab-btn" data-subtab="verification" role="tab">Verification</button>
+            </div>
+
+            <div id="subtab-actions" class="subtab-content active">
+
             <section class="card">
-                <h2 class="card-title">Coming Soon</h2>
-                <p class="behaviour-headline">Analytics surfaces will land here.</p>
-                <p class="behaviour-body">
-                    This tab is intentionally empty for now. Future work will add
-                    demo cards for custom events, signals, click and text-change
-                    tracking, screen-view logging, and unhandled-exception reporting —
-                    the analytics half of the SDK that lives alongside the push half.
-                </p>
+                <h2 class="card-title">Custom Event</h2>
+                <label class="field-label" for="et_event_name">Event Name</label>
+                <input class="field-input" id="et_event_name" type="text" value="demo_event" autocomplete="off">
+                <button class="action" id="btn_log_custom_event" disabled>Log Custom Event</button>
+                <button class="action secondary" id="btn_log_signal" disabled>Log Signal (nested JSON)</button>
             </section>
+
+            <section class="card">
+                <h2 class="card-title">Click &amp; Text Change</h2>
+                <label class="field-label" for="et_text_value">Text</label>
+                <input class="field-input" id="et_text_value" type="text" placeholder="Type something" autocomplete="off">
+                <button class="action" id="btn_log_click" disabled>Log Click (btn_demo)</button>
+                <button class="action secondary" id="btn_log_text_change" disabled>Log Text Change (masked)</button>
+                <p class="behaviour-body">The text is masked by default: only its length is sent, as X characters.</p>
+            </section>
+
+            <section class="card">
+                <h2 class="card-title">Screen View</h2>
+                <button class="action" id="btn_screen_load" disabled>Log Screen Load</button>
+                <button class="action secondary" id="btn_screen_unload" disabled>Log Screen Unload</button>
+            </section>
+
+            <section class="card">
+                <h2 class="card-title">Exception &amp; Flush</h2>
+                <button class="action" id="btn_log_exception" disabled>Log Handled Exception</button>
+                <button class="action secondary" id="btn_flush" disabled>Flush Queues</button>
+                <p class="ident-status hidden" id="behaviourStatus"></p>
+            </section>
+
+            </div>
+
+            <!-- Showcase: one card per analytics feature, filled by js/behaviour/behaviour.js -->
+            <div id="subtab-showcase" class="subtab-content">
+                <div id="showcaseList"></div>
+                <div id="showcaseDetail" class="hidden"></div>
+            </div>
+
+            <!-- Verification: one card per scenario, with what to do and what the collector must show -->
+            <div id="subtab-verification" class="subtab-content">
+                <p class="behaviour-body">Run a scenario, send the app to the background, then check the collector against the expected result.</p>
+                <div id="verificationList"></div>
+            </div>
 
         </div>
 
@@ -99,6 +140,11 @@
 
         <script src="cordova.js"></script>
         <script src="js/connect-config.js"></script>
+        <script src="js/behaviour/behaviour-core.js"></script>
+        <script src="js/behaviour/behaviour.js"></script>
         <script src="js/index.js"></script>
+        <script src="js/e2e-config.js"></script>
+        <script src="js/e2e/scenario.js"></script>
+        <script src="js/e2e/e2e.js"></script>
     </body>
 </html>

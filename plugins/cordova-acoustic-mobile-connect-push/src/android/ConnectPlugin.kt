@@ -152,6 +152,24 @@ class ConnectPlugin : CordovaPlugin() {
             ACTION_LOG_CUSTOM_EVENT -> {
                 handleLogCustomEvent(args, callbackContext); true
             }
+            ACTION_LOG_SIGNAL -> {
+                handleLogSignal(args, callbackContext); true
+            }
+            ACTION_LOG_EXCEPTION_EVENT -> {
+                handleLogExceptionEvent(args, callbackContext); true
+            }
+            ACTION_SET_CONFIG_ITEM -> {
+                handleSetConfigItem(args, callbackContext); true
+            }
+            ACTION_GET_CONFIG_ITEM -> {
+                handleGetConfigItem(args, callbackContext); true
+            }
+            ACTION_LOG_SCREEN_VIEW_CONTEXT_LOAD -> {
+                handleLogScreenViewContextLoad(args, callbackContext); true
+            }
+            ACTION_LOG_SCREEN_VIEW_CONTEXT_UNLOAD -> {
+                handleLogScreenViewContextUnload(args, callbackContext); true
+            }
             ACTION_GET_SDK_VERSION -> {
                 callbackContext.sendPluginResult(
                     PluginResult(PluginResult.Status.OK, Connect.getLibraryVersion())
@@ -235,11 +253,9 @@ class ConnectPlugin : CordovaPlugin() {
                     // Must run before Connect.enable(): LogLocationEnabled is read once
                     // inside the SDK's own enable() body (see the function's own doc).
                     applyLocationLoggingConfig(activity.application, nativeConfig)
+                    applyScreenCaptureConfig(activity.application, nativeConfig)
                     Connect.enable(appKey, postURL)
                     applyKillSwitchConfig(activity.application, nativeConfig)
-                    // Screen/layout capture is deliberately left at the SDK's own
-                    // default (on) here — see applyScreenCaptureConfig's doc comment
-                    // for why it exists but isn't invoked.
                 } else {
                     // Push setup already ran via whichever path enabled the SDK
                     // first — resolve success without repeating it.
@@ -608,6 +624,203 @@ class ConnectPlugin : CordovaPlugin() {
         }
     }
 
+    /**
+     * Sets a configuration item of a native SDK module.
+     * @param args[0] key     non-empty string
+     * @param args[1] value   boolean, string or finite number
+     * @param args[2] module  module name ("EOCore", "Tealeaf", "Connect"), non-empty string
+     */
+    internal fun handleSetConfigItem(args: JSONArray, callbackContext: CallbackContext) {
+        val key = args.optString(0, "").trim()
+        val module = args.optString(2, "").trim()
+        val value = toConfigString(if (args.length() > 1) args.get(1) else null)
+        if (key.isEmpty() || module.isEmpty() || value == null) {
+            callbackContext.error(
+                errorJson(
+                    CODE_INVALID_ARGS,
+                    "setConfigItem: key and moduleName must be non-empty strings and value a boolean, string or number"
+                )
+            )
+            return
+        }
+        try {
+            if (Connect.updateConfig(key, value, module)) {
+                callbackContext.success()
+            } else {
+                workWrapper.error(
+                    callbackContext, CODE_INTERNAL_ERROR,
+                    "setConfigItem returned false — SDK may not be initialised or module \"$module\" is not registered"
+                )
+            }
+        } catch (t: Throwable) {
+            workWrapper.error(callbackContext, CODE_INTERNAL_ERROR, t.message ?: "setConfigItem failed")
+        }
+    }
+
+    /**
+     * Reads a configuration item of a native SDK module as the raw string the SDK stores, or
+     * resolves with no value when the item is not set. The JS facade applies the type.
+     * @param args[0] key     non-empty string
+     * @param args[1] module  module name, non-empty string
+     */
+    internal fun handleGetConfigItem(args: JSONArray, callbackContext: CallbackContext) {
+        val key = args.optString(0, "").trim()
+        val module = args.optString(1, "").trim()
+        if (key.isEmpty() || module.isEmpty()) {
+            callbackContext.error(
+                errorJson(CODE_INVALID_ARGS, "getConfigItem: key and moduleName must be non-empty strings")
+            )
+            return
+        }
+        try {
+            val raw = Connect.getConfigItemString(key, module)
+            if (raw.isNullOrEmpty()) {
+                callbackContext.success()
+            } else {
+                callbackContext.success(raw)
+            }
+        } catch (t: Throwable) {
+            workWrapper.error(callbackContext, CODE_INTERNAL_ERROR, t.message ?: "getConfigItem failed")
+        }
+    }
+
+    /**
+     * Renders a config value the way the SDK's config files spell it: `true`/`false`, a whole
+     * number without a trailing ".0", other numbers as is. Returns null for anything that is
+     * not a boolean, string or finite number.
+     */
+    internal fun toConfigString(value: Any?): String? = when (value) {
+        is Boolean -> value.toString()
+        is String -> value
+        is Int, is Long -> value.toString()
+        is Number -> {
+            val d = value.toDouble()
+            when {
+                d.isNaN() || d.isInfinite() -> null
+                d == Math.floor(d) && Math.abs(d) < 1e15 -> d.toLong().toString()
+                else -> d.toString()
+            }
+        }
+        else -> null
+    }
+
+    /**
+     * Logs a signal. The payload may be arbitrary JSON.
+     * @param args[0] values  JSON object, required
+     * @param args[1] level   Int monitoring level (optional, default 3)
+     */
+    internal fun handleLogSignal(args: JSONArray, callbackContext: CallbackContext) {
+        val values = args.optJSONObject(0)
+        if (values == null) {
+            callbackContext.error(errorJson(CODE_INVALID_ARGS, "logSignal: values must be a JSON object"))
+            return
+        }
+        val level = args.optInt(1, 3)
+        val activity = cordova.activity ?: run {
+            callbackContext.error(errorJson(CODE_INTERNAL_ERROR, "logSignal: no foreground activity"))
+            return
+        }
+        val payload = toSignalPayload(values)
+        activity.runOnUiThread {
+            try {
+                if (Connect.logSignal(payload, level)) {
+                    callbackContext.success()
+                } else {
+                    workWrapper.error(callbackContext, CODE_INTERNAL_ERROR, "logSignal returned false")
+                }
+            } catch (t: Throwable) {
+                workWrapper.error(callbackContext, CODE_INTERNAL_ERROR, t.message ?: "logSignal failed")
+            }
+        }
+    }
+
+    /**
+     * Converts the JSON payload to the map the SDK's signal serialiser consumes.
+     * Nested objects and arrays stay as org.json values; JSON null stays
+     * [JSONObject.NULL]. Top-level numbers are kept, but the default SDK
+     * (11.0.21-beta) drops them when serialising; 11.1.10-beta does not.
+     */
+    internal fun toSignalPayload(values: JSONObject): HashMap<String?, Any?> {
+        val map = HashMap<String?, Any?>(values.length())
+        values.keys().forEach { key -> map[key] = values.get(key) }
+        return map
+    }
+
+    /**
+     * Logs an exception event.
+     * @param args[0] message    String, required
+     * @param args[1] stackInfo  String (optional)
+     * @param args[2] unhandled  Boolean (optional, default false)
+     */
+    internal fun handleLogExceptionEvent(args: JSONArray, callbackContext: CallbackContext) {
+        val message = args.optString(0, "").trim()
+        if (message.isBlank()) {
+            callbackContext.error(errorJson(CODE_INVALID_ARGS, "logExceptionEvent: message is required"))
+            return
+        }
+        val stackInfo = args.optString(1, "")
+        val unhandled = args.optBoolean(2, false)
+        val activity = cordova.activity ?: run {
+            callbackContext.error(errorJson(CODE_INTERNAL_ERROR, "logExceptionEvent: no foreground activity"))
+            return
+        }
+        activity.runOnUiThread {
+            try {
+                if (Connect.logExceptionEvent("Cordova Plugin", message, stackInfo, unhandled)) {
+                    callbackContext.success()
+                } else {
+                    workWrapper.error(callbackContext, CODE_INTERNAL_ERROR, "logExceptionEvent returned false")
+                }
+            } catch (t: Throwable) {
+                workWrapper.error(callbackContext, CODE_INTERNAL_ERROR, t.message ?: "logExceptionEvent failed")
+            }
+        }
+    }
+
+    /**
+     * Logs a screen-entered (LOAD) screen view.
+     * @param args[0] logicalPageName  String, required
+     * @param args[1] referrer         String or null (optional)
+     */
+    internal fun handleLogScreenViewContextLoad(args: JSONArray, callbackContext: CallbackContext) =
+        logScreenViewContext(args, callbackContext, ConnectScreenviewType.LOAD, "logScreenViewContextLoad")
+
+    /**
+     * Logs a screen-left (UNLOAD) screen view. Same arguments as the LOAD variant.
+     */
+    internal fun handleLogScreenViewContextUnload(args: JSONArray, callbackContext: CallbackContext) =
+        logScreenViewContext(args, callbackContext, ConnectScreenviewType.UNLOAD, "logScreenViewContextUnload")
+
+    private fun logScreenViewContext(
+        args: JSONArray,
+        callbackContext: CallbackContext,
+        type: ConnectScreenviewType,
+        label: String
+    ) {
+        val name = args.optString(0, "").trim()
+        if (name.isBlank()) {
+            callbackContext.error(errorJson(CODE_INVALID_ARGS, "$label: logicalPageName is required"))
+            return
+        }
+        // optString turns a JSON null into the string "null"; guard it explicitly.
+        val referrer = if (args.isNull(1)) null else args.optString(1, "").ifBlank { null }
+        val activity = cordova.activity ?: run {
+            callbackContext.error(errorJson(CODE_INTERNAL_ERROR, "$label: no foreground activity"))
+            return
+        }
+        activity.runOnUiThread {
+            try {
+                if (Connect.logScreenview(activity, name, type, referrer)) {
+                    callbackContext.success()
+                } else {
+                    workWrapper.error(callbackContext, CODE_INTERNAL_ERROR, "$label returned false")
+                }
+            } catch (t: Throwable) {
+                workWrapper.error(callbackContext, CODE_INTERNAL_ERROR, t.message ?: "$label failed")
+            }
+        }
+    }
+
     private fun handleManualModeStub(callbackContext: CallbackContext) {
         callbackContext.error(
             errorJson(CODE_PUSH_MODE_NOT_MANUAL, "Android does not support manual push mode")
@@ -690,10 +903,9 @@ class ConnectPlugin : CordovaPlugin() {
                 // 0-arg path still reaches Tealeaf's enable(String sessionId) body (via
                 // enable(null)) that reads LogLocationEnabled once.
                 applyLocationLoggingConfig(activity.application, nativeConfig)
+                applyScreenCaptureConfig(activity.application, nativeConfig)
                 Connect.enable()
                 applyKillSwitchConfig(activity.application, nativeConfig)
-                // Screen/layout capture left at the SDK default here too — see
-                // applyScreenCaptureConfig's doc comment.
                 pushMode = PUSH_MODE_AUTOMATIC
                 val iconRes = resolveIconRes(activity, JSONObject())
                 Connect.push.enable(
@@ -737,7 +949,9 @@ class ConnectPlugin : CordovaPlugin() {
         val killSwitchUrl: String?,
         // null = not configured by the app — leave the SDK's own default alone. Unlike
         // killSwitchEnabled, this plugin does not decide a default for location logging.
-        val locationLoggingEnabled: Boolean? = null
+        val locationLoggingEnabled: Boolean? = null,
+        // null = not configured by the app — leave the SDK's own default (capture on) alone.
+        val screenCaptureEnabled: Boolean? = null
     )
 
     private fun readNativeConfig(context: Context): NativeConfig {
@@ -763,6 +977,11 @@ class ConnectPlugin : CordovaPlugin() {
                 killSwitchUrl = obj.optString("killSwitchUrl", "").ifBlank { null },
                 locationLoggingEnabled = if (obj.has("locationLoggingEnabled") && !obj.isNull("locationLoggingEnabled")) {
                     obj.getBoolean("locationLoggingEnabled")
+                } else {
+                    null
+                },
+                screenCaptureEnabled = if (obj.has("screenCaptureEnabled") && !obj.isNull("screenCaptureEnabled")) {
+                    obj.getBoolean("screenCaptureEnabled")
                 } else {
                     null
                 }
@@ -905,39 +1124,26 @@ class ConnectPlugin : CordovaPlugin() {
     }
 
     /**
-     * Disables native screen-layout capture (`LogViewLayoutOnScreenTransition`), unconditionally.
+     * Applies the app's screen-capture choice from `ConnectConfig.json`'s
+     * `ScreenCaptureEnabled` by turning the native SDK's `LogViewLayoutOnScreenTransition`
+     * off. Only an explicit `false` does anything: null (not configured) and `true` leave
+     * the SDK's own default (capture on); this plugin does not force a value.
      *
-     * NOT CURRENTLY CALLED — kept, unused, pending product confirmation. This was written on
-     * the assumption that "the Cordova plugin offers push + identity signals only, so the
-     * SDK's own default of capturing the full native view hierarchy on every screen transition
-     * adds payload size and collector storage cost with no benefit here." That's a scope
-     * assumption, not a confirmed requirement — pending confirmation from product (does the
-     * team actually want this disabled, or should the SDK's own default, capture on, stay in
-     * effect?), the default is left alone and this function isn't invoked from `handleEnable`
-     * or `tryBundledConfigInit`. Wire it back in with a single call if/when disabling is
-     * confirmed as wanted.
+     * Targets the same "Tealeaf" module as [applyKillSwitchConfig] but applies
+     * synchronously, with no re-apply delay: the module is registered into EOCore's registry
+     * inside `Connect.init()` (which always runs before this), and the key is only ever read
+     * by `Tealeaf.java` at screen-transition time, never rewritten by `enable()`.
      *
-     * Targets the same "Tealeaf" module as [applyKillSwitchConfig], but unlike it, applies
-     * synchronously with no re-apply delay — both verified against checked-out
-     * `Tealeaf.java`/`TealeafEOLifecycleObject.java`/`EOCore.java` source:
-     *  - The "Tealeaf" module is registered into EOCore's module registry synchronously inside
-     *    `Connect.init()` (`Tealeaf`'s constructor -> `TealeafEOLifecycleObject.init()` ->
-     *    `EOCore.addModule(...)`), which this plugin always calls before `Connect.enable(...)`.
-     *    It is never gated by `enable()`'s internal 100ms-delayed callback, so the module
-     *    already resolves immediately, at t=0.
-     *  - `TLF_LOG_SCREENLAYOUT` ("LogViewLayoutOnScreenTransition") is only ever *read* by
-     *    `Tealeaf.java` (inside its `logScreenLayout*` methods, at actual screen-transition
-     *    time) — never written by `enable()`'s synchronous body or its delayed callback, unlike
-     *    `KillSwitchEnabled`. There is no reset race here to guard against.
+     * Must run before `Connect.enable(...)`, like [applyLocationLoggingConfig].
      *
-     * Note: this does NOT suppress screenshot capture. That's gated by a separate, cached
-     * `AutoLayout.GlobalScreenSettings.ScreenShot` JSON field with no confirmed live/flat
-     * runtime toggle (unlike this key) — attempting to override it via the nested
-     * `Connect.updateConfig(module, JSONObject)` path risks silently dropping other nested
-     * fields (e.g. sensitive-data masking config) it isn't safe to guess the full shape of.
-     * Left as a known follow-up, not attempted here.
+     * Not verified on a device: with the default config the Android SDK sent no layout
+     * message from the Cordova demo at all, so the effect of this key could not be
+     * observed. Note it does not by itself control screenshots, which are gated by the
+     * separate `AutoLayout.GlobalScreenSettings.ScreenShot` field.
      */
-    internal fun applyScreenCaptureConfig(context: Context) {
+    internal fun applyScreenCaptureConfig(context: Context, config: NativeConfig) {
+        val screenCaptureEnabled = config.screenCaptureEnabled ?: return
+        if (screenCaptureEnabled) return
         try {
             // See applyKillSwitchConfig — updateConfig's String-module overload
             // returns false rather than throwing when the module isn't registered.
@@ -992,6 +1198,12 @@ class ConnectPlugin : CordovaPlugin() {
         internal const val ACTION_IS_SDK_ENABLED           = "isSdkEnabled"
         internal const val ACTION_SET_CURRENT_SCREEN_NAME  = "setCurrentScreenName"
         internal const val ACTION_LOG_CUSTOM_EVENT          = "logCustomEvent"
+        internal const val ACTION_LOG_SIGNAL                = "logSignal"
+        internal const val ACTION_LOG_EXCEPTION_EVENT       = "logExceptionEvent"
+        internal const val ACTION_SET_CONFIG_ITEM           = "setConfigItem"
+        internal const val ACTION_GET_CONFIG_ITEM           = "getConfigItem"
+        internal const val ACTION_LOG_SCREEN_VIEW_CONTEXT_LOAD   = "logScreenViewContextLoad"
+        internal const val ACTION_LOG_SCREEN_VIEW_CONTEXT_UNLOAD = "logScreenViewContextUnload"
         internal const val ACTION_GET_SDK_VERSION           = "getSdkVersion"
 
         internal const val PUSH_MODE_AUTOMATIC = "automatic"

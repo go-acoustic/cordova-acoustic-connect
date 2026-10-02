@@ -51,6 +51,41 @@ function _globalPublicSurfaceCompiles(): void {
     // return type is Promise<void>
     void AcousticConnect.logIdentity('email', 'u@e.com').then((): void => {});
 
+    // ── SDK info ─────────────────────────────────────────────────────────
+    void AcousticConnect.getSdkVersion().then((v: string): void => { void v; });
+    void AcousticConnect.isSdkEnabled().then((b: boolean): void => { void b; });
+
+    // ── Analytics ────────────────────────────────────────────────────────
+    void AcousticConnect.logCustomEvent('purchase');
+    void AcousticConnect.logCustomEvent('purchase', { sku: 'A1', qty: 2, gift: true });
+    void AcousticConnect.logCustomEvent('purchase', { sku: 'A1' }, 2);
+    void AcousticConnect.logCustomEvent('purchase').then((): void => {});
+    void AcousticConnect.setCurrentScreenName('home');
+    void AcousticConnect.setCurrentScreenName('home').then((): void => {});
+    void AcousticConnect.flushQueues();
+    void AcousticConnect.flushQueues().then((): void => {});
+    void AcousticConnect.logClickEvent('btnSignup');
+    void AcousticConnect.logClickEvent('btnSignup', { plan: 'pro', seats: 3, trial: true });
+    void AcousticConnect.logClickEvent('btnSignup').then((): void => {});
+    void AcousticConnect.logTextChangeEvent('txtEmail');
+    void AcousticConnect.logTextChangeEvent('txtEmail', { text: 'abc' });
+    void AcousticConnect.logTextChangeEvent('txtName', { text: 'Ada', masked: false });
+    void AcousticConnect.logTextChangeEvent('txtEmail').then((): void => {});
+    const textOpts: AcousticConnect.TextChangeOptions = { text: 'a', masked: true };
+    void textOpts;
+    void AcousticConnect.logSignal({ a: 1 });
+    void AcousticConnect.logSignal({ signalContent: { signalType: 'pageview' }, tags: ['a', 'b'] }, 1);
+    void AcousticConnect.logSignal({ a: null }).then((): void => {});
+    void AcousticConnect.logExceptionEvent('boom');
+    void AcousticConnect.logExceptionEvent('boom', 'stack');
+    void AcousticConnect.logExceptionEvent('boom', 'stack', true).then((): void => {});
+    void AcousticConnect.logScreenViewContextLoad('detail');
+    void AcousticConnect.logScreenViewContextLoad('detail', 'home');
+    void AcousticConnect.logScreenViewContextLoad('detail', null);
+    void AcousticConnect.logScreenViewContextUnload('detail');
+    void AcousticConnect.logScreenViewContextUnload('detail', 'home');
+    void AcousticConnect.logScreenViewContextUnload('detail').then((): void => {});
+
     // ── Push ─────────────────────────────────────────────────────────────
     void AcousticConnect.push.requestPermission();
     void AcousticConnect.push.getPermissionState();
@@ -63,6 +98,15 @@ function _globalPublicSurfaceCompiles(): void {
     void AcousticConnect.push.didReceiveResponse(
         'action', { s: 'string' }
     );
+
+    // ── Runtime configuration items ──────────────────────────────────────
+    void AcousticConnect.setConfigItem('DisplayLogging', true, 'EOCore');
+    void AcousticConnect.setConfigItem('PostMessageTimeInterval', 30, 'EOCore');
+    void AcousticConnect.setConfigItem('Key', 'text', 'Tealeaf').then((): void => {});
+    // the result has the type of the default, whether the default is a literal or not
+    void AcousticConnect.getConfigItem('DisplayLogging', false, 'EOCore').then((v: boolean): void => { void v; });
+    void AcousticConnect.getConfigItem('Key', 'fallback', 'EOCore').then((v: string): void => { void v; });
+    void AcousticConnect.getConfigItem('PostMessageTimeInterval', 0, 'EOCore').then((v: number): void => { void v; });
 
     // ── Type aliases must be exported and assignable ─────────────────────
     const mode: AcousticConnect.PushMode = 'manual';

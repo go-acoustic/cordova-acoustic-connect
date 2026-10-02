@@ -2,7 +2,9 @@
  * Copyright (C) 2026 Acoustic, L.P. All rights reserved.
  *
  * Internal demo for the Acoustic Connect Cordova plugin.
- * Three tabs — Notification, Identity, Behaviour.
+ * Three tabs — Notification, Identity, Behaviour. Behaviour has three sections:
+ * Actions (quick calls), Showcase (one card per feature) and Verification
+ * (scenarios with the expected result, see js/behaviour/).
  */
 
 'use strict';
@@ -52,6 +54,10 @@ function onDeviceReady() {
     // ── Identity tab ────────────────────────────────────────────────
     document.getElementById('btn_send_identity_signal').addEventListener('click', logUserLoggedIn);
     document.getElementById('btn_send_account_registered_signal').addEventListener('click', logUserRegistered);
+
+    // ── Behaviour tab ───────────────────────────────────────────────
+    initBehaviourTab();
+    if (window.BehaviourUi) window.BehaviourUi.init();
 
     loadHistory();
     restoreSession();
@@ -110,6 +116,8 @@ function onSdkEnabled() {
     document.getElementById('btn_send_identity_signal').disabled  = false;
     document.getElementById('btn_send_account_registered_signal').disabled = false;
     document.getElementById('btn_enable_push').disabled   = false;
+    setBehaviourEnabled(true);
+    if (window.BehaviourUi) window.BehaviourUi.setEnabled(true);
     refreshPermissionState();
 }
 
@@ -220,6 +228,69 @@ function sendIdentitySignal(signalType, additionalParameters) {
              statusEl.textContent = msg;
              statusEl.className = 'ident-status error';
         });
+}
+
+// ── Behaviour tab actions ──────────────────────────────────────────────
+
+const BEHAVIOUR_BUTTONS = [
+    'btn_log_custom_event', 'btn_log_signal', 'btn_log_click', 'btn_log_text_change',
+    'btn_screen_load', 'btn_screen_unload', 'btn_log_exception', 'btn_flush'
+];
+
+// The analytics methods ship in a newer plugin version than the one this demo may
+// be pinned to (it installs the published npm package); detect them instead of
+// throwing a TypeError on tap.
+function analyticsAvailable() {
+    return typeof window.AcousticConnect.logCustomEvent === 'function';
+}
+
+function setBehaviourEnabled(enabled) {
+    BEHAVIOUR_BUTTONS.forEach(id => { document.getElementById(id).disabled = !enabled; });
+}
+
+function showBehaviourStatus(ok, text) {
+    const el = document.getElementById('behaviourStatus');
+    el.textContent = text;
+    el.className = 'ident-status ' + (ok ? 'success' : 'error');
+}
+
+// Runs one analytics call and reports the outcome in the shared status line. A
+// resolved promise means the SDK queued the event, not that the collector has it.
+function runBehaviour(label, call) {
+    call()
+        .then(() => showBehaviourStatus(true, label + ' queued'))
+        .catch((error) => {
+            log('✗ ' + label + ' → ' + fmt(error));
+            showBehaviourStatus(false, (error && error.message) ? error.message : label + ' failed');
+        });
+}
+
+function initBehaviourTab() {
+    if (!analyticsAvailable()) {
+        showBehaviourStatus(false, 'This plugin version has no analytics API — update cordova-acoustic-connect.');
+        return;
+    }
+    const A = window.AcousticConnect;
+    const on = (id, handler) => document.getElementById(id).addEventListener('click', handler);
+
+    on('btn_log_custom_event', () => {
+        const name = document.getElementById('et_event_name').value.trim();
+        runBehaviour('Custom event', () => A.logCustomEvent(name, { source: 'demo', platform: cordova.platformId }));
+    });
+    on('btn_log_signal', () => runBehaviour('Signal', () => A.logSignal({
+        signalContent: { signalType: 'pageview', url: 'https://app.example.com/demo' },
+        audience: [{ name: 'Account ID', value: '42' }]
+    })));
+    on('btn_log_click', () => runBehaviour('Click', () => A.logClickEvent('btn_demo', { screen: 'behaviour' })));
+    on('btn_log_text_change', () => {
+        const text = document.getElementById('et_text_value').value;
+        runBehaviour('Text change', () => A.logTextChangeEvent('txt_demo', { text: text }));
+    });
+    on('btn_screen_load', () => runBehaviour('Screen load', () => A.logScreenViewContextLoad('demo_screen', 'behaviour')));
+    on('btn_screen_unload', () => runBehaviour('Screen unload', () => A.logScreenViewContextUnload('demo_screen', 'behaviour')));
+    on('btn_log_exception', () => runBehaviour('Exception', () => A.logExceptionEvent(
+        'Demo handled exception', 'Error: demo\n    at demo (index.js)', false)));
+    on('btn_flush', () => runBehaviour('Flush', () => A.flushQueues()));
 }
 
 // ── Identity history ───────────────────────────────────────────────────
