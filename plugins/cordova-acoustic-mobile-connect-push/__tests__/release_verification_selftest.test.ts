@@ -7,7 +7,8 @@
  */
 
 import { spawnSync } from 'child_process';
-import { existsSync } from 'fs';
+import { existsSync, mkdtempSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
 import { join } from 'path';
 
 const ENGINE = join(
@@ -29,6 +30,24 @@ describeIfEnginePresent('release-verification assertion engine', () => {
 
     it('selftest passes: every scenario agrees with its expectation', () => {
         const run = spawnSync(process.execPath, [ENGINE, 'selftest'], { encoding: 'utf8' });
+        expect(run.stdout).toContain('all agree with expectation');
+        expect(run.status).toBe(0);
+    });
+
+    // Node writes to a pipe asynchronously on some platforms, and `process.exit()` drops what is still waiting to be written:
+    // on a loaded build agent the self-test's report was cut off before its last lines, and this test failed at random.
+    // The preload below makes every write to stdout late, which is that situation every time.
+    it('prints the whole selftest report even when stdout is slow', () => {
+        const preload = join(mkdtempSync(join(tmpdir(), 'slow-stdout-')), 'slow-stdout.mjs');
+        writeFileSync(preload, [
+            'const real = process.stdout.write.bind(process.stdout);',
+            'process.stdout.write = (chunk, encoding, callback) => {',
+            "    const done = typeof encoding === 'function' ? encoding : callback;",
+            '    setTimeout(() => { real(chunk); if (done) done(); }, 20);',
+            '    return true;',
+            '};'
+        ].join('\n'));
+        const run = spawnSync(process.execPath, ['--import', preload, ENGINE, 'selftest'], { encoding: 'utf8' });
         expect(run.stdout).toContain('all agree with expectation');
         expect(run.status).toBe(0);
     });
