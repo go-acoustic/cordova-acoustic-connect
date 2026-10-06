@@ -42,7 +42,7 @@ const VALUE_OPTIONS = {
 const NUMBER_OPTIONS = { '--run-wait': 'runWaitSec', '--settle': 'settleSec', '--stable-wait': 'stableWaitSec' };
 
 // Extra `Connect` settings for one run, as a JSON object, merged over the phase's own: try another
-// native SDK version ('{"AndroidVersion":"11.1.10-beta"}') or other layout rules. Written to the
+// native SDK version ('{"AndroidVersion":"x.y.z"}') or other layout rules. Written to the
 // report, so keep credentials out of it.
 function parseConnectConfig(text) {
     let value;
@@ -55,18 +55,6 @@ function parseConnectConfig(text) {
         throw new Error('--connect-config must be a JSON object, not ' + (Array.isArray(value) ? 'an array' : String(value)));
     }
     return value;
-}
-
-// The Android SDK version this run asks for: --connect-config first, then ConnectConfig.json.
-// Empty means the plugin's own pin.
-function requestedAndroidVersion(opts, deps, root) {
-    if (opts.connectConfig && opts.connectConfig.AndroidVersion) return String(opts.connectConfig.AndroidVersion);
-    try {
-        const config = JSON.parse(deps.readFile(path.join(root, 'ConnectConfig.json')));
-        return String((config.Connect && config.Connect.AndroidVersion) || '');
-    } catch (e) {
-        return '';
-    }
 }
 
 function parseArgs(argv) {
@@ -152,7 +140,7 @@ async function runE2E(opts, deps) {
     const outDir = opts.outDir;
 
     // Everything that can be rejected is rejected before anything is touched.
-    const manifest = suite.buildSuite({ platform: platform, phase: phase, androidSdkVersion: requestedAndroidVersion(opts, deps, root) });
+    const manifest = suite.buildSuite({ platform: platform, phase: phase });
     if (!deps.exists(opts.sinkRepo)) {
         throw new Error('collector sink checkout not found at ' + opts.sinkRepo + ' (set --sink-repo)');
     }

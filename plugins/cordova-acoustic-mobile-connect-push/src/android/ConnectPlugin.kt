@@ -737,8 +737,8 @@ class ConnectPlugin : CordovaPlugin() {
     /**
      * Converts the JSON payload to the map the SDK's signal serialiser consumes.
      * Nested objects and arrays stay as org.json values; JSON null stays
-     * [JSONObject.NULL]. Top-level numbers are kept, but the default SDK
-     * (11.0.21-beta) drops them when serialising; 11.1.10-beta does not.
+     * [JSONObject.NULL]. Top-level numbers are kept, but SDK versions before
+     * 11.0.24-beta (seen on 11.0.21-beta) drop them when serialising.
      */
     internal fun toSignalPayload(values: JSONObject): HashMap<String?, Any?> {
         val map = HashMap<String?, Any?>(values.length())

@@ -139,8 +139,8 @@ describe('ConnectBasicConfig.properties generation', () => {
     // The generated file replaces the SDK's own ConnectBasicConfig.properties (an app asset wins
     // over a library asset of the same name), so a key left out of it is lost. Without the
     // capture keys below the Android SDK refused every layout capture (Connect.logScreenLayout
-    // returned false and no type 10 was ever sent); with them and an SDK that publishes a WebView
-    // layout (11.1.10-beta, CA-157701) the layout arrives. Values are the SDK's defaults.
+    // returned false and no type 10 was ever sent); with them the layout arrives (the SDK also has to
+    // publish a WebView layout, which 11.1.10-beta does). Values are the SDK's defaults.
     it('keeps the SDK default capture settings that the file would otherwise drop', () => {
         writeConfig(tmpDir, VALID_CONFIG);
         hook(makeContext(tmpDir));

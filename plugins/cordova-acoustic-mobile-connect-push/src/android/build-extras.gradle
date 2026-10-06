@@ -79,7 +79,7 @@ def connectSdkArtifact = "io.github.go-acoustic:connect-push-fcm"
 
 // AndroidVersion in ConnectConfig.json takes precedence over the Cordova
 // preference and the default pin.
-def defaultSdkVersion = project.hasProperty("connectSdkVersion") ? project.connectSdkVersion : "11.0.21-beta"
+def defaultSdkVersion = project.hasProperty("connectSdkVersion") ? project.connectSdkVersion : "11.1.10-beta"
 def connectSdkVersion
 if (!androidVersion.isEmpty()) {
     if (androidVersion ==~ /\d+\.\d+\.\d+(-[A-Za-z0-9._-]+)?/) {

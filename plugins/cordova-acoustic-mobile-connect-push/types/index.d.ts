@@ -175,13 +175,11 @@ declare namespace AcousticConnect {
      * Log a signal. Unlike {@link logCustomEvent}, `values` may be arbitrary
      * JSON: nested objects and arrays are carried through unchanged.
      *
-     * Android note: with the plugin's default Android SDK (11.0.21-beta) a
-     * number at the top level of the payload is dropped by the native
-     * serialiser (checked on an emulator: strings and booleans at the top
-     * level arrive, numbers nested inside an object or array are never
-     * affected). Nest the number, or set `AndroidVersion` to 11.1.10-beta or
-     * later in ConnectConfig.json, where the number arrived. The SDK versions
-     * between those two were not checked.
+     * Android note: Connect Android SDK versions before 11.0.24-beta drop a number
+     * at the TOP level of the payload (seen on 11.0.21-beta; strings and booleans
+     * arrive, numbers nested inside an object or array are never affected). The
+     * plugin's default, 11.1.10-beta, sends it; nest the number only if you pin an
+     * older `AndroidVersion`.
      *
      * @param level Monitoring level, a non-negative integer. Defaults to 3.
      * @rejects {AcousticError} `ACOUSTIC_INVALID_ARGS` when values is not a

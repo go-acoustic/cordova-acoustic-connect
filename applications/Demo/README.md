@@ -99,7 +99,7 @@ node e2e/run.js --platform android --device <serial> --plugin npm           # te
 
 Exit code: `0` PASS, `1` FAIL, `2` INCONCLUSIVE (no evidence could be produced: the build failed, nothing reached the sink, the SDK never started).
 
-Extra `ConnectConfig.json` settings for one run go in `--connect-config '<json>'`, merged over the phase's own. Use it to try another native SDK version, for example `--connect-config '{"AndroidVersion":"11.1.10-beta"}'` (the Demo has `useRelease: false`, so the beta tree is used). The report lists the extra settings, so keep credentials out of them.
+Extra `ConnectConfig.json` settings for one run go in `--connect-config '<json>'`, merged over the phase's own. Use it to try another native SDK version, for example `--connect-config '{"AndroidVersion":"x.y.z"}'` (the Demo has `useRelease: false`, so the beta tree is used). The report lists the extra settings, so keep credentials out of them.
 
 **In Jenkins**
 
@@ -124,7 +124,7 @@ The `E2E Verification` stage of the `Jenkinsfile` runs after `Test` and before a
 
 The scenario (`www/js/e2e/scenario.js`) lists each call together with the wire message it must produce, so the calls and the checks cannot drift apart. The two platforms differ and the checks follow that: iOS nests custom-event and signal payloads (`data.value`, `signal.data.value`) and keeps JSON types, Android is flat and delivers custom-event values as strings; iOS sends a layout (type 10) and the Android SDK sends none, so that row is reported N/A with its reason instead of being dropped. An N/A row always carries a reason.
 
-The capture phases are separate runs because they need different `ConnectConfig.json` settings: `default`, and on iOS `screen-capture-off` (`ScreenCaptureEnabled: false`) and `layout-config-off` (`layoutConfigIos` with `CaptureLayoutOn: 0`). Both must send no layout while the screen views the app logs itself stay. On Android the layout row is checked when the run asks for Connect Android SDK `11.1.10-beta` or later (the first version that sends a layout for a WebView screen); on older SDKs it is N/A with that reason. The capture phases are not run on Android yet.
+The capture phases are separate runs because they need different `ConnectConfig.json` settings: `default`, and on iOS `screen-capture-off` (`ScreenCaptureEnabled: false`) and `layout-config-off` (`layoutConfigIos` with `CaptureLayoutOn: 0`). Both must send no layout while the screen views the app logs itself stay. On Android the layout row is asserted too (the pinned SDK, 11.1.10-beta, sends it); the capture phases are not run there yet.
 
 **Things that bite**
 

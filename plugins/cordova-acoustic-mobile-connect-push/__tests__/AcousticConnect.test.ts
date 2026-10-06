@@ -941,9 +941,9 @@ describe('isSdkEnabled — result normalisation', () => {
 
 describe('getSdkVersion — result passthrough', () => {
     test('resolves the native version string unchanged', async () => {
-        resolveOnExec('11.0.21-beta');
+        resolveOnExec('11.1.10-beta');
         await expect(AcousticConnect.getSdkVersion())
-            .resolves.toBe('11.0.21-beta');
+            .resolves.toBe('11.1.10-beta');
     });
 });
 

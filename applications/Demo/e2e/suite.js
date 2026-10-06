@@ -44,31 +44,10 @@ const PHASES = {
     }
 };
 
-// Android's SDK sends a layout for a WebView screen only from 11.1.10-beta (CA-157701: it used to
-// wait for a DCID from the Tealeaf web library and then drop the layout), and only with the
-// capture settings of its default config, which the plugin keeps in ConnectBasicConfig.properties.
-// The capture-off phases need a baseline with a layout, so they stay iOS-only for now.
-const FIRST_ANDROID_LAYOUT = [11, 1, 10];
-const NO_ANDROID_LAYOUT = 'the Android SDK sends no layout for a WebView screen before 11.1.10-beta, so there is ' +
-    'nothing to assert on this SDK (run with --connect-config \'{"AndroidVersion":"11.1.10-beta"}\' to check it)';
-const NOT_ON_ANDROID = 'the capture-off phases are not run on Android yet: their baseline is a layout, which the ' +
-    'Android SDK sends only from 11.1.10-beta, and ScreenCaptureEnabled: false has not been compared against it';
+// The capture-off phases need a baseline run with a layout and a comparison of Android's
+// ScreenCaptureEnabled: false against it, which has not been done, so they run on iOS only.
+const NOT_ON_ANDROID = 'the capture-off phases are not run on Android yet';
 const UNVERIFIED = ' [wire shape not yet captured from Cordova]';
-
-// '11.1.10-beta' -> [11, 1, 10]; anything else (empty, text) -> null
-function parseVersion(text) {
-    const m = /^(\d+)\.(\d+)\.(\d+)/.exec(String(text || '').trim());
-    return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null;
-}
-
-function androidSendsLayout(version) {
-    const v = parseVersion(version);
-    if (!v) return false;
-    for (let i = 0; i < 3; i += 1) {
-        if (v[i] !== FIRST_ANDROID_LAYOUT[i]) return v[i] > FIRST_ANDROID_LAYOUT[i];
-    }
-    return true;
-}
 
 function appliesTo(platform, phase) {
     return Boolean(PHASES[phase]) && PHASES[phase].platforms.indexOf(platform) !== -1;
@@ -153,7 +132,7 @@ function buildSuite(args) {
         throw new Error('phase must be one of ' + Object.keys(PHASES).join(', ') + ' (got ' + JSON.stringify(phase) + ')');
     }
     if (!appliesTo(platform, phase)) {
-        throw new Error('phase "' + phase + '" does not apply to ' + platform + ': ' + NO_ANDROID_LAYOUT);
+        throw new Error('phase "' + phase + '" does not apply to ' + platform + ': ' + NOT_ON_ANDROID);
     }
 
     const rows = [];
@@ -164,9 +143,7 @@ function buildSuite(args) {
             rows.push({ name: 'baseline: ' + describe(b), check: b.check, type: b.type });
         });
         scenario.expectations().forEach(function (e) { rows.push(adapt(e, platform)); });
-        rows.push(platform === 'android' && !androidSendsLayout(args.androidSdkVersion)
-            ? { name: 'capture: layout (type 10) has non-empty control trees', na: NO_ANDROID_LAYOUT }
-            : { name: 'capture: layout (type 10) has non-empty control trees', check: 'layout-controls' });
+        rows.push({ name: 'capture: layout (type 10) has non-empty control trees', check: 'layout-controls' });
         return rows;
     }
 

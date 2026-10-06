@@ -58,8 +58,8 @@ Known Issues
   `ACOUSTIC_INTERNAL_ERROR`; unload the previous screen instead
 - `logCustomEvent` values are nested under `data.value` on iOS but flat on
   Android, and a `logSignal` payload under `signal.data.value` on iOS but at the
-  root of `signal` on Android; `logSignal` drops a top-level number on the
-  default Android SDK (11.0.21-beta), but not on 11.1.10-beta
+  root of `signal` on Android; `logSignal` drops a top-level number on Android
+  SDKs before 11.0.24-beta (the default is 11.1.10-beta, which sends it)
 - On iOS `logExceptionEvent` reports `stackTrace: (null)` and carries the stack
   text in `data.stacktrace`
 

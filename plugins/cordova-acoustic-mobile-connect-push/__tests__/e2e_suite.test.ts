@@ -88,7 +88,7 @@ describe('phases', () => {
             .toEqual({ layoutConfigIos: { AutoLayout: { GlobalScreenSettings: { CaptureLayoutOn: 0 } } } });
     });
 
-    it('runs the capture-off phases on iOS only: Android sends no layout, so there is no baseline', () => {
+    it('runs the capture-off phases on iOS only: they are not run on Android yet', () => {
         expect(suite.appliesTo('ios', 'screen-capture-off')).toBe(true);
         expect(suite.appliesTo('android', 'screen-capture-off')).toBe(false);
         expect(suite.appliesTo('android', 'default')).toBe(true);
@@ -96,7 +96,7 @@ describe('phases', () => {
     });
 
     it('refuses to build a suite for a phase that does not apply, and says why', () => {
-        expect(() => suite.buildSuite({ platform: 'android', phase: 'screen-capture-off' })).toThrow('no layout');
+        expect(() => suite.buildSuite({ platform: 'android', phase: 'screen-capture-off' })).toThrow('not run on Android');
     });
 
     it.each([
@@ -178,25 +178,15 @@ describe('default suite', () => {
         }
     });
 
-    it('android: the layout row is not applicable, with the reason', () => {
-        const layout = android.find((r) => r.name.includes('layout'))!;
-        expect(layout.na).toContain('no layout');
-        expect(layout.check).toBeUndefined();
+    it('android: asserts the layout has controls (the pinned SDK sends it)', () => {
+        const layout = android.find((r: any) => r.check === 'layout-controls');
+        expect(layout).toBeDefined();
+        expect(layout!.na).toBeUndefined();
     });
 
-    it.each([[undefined], [''], ['11.0.21-beta'], ['11.1.9-beta'], ['10.9.99'], ['garbage']])(
-        'android on SDK %j: the layout row stays N/A and names the version that fixes it', (version) => {
-            const layout = suite.buildSuite({ platform: 'android', androidSdkVersion: version }).find((r: any) => r.name.includes('layout'))!;
-            expect(layout.na).toContain('11.1.10-beta');
-            expect(layout.check).toBeUndefined();
-        });
-
-    it.each([['11.1.10-beta'], ['11.1.10'], ['11.1.11-beta'], ['11.2.0'], ['12.0.0-beta']])(
-        'android on SDK %j: asserts the layout has controls', (version) => {
-            const layout = suite.buildSuite({ platform: 'android', androidSdkVersion: version }).find((r: any) => r.name.includes('layout'))!;
-            expect(layout.check).toBe('layout-controls');
-            expect(layout.na).toBeUndefined();
-        });
+    it('no version of the Android SDK is named in the suite: the plugin pins one and the suite tests that one', () => {
+        expect(JSON.stringify(android)).not.toMatch(/\d+\.\d+\.\d+-?beta/);
+    });
 
     it('ios: requires the wrapped shape for the logSignal payload rows and for nothing else', () => {
         const strict = ios.filter((r: any) => r.shape === 'wrapped');
@@ -262,24 +252,17 @@ describeIfEnginePresent('the generated suites against the real engine', () => {
         expect(result.pass).toBe(true);
     });
 
-    it('android: an ideal capture passes, with the layout row N/A', () => {
-        const result = evaluate(suite.buildSuite({ platform: 'android' }), ideal('android'));
+    it('android: an ideal capture passes, layout included', () => {
+        const result = evaluate(suite.buildSuite({ platform: 'android' }), ideal('android', { layout: true }));
         expect(result.entries.filter((e) => e.status === 'FAIL')).toEqual([]);
         expect(result.pass).toBe(true);
-        expect(result.counts.na).toBe(1);
-        expect(result.counts.fail).toBe(0);
-        expect(result.entries.filter((e) => e.status === 'N/A' || e.status === 'NA').map((e) => e.name)).toEqual([
-            'capture: layout (type 10) has non-empty control trees',
-        ]);
+        expect(result.counts.na).toBe(0);
     });
 
-    it('ios: a logSignal payload that came out flat fails on the signal rows alone', () => {
-        const result = evaluate(suite.buildSuite({ platform: 'ios' }), ideal('ios', { layout: true, flatIosSignal: true }));
-        const failed = result.entries.filter((e) => e.status === 'FAIL');
+    it('android: a capture without a layout fails, so a missing layout is noticed', () => {
+        const result = evaluate(suite.buildSuite({ platform: 'android' }), ideal('android'));
         expect(result.pass).toBe(false);
-        expect(failed.length).toBeGreaterThan(0);
-        for (const f of failed) expect(f.name).toContain('signal:');
-        expect(failed.some((f) => (f.detail || '').includes('signal.data.value'))).toBe(true);
+        expect(result.entries.some((e) => e.status === 'FAIL' && e.name.includes('layout'))).toBe(true);
     });
 
     it('the iOS suite fails on an Android-shaped capture: the shapes differ and the suite says so', () => {

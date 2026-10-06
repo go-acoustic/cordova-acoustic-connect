@@ -153,8 +153,8 @@ describe('parsers', () => {
     });
 
     it('reads the Android SDK version from logcat', () => {
-        expect(commands.parseAndroidSdkVersion('I EOCore  : LibraryVersion:11.0.21-beta\nI EOCore  : x'))
-            .toBe('11.0.21-beta');
+        expect(commands.parseAndroidSdkVersion('I EOCore  : LibraryVersion:11.1.10-beta\nI EOCore  : x'))
+            .toBe('11.1.10-beta');
         expect(commands.parseAndroidSdkVersion('nothing')).toBeNull();
     });
 
@@ -246,7 +246,7 @@ describe('buildReport', () => {
         platform: 'android', phase: 'default', verdict: 'PASS', startedAt: '2026-10-01T10:00:00.000Z',
         env: {
             repoCommit: 'abc1234', pluginVersion: '1.0.19', pluginMode: 'local',
-            nativeSdk: '11.0.21-beta (resolved 2026-10-01)', device: 'sdk_gphone64_arm64, Android 15',
+            nativeSdk: '11.1.10-beta (resolved 2026-10-01)', device: 'sdk_gphone64_arm64, Android 15',
             sinkUrl: 'http://localhost:9877', configKeysDiffering: ['AppKey', 'Extra'],
         },
         done: DONE_PASS, evaluation: PASSING, messageCount: 12, reverted: ['ConnectConfig.json: original content written back'],
@@ -266,7 +266,7 @@ describe('buildReport', () => {
         expect(md).toContain('abc1234');
         expect(md).toContain('1.0.19');
         expect(md).toContain('local');
-        expect(md).toContain('11.0.21-beta (resolved 2026-10-01)');
+        expect(md).toContain('11.1.10-beta (resolved 2026-10-01)');
         expect(md).toContain('http://localhost:9877');
         expect(md).toContain('AppKey, Extra');
     });
@@ -344,7 +344,7 @@ function makeDeps(over: Record<string, any> = {}) {
     const calls: Call[] = [];
     const files: Record<string, string> = {};
     const logcat = [
-        'I EOCore  : LibraryVersion:11.0.21-beta',
+        'I EOCore  : LibraryVersion:11.1.10-beta',
         'I chromium: [INFO:CONSOLE(1)] "E2E_DONE status=pass steps=9 failed=0 unavailable=0", source: x',
     ].join('\n');
     const exec = jest.fn(async (cmd: string, args: string[]) => {
@@ -463,26 +463,6 @@ describe('runE2E on Android', () => {
         expect(report).toContain('app step screen-layout failed: ACOUSTIC_INTERNAL_ERROR: logScreenLayout returned false');
     });
 
-    it('asserts the Android layout when the run asks for an SDK that sends it, and not for the default one', async () => {
-        const layoutCheck = (call: any[]) => (call[0] as any[]).some((r) => r.check === 'layout-controls');
-        const old = makeDeps();
-        await runner.runE2E(RUN_OPTS, old.deps);
-        expect(layoutCheck((old.deps.evaluate as any).mock.calls[0])).toBe(false);
-        const fixed = makeDeps();
-        await runner.runE2E({ ...RUN_OPTS, connectConfig: { AndroidVersion: '11.1.10-beta' } }, fixed.deps);
-        expect(layoutCheck((fixed.deps.evaluate as any).mock.calls[0])).toBe(true);
-    });
-
-    it('reads the requested Android SDK from ConnectConfig.json when --connect-config does not name one', async () => {
-        const { deps } = makeDeps();
-        const base = deps.readFile;
-        deps.readFile = jest.fn((p: string) => p.endsWith('ConnectConfig.json')
-            ? JSON.stringify({ Connect: { AppKey: 'k', PostMessageUrl: 'p', AndroidVersion: '11.1.10-beta' } })
-            : base(p)) as any;
-        await runner.runE2E(RUN_OPTS, deps);
-        expect(((deps.evaluate as any).mock.calls[0][0] as any[]).some((r) => r.check === 'layout-controls')).toBe(true);
-    });
-
     it('hands the device host to prepare so a physical device can reach the sink', async () => {
         const { deps } = makeDeps();
         await runner.runE2E({ ...RUN_OPTS, deviceHost: '192.168.1.20' }, deps);
@@ -521,7 +501,7 @@ describe('runE2E on Android', () => {
         expect(Object.keys(files)).toEqual(expect.arrayContaining(['/out/messages.json', '/out/suite.json', '/out/results-android.md']));
         expect(files['/out/results-android.md']).toContain('Verdict: PASS');
         expect(files['/out/results-android.md']).toContain('ConnectConfig.json: original content written back');
-        expect(files['/out/results-android.md']).toContain('11.0.21-beta');
+        expect(files['/out/results-android.md']).toContain('11.1.10-beta');
     });
 
     it('never puts the app key into the report, in any form', async () => {
@@ -552,7 +532,7 @@ describe('runE2E on Android', () => {
             const line = [cmd, ...args].join(' ');
             if (line.includes('logcat -d')) {
                 n += 1;
-                return { code: 0, stdout: n < 3 ? 'I EOCore  : LibraryVersion:11.0.21-beta' : 'E2E_DONE status=pass steps=9 failed=0 unavailable=0', stderr: '' };
+                return { code: 0, stdout: n < 3 ? 'I EOCore  : LibraryVersion:11.1.10-beta' : 'E2E_DONE status=pass steps=9 failed=0 unavailable=0', stderr: '' };
             }
             return base(cmd, args);
         });
@@ -635,7 +615,7 @@ describe('runE2E failure handling', () => {
 
     it('touches nothing when the phase does not apply to the platform', async () => {
         const { deps, calls } = makeDeps();
-        await expect(runner.runE2E({ ...RUN_OPTS, phase: 'screen-capture-off' }, deps)).rejects.toThrow('no layout');
+        await expect(runner.runE2E({ ...RUN_OPTS, phase: 'screen-capture-off' }, deps)).rejects.toThrow('not run on Android');
         expect(calls).toEqual([]);
         expect(deps.mkdirp).not.toHaveBeenCalled();
         expect(deps.writeFile).not.toHaveBeenCalled();

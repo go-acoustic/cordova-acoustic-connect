@@ -48,7 +48,7 @@ Create `ConnectConfig.json` at your Cordova project root (gitignored — never c
 | `PostMessageUrl` | Required. Connect collector endpoint. |
 | `iOSAppGroupIdentifier` | Shared App Group ID between the app and its iOS NSE/NCE extensions. |
 | `iOSDevelopmentTeam` | Apple Team ID. Sets the Xcode signing team automatically, skipping the manual Signing & Capabilities step below. |
-| `AndroidVersion` | Pins a specific Connect Android SDK version (`x.y.z`) instead of the plugin's default (currently `11.0.13`). Invalid values are ignored with a build warning. |
+| `AndroidVersion` | Pins a specific Connect Android SDK version (`x.y.z`) instead of the plugin's default (currently `11.1.10-beta`). Invalid values are ignored with a build warning. |
 | `iOSVersion` | Pins a specific Connect iOS SDK pod version (`x.y.z`) instead of the plugin's default (`2.1.15` release / `2.1.13` debug). Values below `2.1.13` — the floor that fixes a podspec/duplicate-xcframework bug — and non-version strings are ignored with a build warning. |
 | `iOSPushMode` | `'automatic'` (default) or `'manual'`. iOS only — Android is always `'automatic'` at the bridge boundary. |
 | `AndroidNotificationIconResName` | Drawable resource name for the push notification icon on Android. Fallback chain: your name → the plugin's bundled `ic_notification` (correct default — launcher icons crash at delivery) → `ic_launcher` (legacy) → the SDK's own default. |
@@ -172,7 +172,7 @@ Things to know:
 
 - **Clicks and typing inside the page are not captured automatically.** The native SDK cannot see DOM events inside the WebView, so call `logClickEvent` / `logTextChangeEvent` yourself (or from your own listeners). The native control-event APIs are not used: on a device iOS rejects them for every view, and Android reports the whole WebView as the target.
 - **`logCustomEvent` and `logSignal` payloads are shaped differently on the wire per platform.** iOS nests them under `data.value` (custom event) and `signal.data.value` (signal); Android does not. Android also delivers every custom-event value as a string, iOS keeps the JSON types. Keep that in mind when you query the data.
-- **`logSignal` on Android:** with the plugin's default SDK (`11.0.21-beta`) a number at the *top level* of the payload is dropped (strings and booleans arrive; numbers nested inside an object or array are not affected). Checked on an emulator: it arrives on `11.1.10-beta`. Nest numeric values, or set `AndroidVersion` to `11.1.10-beta` or later; the versions in between were not checked.
+- **`logSignal` on Android:** Connect Android SDK versions before `11.0.24-beta` drop a number at the *top level* of the payload (strings and booleans arrive; numbers nested inside an object or array are not affected). Observed on `11.0.21-beta`; the plugin's default, `11.1.10-beta`, sends it (checked on an emulator). It matters only if you pin an older `AndroidVersion`: then nest numeric values.
 
 ### Runtime configuration items
 
@@ -203,9 +203,9 @@ Native masking rules (`Masking` inside `AutoLayout`) apply to **native controls 
 | Platform | What `false` does |
 |---|---|
 | iOS | Right after `enable()`, sets `AutoLayout.GlobalScreenSettings.CaptureLayoutOn` to `0`. Verified on a simulator: layout and screenshot stop, screen views continue. |
-| Android | Before `enable()`, sets `LogViewLayoutOnScreenTransition` to `false`. On an emulator, with Connect Android SDK `11.1.10-beta`, one run sent a layout (type 10) with capture on and none with `ScreenCaptureEnabled: false`. Older SDKs send no layout for a WebView screen (see below), so there the setting could not be observed. |
+| Android | Before `enable()`, sets `LogViewLayoutOnScreenTransition` to `false`. **Not verified on a device:** that the layout the SDK captures stops; the capture-off phases of the e2e run on iOS only. |
 
-**Layout on Android.** The Android SDK sends a layout (type 10) for a WebView screen from `11.1.10-beta`; before that it waited for an id from the Tealeaf web library inside the page and then dropped the layout, so none arrived (the plugin's default pin, `11.0.21-beta`, is in that range). The plugin also has to keep the SDK's capture settings (`PrintScreen`, `LogViewLayoutOnScreenTransition`, `ScreenshotFormat` and others) in the `ConnectBasicConfig.properties` it generates, which replaces the SDK's own file; without them the SDK refused every layout capture. Both are needed. Because the page has no Tealeaf web library, the layout lists the WebView as one control with `dcid: "dcid-none"` and no page content. Try it with `"AndroidVersion": "11.1.10-beta"` (and `useRelease` left `false`, so the beta tree is used).
+**Layout on Android.** The Android SDK sends a layout (type 10) for a WebView screen from `11.1.10-beta`, the plugin's default: before that it waited for an id from the Tealeaf web library inside the page and then dropped the layout. The plugin also keeps the SDK's capture settings (`PrintScreen`, `LogViewLayoutOnScreenTransition`, `ScreenshotFormat` and others) in the `ConnectBasicConfig.properties` it generates, because that file replaces the SDK's own; without them the SDK refused every layout capture. The page has no Tealeaf web library, so the layout lists the WebView as one control with `dcid: "dcid-none"` and no page content.
 
 `layoutConfig`, `layoutConfigIos` and `layoutConfigAndroid` carry the SDK's own screen rules:
 
