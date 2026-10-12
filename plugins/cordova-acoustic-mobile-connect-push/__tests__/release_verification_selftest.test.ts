@@ -36,14 +36,16 @@ describeIfEnginePresent('release-verification assertion engine', () => {
 
     // Node writes to a pipe asynchronously on some platforms, and `process.exit()` drops what is still waiting to be written:
     // on a loaded build agent the self-test's report was cut off before its last lines, and this test failed at random.
-    // The preload below makes every write to stdout late, which is that situation every time.
+    // The preload below makes every write to stdout late, which is that situation every time. It reports a write as done only when
+    // the real write is (a callback that fires earlier would let the engine exit while the pipe still holds data, and the test would
+    // then cut the report itself, on any machine whose pipe buffer is smaller than the report or whose reader is slow).
     it('prints the whole selftest report even when stdout is slow', () => {
         const preload = join(mkdtempSync(join(tmpdir(), 'slow-stdout-')), 'slow-stdout.mjs');
         writeFileSync(preload, [
             'const real = process.stdout.write.bind(process.stdout);',
             'process.stdout.write = (chunk, encoding, callback) => {',
             "    const done = typeof encoding === 'function' ? encoding : callback;",
-            '    setTimeout(() => { real(chunk); if (done) done(); }, 20);',
+            '    setTimeout(() => { real(chunk, () => { if (done) done(); }); }, 20);',
             '    return true;',
             '};'
         ].join('\n'));
