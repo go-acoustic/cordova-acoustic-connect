@@ -1,0 +1,19 @@
+.idea/
+node_modules/
+.vscode/
+*.map
+.DS_Store
+.sourcemaps
+dist/
+
+# wire-verification runs: raw collector captures and results (can hold app data)
+/e2e/evidence/
+
+# the developer's own config (the app key); capacitor.config.example.json is the tracked template
+/capacitor.config.json
+
+# e2e state: the saved original config - see e2e/config.js
+/e2e/.prepare-state.json
+/android/app/google-services.json
+/google-services.json
+/ConnectBasicConfig.properties

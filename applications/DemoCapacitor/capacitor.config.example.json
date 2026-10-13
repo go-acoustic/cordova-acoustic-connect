@@ -1,0 +1,24 @@
+{
+  "appId": "co.acoustic.connect.capacitor.demo",
+  "appName": "DemoCapacitor",
+  "webDir": "dist",
+  "plugins": {
+    "SplashScreen": {
+      "launchAutoHide": false
+    },
+    "AcousticConnect": {
+      "appKey": "YOUR_CONNECT_APP_KEY_HERE",
+      "postMessageUrl": "https://collector.example.com/collector/collectorPost",
+      "killSwitchEnabled": false,
+      "killSwitchUrl": "https://collector.example.com/collector/switch/YOUR_CONNECT_APP_KEY_HERE",
+      "androidVersion": "",
+      "iosVersion": "",
+      "iosPushMode": "automatic",
+      "iosAppGroupIdentifier": "YOUR_APP_GROUP_ID_HERE",
+      "iosDevelopmentTeam": "YOUR_TEAM_ID",
+      "androidNotificationIconResName": "ic_notification",
+      "pushEnabled": false,
+      "useRelease": false
+    }
+  }
+}

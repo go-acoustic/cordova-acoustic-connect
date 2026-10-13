@@ -1,0 +1,14 @@
+{
+  "appId": "co.acoustic.connect.capacitor.angular.demo",
+  "appName": "DemoCapacitorAngular",
+  "webDir": "dist/demo-capacitor-angular/browser",
+  "plugins": {
+    "AcousticConnect": {
+      "appKey": "YOUR_CONNECT_APP_KEY_HERE",
+      "postMessageUrl": "https://collector.example.com/collector/collectorPost",
+      "killSwitchEnabled": false,
+      "pushEnabled": false,
+      "useRelease": false
+    }
+  }
+}

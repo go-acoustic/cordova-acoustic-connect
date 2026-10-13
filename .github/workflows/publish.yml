@@ -41,6 +41,7 @@ on:
   push:
     tags-ignore:
       - '*-beta'  # Only bare semver tags from the release pipeline
+      - 'capacitor-*'  # The Capacitor plugin's release tags (see publish-capacitor.public.yml)
   workflow_dispatch:  # Allow manual re-run from the GitHub UI
 
 permissions:

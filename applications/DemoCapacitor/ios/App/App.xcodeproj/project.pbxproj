@@ -1,0 +1,750 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 60;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		17DF2B3652DE6BA86B9635AC /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3230977E4215CF18D65C32B /* NotificationService.swift */; };
+		2FAD9763203C412B000D30F8 /* config.xml in Resources */ = {isa = PBXBuildFile; fileRef = 2FAD9762203C412B000D30F8 /* config.xml */; };
+		33B3A805E9E7A9F99BA1455E /* ConnectNSE.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 0F6FBA11362950531EFD114A /* ConnectNSE.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		4D22ABE92AF431CB00220026 /* CapApp-SPM in Frameworks */ = {isa = PBXBuildFile; productRef = 4D22ABE82AF431CB00220026 /* CapApp-SPM */; };
+		50379B232058CBB4000EE86E /* capacitor.config.json in Resources */ = {isa = PBXBuildFile; fileRef = 50379B222058CBB4000EE86E /* capacitor.config.json */; };
+		504EC3081FED79650016851F /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 504EC3071FED79650016851F /* AppDelegate.swift */; };
+		504EC30D1FED79650016851F /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30B1FED79650016851F /* Main.storyboard */; };
+		504EC30F1FED79650016851F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30E1FED79650016851F /* Assets.xcassets */; };
+		504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC3101FED79650016851F /* LaunchScreen.storyboard */; };
+		50B271D11FEDC1A000F3C39B /* public in Resources */ = {isa = PBXBuildFile; fileRef = 50B271D01FEDC1A000F3C39B /* public */; };
+		7673A9F8E83091108E565751 /* ConnectNCE.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = E952831B277086689F15E798 /* ConnectNCE.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		84024DA4BEEB8E10798C5DDA /* NotificationViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28DD5B08340D870367F5D20C /* NotificationViewController.swift */; };
+		87DF5AC28CE0361E51045D07 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F8FCEA6C6E206A639B35A4BC /* Foundation.framework */; };
+		9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9582B6822FE993A50072D4E8 /* SceneDelegate.swift */; };
+		BD27B1F74CAB037BA6829E17 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F8FCEA6C6E206A639B35A4BC /* Foundation.framework */; };
+		D62465AB26BFD874B054BCF0 /* Connect in Frameworks */ = {isa = PBXBuildFile; productRef = 0A13615FA45B78565281567D /* Connect */; };
+		D766049364F7D8DCB8A40039 /* Connect in Frameworks */ = {isa = PBXBuildFile; productRef = 25F5CC70801CD54A4649725A /* Connect */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		7013F665574B41CA8FBC9D19 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 504EC2FC1FED79650016851F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 6D52D39609A6B5DDED79465C;
+			remoteInfo = ConnectNSE;
+		};
+		E4985A0E4CE1094ED9B7400C /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 504EC2FC1FED79650016851F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = CB5A48084A643EA871423FA1;
+			remoteInfo = ConnectNCE;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		EFDA238B205F77A2DE000FA7 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				33B3A805E9E7A9F99BA1455E /* ConnectNSE.appex in Embed Foundation Extensions */,
+				7673A9F8E83091108E565751 /* ConnectNCE.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		0E1320F78DD4F800E5E0474D /* ConnectNCE.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = ConnectNCE.entitlements; sourceTree = "<group>"; };
+		0F6FBA11362950531EFD114A /* ConnectNSE.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = ConnectNSE.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		1EAB0C3758284686C51F7645 /* ConnectNCE-Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = "ConnectNCE-Info.plist"; sourceTree = "<group>"; };
+		28DD5B08340D870367F5D20C /* NotificationViewController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NotificationViewController.swift; sourceTree = "<group>"; };
+		2FAD9762203C412B000D30F8 /* config.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = config.xml; sourceTree = "<group>"; };
+		46ED3421F977964C0F38D615 /* App.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = App.entitlements; sourceTree = "<group>"; };
+		50379B222058CBB4000EE86E /* capacitor.config.json */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.json; path = capacitor.config.json; sourceTree = "<group>"; };
+		504EC3041FED79650016851F /* App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = App.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		504EC3071FED79650016851F /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		504EC30C1FED79650016851F /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/Main.storyboard; sourceTree = "<group>"; };
+		504EC30E1FED79650016851F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		504EC3111FED79650016851F /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
+		504EC3131FED79650016851F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		50B271D01FEDC1A000F3C39B /* public */ = {isa = PBXFileReference; lastKnownFileType = folder; path = public; sourceTree = "<group>"; };
+		6C924362C8E39DE9DB833633 /* ConnectNSE-Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = "ConnectNSE-Info.plist"; sourceTree = "<group>"; };
+		9582B6822FE993A50072D4E8 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
+		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
+		D3230977E4215CF18D65C32B /* NotificationService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
+		E919389013C552E16490A71C /* ConnectNSE.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = ConnectNSE.entitlements; sourceTree = "<group>"; };
+		E952831B277086689F15E798 /* ConnectNCE.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = ConnectNCE.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		F8FCEA6C6E206A639B35A4BC /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		1164C163CE73D296B0D2F6F7 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				87DF5AC28CE0361E51045D07 /* Foundation.framework in Frameworks */,
+				D766049364F7D8DCB8A40039 /* Connect in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		504EC3011FED79650016851F /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4D22ABE92AF431CB00220026 /* CapApp-SPM in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		EA6421ECA589A58067BB1CDE /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BD27B1F74CAB037BA6829E17 /* Foundation.framework in Frameworks */,
+				D62465AB26BFD874B054BCF0 /* Connect in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		29EF0E5EBD9E479E646B99D2 /* ConnectNSE */ = {
+			isa = PBXGroup;
+			children = (
+				D3230977E4215CF18D65C32B /* NotificationService.swift */,
+				6C924362C8E39DE9DB833633 /* ConnectNSE-Info.plist */,
+				E919389013C552E16490A71C /* ConnectNSE.entitlements */,
+			);
+			name = ConnectNSE;
+			path = ConnectNSE;
+			sourceTree = "<group>";
+		};
+		504EC2FB1FED79650016851F = {
+			isa = PBXGroup;
+			children = (
+				958DCC722DB07C7200EA8C5F /* debug.xcconfig */,
+				504EC3061FED79650016851F /* App */,
+				504EC3051FED79650016851F /* Products */,
+				9C7FC4A6A31CD61558380984 /* Frameworks */,
+				29EF0E5EBD9E479E646B99D2 /* ConnectNSE */,
+				5F0D24230087AA598FB8BA31 /* ConnectNCE */,
+			);
+			sourceTree = "<group>";
+		};
+		504EC3051FED79650016851F /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				504EC3041FED79650016851F /* App.app */,
+				0F6FBA11362950531EFD114A /* ConnectNSE.appex */,
+				E952831B277086689F15E798 /* ConnectNCE.appex */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		504EC3061FED79650016851F /* App */ = {
+			isa = PBXGroup;
+			children = (
+				9582B6822FE993A50072D4E8 /* SceneDelegate.swift */,
+				50379B222058CBB4000EE86E /* capacitor.config.json */,
+				504EC3071FED79650016851F /* AppDelegate.swift */,
+				504EC30B1FED79650016851F /* Main.storyboard */,
+				504EC30E1FED79650016851F /* Assets.xcassets */,
+				504EC3101FED79650016851F /* LaunchScreen.storyboard */,
+				504EC3131FED79650016851F /* Info.plist */,
+				2FAD9762203C412B000D30F8 /* config.xml */,
+				50B271D01FEDC1A000F3C39B /* public */,
+				46ED3421F977964C0F38D615 /* App.entitlements */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		5F0D24230087AA598FB8BA31 /* ConnectNCE */ = {
+			isa = PBXGroup;
+			children = (
+				28DD5B08340D870367F5D20C /* NotificationViewController.swift */,
+				1EAB0C3758284686C51F7645 /* ConnectNCE-Info.plist */,
+				0E1320F78DD4F800E5E0474D /* ConnectNCE.entitlements */,
+			);
+			name = ConnectNCE;
+			path = ConnectNCE;
+			sourceTree = "<group>";
+		};
+		9C7FC4A6A31CD61558380984 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				DCACA2C2BC6D8CD2A2BFA030 /* iOS */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		DCACA2C2BC6D8CD2A2BFA030 /* iOS */ = {
+			isa = PBXGroup;
+			children = (
+				F8FCEA6C6E206A639B35A4BC /* Foundation.framework */,
+			);
+			name = iOS;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		504EC3031FED79650016851F /* App */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 504EC3161FED79650016851F /* Build configuration list for PBXNativeTarget "App" */;
+			buildPhases = (
+				504EC3001FED79650016851F /* Sources */,
+				504EC3011FED79650016851F /* Frameworks */,
+				504EC3021FED79650016851F /* Resources */,
+				49F913BD770D887F37D71B89 /* Copy ConnectResources.bundle */,
+				EFDA238B205F77A2DE000FA7 /* Embed Foundation Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A3050D64E4F126EC1D431EC1 /* PBXTargetDependency */,
+				E37DD94DBBA77A121C71B761 /* PBXTargetDependency */,
+			);
+			name = App;
+			packageProductDependencies = (
+				4D22ABE82AF431CB00220026 /* CapApp-SPM */,
+			);
+			productName = App;
+			productReference = 504EC3041FED79650016851F /* App.app */;
+			productType = "com.apple.product-type.application";
+		};
+		6D52D39609A6B5DDED79465C /* ConnectNSE */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 5AF5F01286FC2B89875ABDD8 /* Build configuration list for PBXNativeTarget "ConnectNSE" */;
+			buildPhases = (
+				937CFE6724BA3F2AB5596BBC /* Sources */,
+				1164C163CE73D296B0D2F6F7 /* Frameworks */,
+				5C84DC7319C2311AAC7D596E /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = ConnectNSE;
+			packageProductDependencies = (
+				25F5CC70801CD54A4649725A /* Connect */,
+			);
+			productName = ConnectNSE;
+			productReference = 0F6FBA11362950531EFD114A /* ConnectNSE.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		CB5A48084A643EA871423FA1 /* ConnectNCE */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B8238594B2C5EBD000CC1153 /* Build configuration list for PBXNativeTarget "ConnectNCE" */;
+			buildPhases = (
+				F7C486061CAB9C89A5DABECF /* Sources */,
+				EA6421ECA589A58067BB1CDE /* Frameworks */,
+				E457428F639071FDDAD12E58 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = ConnectNCE;
+			packageProductDependencies = (
+				0A13615FA45B78565281567D /* Connect */,
+			);
+			productName = ConnectNCE;
+			productReference = E952831B277086689F15E798 /* ConnectNCE.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		504EC2FC1FED79650016851F /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				LastSwiftUpdateCheck = 0920;
+				LastUpgradeCheck = 0920;
+				TargetAttributes = {
+					504EC3031FED79650016851F = {
+						CreatedOnToolsVersion = 9.2;
+						LastSwiftMigration = 1100;
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = 504EC2FF1FED79650016851F /* Build configuration list for PBXProject "App" */;
+			compatibilityVersion = "Xcode 8.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 504EC2FB1FED79650016851F;
+			packageReferences = (
+				D4C12C0A2AAA248700AAC8A2 /* XCLocalSwiftPackageReference "CapApp-SPM" */,
+				BDAE27C3EBEC53B3E8CC33DD /* XCRemoteSwiftPackageReference "Connect-SP" */,
+			);
+			productRefGroup = 504EC3051FED79650016851F /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				504EC3031FED79650016851F /* App */,
+				6D52D39609A6B5DDED79465C /* ConnectNSE */,
+				CB5A48084A643EA871423FA1 /* ConnectNCE */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		504EC3021FED79650016851F /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */,
+				50B271D11FEDC1A000F3C39B /* public in Resources */,
+				504EC30F1FED79650016851F /* Assets.xcassets in Resources */,
+				50379B232058CBB4000EE86E /* capacitor.config.json in Resources */,
+				504EC30D1FED79650016851F /* Main.storyboard in Resources */,
+				2FAD9763203C412B000D30F8 /* config.xml in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		5C84DC7319C2311AAC7D596E /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E457428F639071FDDAD12E58 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		49F913BD770D887F37D71B89 /* Copy ConnectResources.bundle */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/Connect.framework/ConnectResources.bundle",
+			);
+			name = "Copy ConnectResources.bundle";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/ConnectResources.bundle",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# The Connect SDK reads its default config from ConnectResources.bundle in the root of the app bundle.\n# The CocoaPod puts it there; the Swift package ships it only inside Connect.framework.\nSRC=\"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/Connect.framework/ConnectResources.bundle\"\nDEST=\"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/ConnectResources.bundle\"\nif [ -d \"$SRC\" ]; then\n  rm -rf \"$DEST\"\n  cp -R \"$SRC\" \"$DEST\"\nfi\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		504EC3001FED79650016851F /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
+				9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		937CFE6724BA3F2AB5596BBC /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				17DF2B3652DE6BA86B9635AC /* NotificationService.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F7C486061CAB9C89A5DABECF /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				84024DA4BEEB8E10798C5DDA /* NotificationViewController.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		A3050D64E4F126EC1D431EC1 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = ConnectNSE;
+			target = 6D52D39609A6B5DDED79465C /* ConnectNSE */;
+			targetProxy = 7013F665574B41CA8FBC9D19 /* PBXContainerItemProxy */;
+		};
+		E37DD94DBBA77A121C71B761 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = ConnectNCE;
+			target = CB5A48084A643EA871423FA1 /* ConnectNCE */;
+			targetProxy = E4985A0E4CE1094ED9B7400C /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin PBXVariantGroup section */
+		504EC30B1FED79650016851F /* Main.storyboard */ = {
+			isa = PBXVariantGroup;
+			children = (
+				504EC30C1FED79650016851F /* Base */,
+			);
+			name = Main.storyboard;
+			sourceTree = "<group>";
+		};
+		504EC3101FED79650016851F /* LaunchScreen.storyboard */ = {
+			isa = PBXVariantGroup;
+			children = (
+				504EC3111FED79650016851F /* Base */,
+			);
+			name = LaunchScreen.storyboard;
+			sourceTree = "<group>";
+		};
+/* End PBXVariantGroup section */
+
+/* Begin XCBuildConfiguration section */
+		081CE478D4A05BF1DD98260D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = ConnectNSE/ConnectNSE.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				INFOPLIST_FILE = "ConnectNSE/ConnectNSE-Info.plist";
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = co.acoustic.connect.capacitor.demo.ConnectNSE;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		1FDC61E2735665490B0B6ED8 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = ConnectNCE/ConnectNCE.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				INFOPLIST_FILE = "ConnectNCE/ConnectNCE-Info.plist";
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = co.acoustic.connect.capacitor.demo.ConnectNCE;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		33D0BC915E34F8EA57433C04 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = ConnectNCE/ConnectNCE.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				INFOPLIST_FILE = "ConnectNCE/ConnectNCE-Info.plist";
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = co.acoustic.connect.capacitor.demo.ConnectNCE;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		504EC3141FED79650016851F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 958DCC722DB07C7200EA8C5F /* debug.xcconfig */;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				MTL_ENABLE_DEBUG_INFO = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		504EC3151FED79650016851F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		504EC3171FED79650016851F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 958DCC722DB07C7200EA8C5F /* debug.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = App/App.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				INFOPLIST_FILE = App/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				OTHER_SWIFT_FLAGS = "$(inherited) \"-D\" \"COCOAPODS\" \"-DDEBUG\"";
+				PRODUCT_BUNDLE_IDENTIFIER = co.acoustic.connect.capacitor.demo;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		504EC3181FED79650016851F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = App/App.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				INFOPLIST_FILE = App/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = co.acoustic.connect.capacitor.demo;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		B4DE66B6B945703F8E932915 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = ConnectNSE/ConnectNSE.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				INFOPLIST_FILE = "ConnectNSE/ConnectNSE-Info.plist";
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = co.acoustic.connect.capacitor.demo.ConnectNSE;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		504EC2FF1FED79650016851F /* Build configuration list for PBXProject "App" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				504EC3141FED79650016851F /* Debug */,
+				504EC3151FED79650016851F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		504EC3161FED79650016851F /* Build configuration list for PBXNativeTarget "App" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				504EC3171FED79650016851F /* Debug */,
+				504EC3181FED79650016851F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		5AF5F01286FC2B89875ABDD8 /* Build configuration list for PBXNativeTarget "ConnectNSE" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B4DE66B6B945703F8E932915 /* Release */,
+				081CE478D4A05BF1DD98260D /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		B8238594B2C5EBD000CC1153 /* Build configuration list for PBXNativeTarget "ConnectNCE" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				33D0BC915E34F8EA57433C04 /* Release */,
+				1FDC61E2735665490B0B6ED8 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		D4C12C0A2AAA248700AAC8A2 /* XCLocalSwiftPackageReference "CapApp-SPM" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = "CapApp-SPM";
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		BDAE27C3EBEC53B3E8CC33DD /* XCRemoteSwiftPackageReference "Connect-SP" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/go-acoustic/Connect-SP.git";
+			requirement = {
+				kind = exactVersion;
+				version = 2.1.15;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		0A13615FA45B78565281567D /* Connect */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = BDAE27C3EBEC53B3E8CC33DD /* XCRemoteSwiftPackageReference "Connect-SP" */;
+			productName = Connect;
+		};
+		25F5CC70801CD54A4649725A /* Connect */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = BDAE27C3EBEC53B3E8CC33DD /* XCRemoteSwiftPackageReference "Connect-SP" */;
+			productName = Connect;
+		};
+		4D22ABE82AF431CB00220026 /* CapApp-SPM */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D4C12C0A2AAA248700AAC8A2 /* XCLocalSwiftPackageReference "CapApp-SPM" */;
+			productName = "CapApp-SPM";
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 504EC2FC1FED79650016851F /* Project object */;
+}
