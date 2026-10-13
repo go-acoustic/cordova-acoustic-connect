@@ -57,7 +57,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ github.ref }}
 
@@ -71,7 +71,7 @@ jobs:
           fi
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: '22'
           registry-url: 'https://registry.npmjs.org'
@@ -155,9 +155,11 @@ jobs:
         run: |
           set -euo pipefail
           echo "--- Contents (first 30 entries) ---"
-          tar -tzf "$TARBALL" | head -30
+          # List to a file first: `tar | head` / `tar | grep -q` under pipefail fail with SIGPIPE.
+          tar -tzf "$TARBALL" > tarball-files.txt
+          head -30 tarball-files.txt
           # The tarball must carry the built dist/: it is not in git.
-          tar -tzf "$TARBALL" | grep -q '^package/dist/plugin.cjs.js$'
+          grep -q '^package/dist/plugin.cjs.js$' tarball-files.txt
           echo "--- Size ---"
           ls -lh "$TARBALL"
 
