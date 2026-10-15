@@ -1,6 +1,6 @@
 {
   "name": "capacitor-acoustic-connect-beta",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "Capacitor plugin for Acoustic Connect (CDP + engagement).",
   "main": "dist/plugin.cjs.js",
   "bin": {

@@ -54,6 +54,26 @@ function exitCodeFor(verdict) {
     return verdict === 'PASS' ? 0 : verdict === 'FAIL' ? 1 : 2;
 }
 
+/**
+ * What went wrong, from a finished results-<platform>.md: the checks that failed and the notes (what the
+ * run noticed, e.g. the batches that reached the sink). The runners print it after the verdict, so a CI log says
+ * why a run failed without opening the archived report.
+ */
+function failureLines(reportText) {
+    const lines = String(reportText || '').split('\n');
+    const out = [];
+    lines.forEach(function (line) {
+        if (/^\| FAIL \|/.test(line)) out.push('FAIL ' + line.replace(/^\| FAIL \| ?/, '').replace(/ \|\s*$/, '').replace(' | ', ': '));
+    });
+    const start = lines.indexOf('## Notes');
+    if (start !== -1) {
+        for (let i = start + 1; i < lines.length && !/^## /.test(lines[i]); i += 1) {
+            if (lines[i].startsWith('- ')) out.push('NOTE ' + lines[i].slice(2));
+        }
+    }
+    return out;
+}
+
 function cell(text) {
     return String(text === undefined ? '' : text).replace(/\|/g, '\\|').replace(/\n/g, ' ');
 }
@@ -122,4 +142,4 @@ function buildReport(r) {
     return lines.join('\n');
 }
 
-module.exports = { overallVerdict, exitCodeFor, buildReport, batchSummary };
+module.exports = { overallVerdict, exitCodeFor, buildReport, batchSummary, failureLines };

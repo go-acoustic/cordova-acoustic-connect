@@ -352,6 +352,12 @@ async function main() {
         const result = await runE2E(opts, realDeps(opts));
         console.log('Verdict: ' + result.verdict);
         console.log('Report:  ' + result.reportPath);
+        if (result.verdict !== 'PASS') {
+            // the report is archived by CI, but the log should say why on its own
+            try {
+                report.failureLines(fs.readFileSync(result.reportPath, 'utf8')).forEach(function (line) { console.log('  ' + line); });
+            } catch (_) { /* the report could not be read: the verdict above stands */ }
+        }
         process.exit(result.exitCode);
     } catch (error) {
         console.error('ERROR: ' + error.message);

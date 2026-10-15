@@ -277,6 +277,55 @@ describe('batchSummary', () => {
     });
 });
 
+describe('failureLines', () => {
+    const text = [
+        '# E2E verification - ios',
+        '',
+        'Verdict: FAIL',
+        '',
+        '## Notes',
+        '',
+        '- received batch 00001 +0s: 3 messages (type 2, type 22 x2); screen views: LOAD e2e_checkout',
+        '- the iOS app log cannot be read, so the app-side E2E_DONE line was not observed; the wire checks decide',
+        '',
+        '## Verdict table',
+        '',
+        '| Status | Check | Evidence |',
+        '|---|---|---|',
+        '| FAIL | baseline: session start (type 1) | type 1: expected >= 1, got 0 |',
+        '| PASS | baseline: type 22 present | type 22: expected >= 1, got 2 |',
+        '| FAIL | capture: layout (type 10) has non-empty control trees | no type-10 messages found at all |',
+        '',
+        '## Not applicable',
+    ].join('\n');
+
+    it('lists the failed checks with their evidence, then the notes', () => {
+        expect(report.failureLines(text)).toEqual([
+            'FAIL baseline: session start (type 1): type 1: expected >= 1, got 0',
+            'FAIL capture: layout (type 10) has non-empty control trees: no type-10 messages found at all',
+            'NOTE received batch 00001 +0s: 3 messages (type 2, type 22 x2); screen views: LOAD e2e_checkout',
+            'NOTE the iOS app log cannot be read, so the app-side E2E_DONE line was not observed; the wire checks decide',
+        ]);
+    });
+
+    it('says nothing for a report with no failures and no notes, or for no report', () => {
+        expect(report.failureLines('# E2E verification\n\n| PASS | a | b |\n')).toEqual([]);
+        expect(report.failureLines('')).toEqual([]);
+        expect(report.failureLines(undefined)).toEqual([]);
+    });
+
+    it('reads what buildReport writes', () => {
+        const written = report.buildReport({
+            platform: 'ios', phase: 'default', verdict: 'FAIL', startedAt: '2026-10-15T00:00:00.000Z',
+            env: {}, done: null, messageCount: 3, reverted: [], notes: ['a note'],
+            evaluation: { pass: false, counts: { pass: 0, fail: 1, na: 0 }, entries: [{ name: 'baseline: session start (type 1)', status: 'FAIL', detail: 'got 0' }] },
+        });
+        const lines = report.failureLines(written);
+        expect(lines).toContain('FAIL baseline: session start (type 1): got 0');
+        expect(lines).toContain('NOTE a note');
+    });
+});
+
 describe('the runners report what arrived when a check fails', () => {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { readFileSync } = require('fs');
@@ -286,6 +335,7 @@ describe('the runners report what arrived when a check fails', () => {
     ])('%s adds the batch summary to the notes when the evaluation fails', (file) => {
         const src = readFileSync(join(__dirname, '..', '..', '..', file), 'utf8');
         expect(src).toMatch(/if \(!evaluation\.pass\) report\.batchSummary\(messages\)/);
+        expect(src).toMatch(/report\.failureLines\(fs\.readFileSync\(result\.reportPath/);
     });
 });
 

@@ -224,8 +224,10 @@ describe('Jenkinsfile: Capacitor E2E Verification', () => {
     const jenkins: string = readFileSync(join(ROOT, 'Jenkinsfile'), 'utf8');
     const stageStart = jenkins.indexOf("stage('E2E Verification')");
     const stageBlock = jenkins.slice(stageStart, jenkins.indexOf("stage('Publish Feature')"));
-    const fnStart = jenkins.indexOf('def runCapacitorE2eVerification()');
+    // the one run of the runner and the verification around it
+    const fnStart = jenkins.indexOf('def runCapacitorE2eOnce(');
     const fnBlock = fnStart === -1 ? '' : jenkins.slice(fnStart, jenkins.indexOf('def runCapacitorPluginTests()'));
+    const verification = fnBlock.slice(fnBlock.indexOf('def runCapacitorE2eVerification()'));
 
     it('finds the function, so the checks below do not pass on an empty text', () => {
         expect(fnStart).toBeGreaterThan(-1);
@@ -253,8 +255,23 @@ describe('Jenkinsfile: Capacitor E2E Verification', () => {
         expect(fnBlock).toContain('npm run build');
         expect(fnBlock).toContain("npm install --no-save --install-links 'file:../../${capacitorDir}'");
         // built first, installed second, run last
-        expect(fnBlock.indexOf('npm run build')).toBeLessThan(fnBlock.indexOf('--install-links'));
-        expect(fnBlock.indexOf('--install-links')).toBeLessThan(fnBlock.indexOf('node e2e/run.js'));
+        expect(verification.indexOf('npm run build')).toBeLessThan(verification.indexOf('--install-links'));
+        expect(verification.indexOf('--install-links')).toBeLessThan(verification.indexOf('runCapacitorE2eOnce(udid)'));
+        expect(fnBlock).toContain('node e2e/run.js --platform ios');
+    });
+
+    it('runs a failed run once more on a fresh install, and only a second failure fails the stage', () => {
+        const first = verification.indexOf('def rc = runCapacitorE2eOnce(udid)');
+        const retry = verification.indexOf('rc = runCapacitorE2eOnce(udid)', first + 10);
+        expect(first).toBeGreaterThan(-1);
+        expect(retry).toBeGreaterThan(first);
+        // the retry is for a FAIL (1) only, reinstalls the app first, and the exit codes are mapped after it
+        const between = verification.slice(first, retry);
+        expect(between).toMatch(/if \(rc == 1\)/);
+        expect(between).toContain("xcrun simctl uninstall '${udid}' co.acoustic.connect.capacitor.demo");
+        expect(verification.indexOf("error('Capacitor E2E verification FAILED")).toBeGreaterThan(retry);
+        // not a loop: one more run at most
+        expect(verification.match(/runCapacitorE2eOnce\(udid\)/g)).toHaveLength(2);
     });
 
     it('uses Node 22 (nvm), which the Capacitor toolchain needs', () => {
