@@ -616,6 +616,57 @@ describe('runE2E on Android', () => {
         expect(files['/out/results-android.md']).toContain('AppKey');   // as a differing key NAME
     });
 
+    it('puts back the leftovers of an earlier run that was stopped before it restored, then prepares as usual', async () => {
+        const { deps, calls, files } = makeDeps({ readState: jest.fn(() => ({ platform: 'ios' })) });
+        await runner.runE2E(RUN_OPTS, deps);
+        expect(inOrder(calls, ['sink.start', 'restore', 'prepare', 'cordova build android', 'am start', 'restore'])).toBe('ok');
+        expect(calls.filter((c) => c === 'restore')).toHaveLength(2);   // the leftovers, then the run's own clean-up
+        const report = Object.values(files).map(String).find((v) => v.includes('# E2E verification')) || '';
+        expect(report).toContain('an earlier run had left the app prepared');
+    });
+
+    it('goes on when putting the leftovers back fails: a note says so and prepare still runs, with its own clean-up after it', async () => {
+        const { deps, calls, files } = makeDeps({ readState: jest.fn(() => ({ platform: 'ios' })) });
+        let first = true;
+        deps.restore = jest.fn(() => {
+            calls.push('restore');
+            if (first) { first = false; throw new Error('EACCES: permission denied'); }
+            return { reverted: [] };
+        });
+        const result = await runner.runE2E(RUN_OPTS, deps);
+        expect(result).toBeDefined();
+        // the failed restore did not stop the run: prepare and the build came after it, and the run's own restore closed it
+        expect(inOrder(calls, ['sink.start', 'restore', 'prepare', 'cordova build android', 'am start', 'restore'])).toBe('ok');
+        const report = Object.values(files).map(String).find((v) => v.includes('# E2E verification')) || '';
+        expect(report).toContain('could not put back the leftovers of an earlier run: EACCES: permission denied');
+        expect(report).toContain('node e2e/prepare.js restore');
+    });
+
+    it('reports both messages when prepare then refuses over a leftover that could not be restored', async () => {
+        const { deps, files } = makeDeps({
+            readState: jest.fn(() => ({ platform: 'ios' })),
+            restore: jest.fn(() => { throw new Error('EACCES: permission denied'); }),
+            prepare: jest.fn(() => { throw new Error('already prepared - run `node e2e/prepare.js restore` first'); }),
+        });
+        const result = await runner.runE2E(RUN_OPTS, deps);
+        expect(result.verdict).toBe('INCONCLUSIVE');
+        const report = Object.values(files).map(String).find((v) => v.includes('# E2E verification')) || '';
+        expect(report).toContain('could not put back the leftovers of an earlier run');
+        expect(report).toContain('already prepared');
+    });
+
+    it('does not restore anything first when no earlier run was left prepared', async () => {
+        const { deps, calls } = makeDeps({ readState: jest.fn(() => null) });
+        await runner.runE2E(RUN_OPTS, deps);
+        expect(calls.filter((c) => c === 'restore')).toHaveLength(1);   // only the run's own clean-up
+    });
+
+    it('still runs against fakes that have no readState (older call sites)', async () => {
+        const { deps } = makeDeps();
+        delete (deps as any).readState;
+        await expect(runner.runE2E(RUN_OPTS, deps)).resolves.toBeDefined();
+    });
+
     it('resets the sink after the install so earlier traffic cannot count', async () => {
         const { deps, calls } = makeDeps();
         await runner.runE2E(RUN_OPTS, deps);

@@ -137,6 +137,21 @@ async function runE2E(opts, deps) {
     let prepared = false;
 
     try {
+        // A run that was stopped half way (a Jenkins build aborted by hand while the e2e ran) never restored the app, and prepare
+        // refuses to start over its saved originals: every later run, on a workspace that is kept between builds, then ended with
+        // "already prepared" before it began (build #142). Put the leftovers back first; the sink is already ours, and the simulator
+        // lock keeps two runs from sharing the app.
+        // Best effort: if putting them back fails, say so and go on. Prepare then either works (the failed restore had already
+        // cleared the state) or refuses with its own "already prepared", and the report carries both messages.
+        if (deps.readState && deps.readState(root)) {
+            try {
+                const left = deps.restore({ root: root });
+                notes.push('an earlier run had left the app prepared (it was stopped before it restored); restored it first' +
+                    (left && left.reverted && left.reverted.length ? ': ' + left.reverted.join('; ') : ''));
+            } catch (error) {
+                notes.push('could not put back the leftovers of an earlier run: ' + error.message + ' - run `node e2e/prepare.js restore`');
+            }
+        }
         deps.prepare({
             root: root, platform: platform, sink: sinkUrl, deviceHost: opts.deviceHost,
             connectOverrides: prepareModule.deepMerge(suite.PHASES[phase].connectConfig, opts.connectConfig || {})
@@ -307,6 +322,7 @@ function realDeps(opts) {
         mkdirp: function (p) { fs.mkdirSync(p, { recursive: true }); },
         prepare: prepareModule.prepare,
         restore: prepareModule.restore,
+        readState: prepareModule.readState,
         startSink: async function (o) {
             const { createSink } = await import(pathToFileURL(path.join(opts.sinkRepo, 'src', 'sink.mjs')).href);
             const sink = createSink({ outDir: o.outDir, silent: true });
