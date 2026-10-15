@@ -34,6 +34,13 @@ function androidCommands(args) {
         launch: adb(['shell', 'am', 'start', '-n', args.appId + '/.MainActivity']),
         home: adb(['shell', 'input', 'keyevent', 'KEYCODE_HOME']),
         stop: adb(['shell', 'am', 'force-stop', args.appId]),
+        // Android 13+ asks for the notification permission in a dialog that covers the app and that a script
+        // cannot answer. On a fresh install that dialog paused the app, and part of the first run never reached
+        // the sink (session start, the push registration, the layout, some events). A reinstall keeps an earlier
+        // grant, which is why only the first run after a fresh install failed. So every run starts from the same
+        // state: data cleared (which clears permissions too), then the permission granted.
+        clearData: adb(['shell', 'pm', 'clear', args.appId]),
+        grantNotifications: adb(['shell', 'pm', 'grant', args.appId, 'android.permission.POST_NOTIFICATIONS']),
         clearLog: adb(['logcat', '-c']),
         logs: adb(['logcat', '-d']),
         model: adb(['shell', 'getprop', 'ro.product.model']),

@@ -11,7 +11,7 @@
 # Input, from the environment:
 #   ACOUSTIC_PROJECT_PATH     the App.xcodeproj
 #   ACOUSTIC_APP_GROUP        the App Group the extensions and the app share
-#   ACOUSTIC_SDK_VERSION      the Connect-SP version, the one the plugin pins
+#   ACOUSTIC_SDK_VERSION      the Connect-SP version the plugin requires at least
 #   ACOUSTIC_DEVELOPMENT_TEAM optional
 
 require 'xcodeproj'
@@ -53,7 +53,7 @@ unless package
   package.repositoryURL = SDK_URL
   project.root_object.package_references << package
 end
-package.requirement = { 'kind' => 'exactVersion', 'version' => SDK_VERSION }
+package.requirement = { 'kind' => 'upToNextMajorVersion', 'minimumVersion' => SDK_VERSION }
 
 # --- the app: entitlements and background mode ---------------------------------------------------------------------------------------
 # One group of files per extension, next to the project: the folder named like the extension.

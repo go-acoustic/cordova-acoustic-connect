@@ -12,6 +12,7 @@
  */
 
 const cordova = require('../../Demo/e2e/suite.js');
+const scenario = require('../../Demo/www/js/e2e/scenario.js');
 
 const PLATFORMS = ['android', 'ios'];
 
@@ -53,7 +54,11 @@ function buildSuite(args) {
                 check: 'type-absent', type: 10
             }]);
     }
-    const rows = cordova.buildSuite({ platform: platform, phase: phase }).map(function (row) {
+    // steps for APIs the Capacitor plugin does not have yet are skipped by the app, so their checks stay out
+    const skipped = scenario.OPTIONAL_STEP_IDS;
+    const rows = cordova.buildSuite({ platform: platform, phase: phase }).filter(function (row) {
+        return !skipped.some(function (id) { return row.name.indexOf(id + ':') === 0; });
+    }).map(function (row) {
         if (row.check === 'value' && row.type === 6 && row.path === 'name') {
             return Object.assign({}, row, {
                 name: row.name.replace('Cordova Plugin', 'Capacitor Plugin'),

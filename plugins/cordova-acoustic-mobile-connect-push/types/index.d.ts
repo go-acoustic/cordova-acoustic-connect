@@ -178,7 +178,7 @@ declare namespace AcousticConnect {
      * Android note: Connect Android SDK versions before 11.0.24-beta drop a number
      * at the TOP level of the payload (seen on 11.0.21-beta; strings and booleans
      * arrive, numbers nested inside an object or array are never affected). The
-     * plugin's default, 11.1.10-beta, sends it; nest the number only if you pin an
+     * plugin's default, 11.1.17, sends it; nest the number only if you pin an
      * older `AndroidVersion`.
      *
      * @param level Monitoring level, a non-negative integer. Defaults to 3.
@@ -224,6 +224,60 @@ declare namespace AcousticConnect {
         message: string,
         stackInfo?: string,
         unhandled?: boolean
+    ): Promise<void>;
+
+    /**
+     * Ask the native SDK to capture the layout of the screen on display.
+     *
+     * @param delayMs Milliseconds to wait before capturing; omitted means now.
+     * @rejects {AcousticError} `ACOUSTIC_INVALID_ARGS` when name is empty or
+     *   delayMs is not a non-negative integer.
+     */
+    function logScreenLayout(name: string, delayMs?: number): Promise<void>;
+
+    /** Log the device's current location, as the native SDK reads it. */
+    function logLocation(): Promise<void>;
+
+    /**
+     * Log a location the app already has.
+     *
+     * @rejects {AcousticError} `ACOUSTIC_INVALID_ARGS` when latitude is outside
+     *   -90..90, longitude outside -180..180 or level is not a non-negative integer.
+     */
+    function logLocationUpdate(
+        latitude: number,
+        longitude: number,
+        level?: number
+    ): Promise<void>;
+
+    /** Log that a dialog was shown (`DialogShowEvent` custom event). */
+    function logDialogShowEvent(
+        dialogId: string,
+        dialogTitle: string,
+        dialogType: string
+    ): Promise<void>;
+
+    /** Log that a dialog was dismissed (`DialogDismissEvent` custom event). */
+    function logDialogDismissEvent(
+        dialogId: string,
+        dismissReason: string
+    ): Promise<void>;
+
+    /** Log a tap on a dialog button (`DialogButtonClickEvent` custom event). */
+    function logDialogButtonClickEvent(
+        dialogId: string,
+        buttonText: string,
+        buttonIndex: number
+    ): Promise<void>;
+
+    /**
+     * Log your own event for a dialog (`DialogCustomEvent` custom event).
+     * `eventName` is carried as `customEventName`.
+     */
+    function logDialogCustomEvent(
+        dialogId: string,
+        eventName: string,
+        values?: Record<string, string | number | boolean>
     ): Promise<void>;
 
     /**

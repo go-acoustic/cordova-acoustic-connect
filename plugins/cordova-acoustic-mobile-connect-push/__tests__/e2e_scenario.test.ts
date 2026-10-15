@@ -24,7 +24,8 @@ function makeApi(overrides: Record<string, jest.Mock> = {}): Api {
     const names = [
         'logScreenViewContextLoad', 'logScreenViewContextUnload', 'logCustomEvent',
         'logClickEvent', 'logTextChangeEvent', 'logSignal', 'logExceptionEvent',
-        'logIdentity', 'flushQueues', 'isSdkEnabled',
+        'logIdentity', 'flushQueues', 'isSdkEnabled', 'logDialogShowEvent',
+        'logDialogButtonClickEvent', 'logScreenLayout', 'logLocationUpdate',
     ];
     const api: Api = {};
     for (const n of names) api[n] = jest.fn().mockResolvedValue(undefined);
@@ -37,7 +38,8 @@ describe('scenario definition', () => {
         const ids = scenario.STEPS.map((s: { id: string }) => s.id);
         expect(ids).toEqual([
             'screen-load', 'custom-event', 'click', 'text-change', 'signal',
-            'exception', 'identity', 'screen-unload', 'flush',
+            'exception', 'identity', 'screen-unload', 'dialog-show', 'dialog-button',
+            'screen-layout', 'location-update', 'flush',
         ]);
         expect(new Set(ids).size).toBe(ids.length);
     });
@@ -82,10 +84,14 @@ describe('runScenario', () => {
         // the screen being left is the previous one: the SDK drops an UNLOAD for a screen whose
         // LOAD is still queued, so unloading the one just loaded cannot work in a single batch
         expect(api.logScreenViewContextUnload).toHaveBeenCalledWith('e2e_cart', 'e2e_checkout');
+        expect(api.logDialogShowEvent).toHaveBeenCalledWith('e2e_dialog', 'Delete item?', 'alert');
+        expect(api.logDialogButtonClickEvent).toHaveBeenCalledWith('e2e_dialog', 'Delete', 0);
+        expect(api.logScreenLayout).toHaveBeenCalledWith('e2e_checkout', 500);
+        expect(api.logLocationUpdate).toHaveBeenCalledWith(52.52, 13.405);
         expect(api.flushQueues).toHaveBeenCalledTimes(1);
 
         expect(summary.ok).toBe(true);
-        expect(summary.results.map((r: { status: string }) => r.status)).toEqual(Array(9).fill('ok'));
+        expect(summary.results.map((r: { status: string }) => r.status)).toEqual(Array(13).fill('ok'));
     });
 
     it('runs the steps strictly one after another', async () => {
@@ -277,7 +283,7 @@ describe('e2e bootstrap (applications/Demo/www/js/e2e/e2e.js)', () => {
         await fire();
 
         expect(api.logCustomEvent).toHaveBeenCalledTimes(1);
-        expect(logs).toContain('E2E_DONE status=pass steps=9 failed=0 unavailable=0');
+        expect(logs).toContain('E2E_DONE status=pass steps=13 failed=0 unavailable=0');
         expect(logs.some((l) => l.startsWith('E2E_RESULT '))).toBe(true);
         expect(appended).toHaveLength(1);
         expect(appended[0].id).toBe('e2eDone');
@@ -288,7 +294,7 @@ describe('e2e bootstrap (applications/Demo/www/js/e2e/e2e.js)', () => {
         const api = makeApi({ logSignal: jest.fn().mockRejectedValue({ code: 'X', message: 'nope' }) });
         const { fire, logs, appended } = load({ enabled: true, settleMs: 0, sdkIntervalMs: 1 }, api);
         await fire();
-        expect(logs).toContain('E2E_DONE status=fail steps=9 failed=1 unavailable=0');
+        expect(logs).toContain('E2E_DONE status=fail steps=13 failed=1 unavailable=0');
         expect(appended[0].attrs['data-status']).toBe('fail');
     });
 
@@ -346,6 +352,10 @@ describe('scenario against the real JS bridge', () => {
             'logExceptionEvent',
             'logIdentificationEvent',
             'logScreenViewContextUnload',
+            'logCustomEvent:DialogShowEvent',
+            'logCustomEvent:DialogButtonClickEvent',
+            'logScreenLayout',
+            'logLocationUpdate',
             'flushQueues',
         ]);
     });
@@ -373,3 +383,29 @@ describe('which signal expectations come from logSignal', () => {
     });
 });
 
+
+describe('optional steps', () => {
+    it('are the steps for the newer APIs, and only those', () => {
+        expect(scenario.OPTIONAL_STEP_IDS).toEqual(['dialog-show', 'dialog-button', 'screen-layout', 'location-update']);
+    });
+
+    it('are skipped, not failed, when the plugin has no such method', async () => {
+        const api = makeApi();
+        for (const n of ['logDialogShowEvent', 'logDialogButtonClickEvent', 'logScreenLayout', 'logLocationUpdate']) delete api[n];
+        const summary = await scenario.runScenario(api);
+        expect(summary.ok).toBe(true);
+        expect(summary.unavailable).toBe(0);
+        const skipped = summary.results.filter((r: { status: string }) => r.status === 'skipped').map((r: { id: string }) => r.id);
+        expect(skipped).toEqual(scenario.OPTIONAL_STEP_IDS);
+    });
+
+    it('stay out of the Capacitor suite', () => {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const capSuite = require('../../../applications/DemoCapacitor/e2e/suite.js');
+        for (const platform of ['android', 'ios']) {
+            const names = capSuite.buildSuite({ platform, phase: 'default', layoutExpected: true }).map((r: { name: string }) => r.name);
+            expect(names.some((n: string) => /^(dialog-show|dialog-button|screen-layout|location-update):/.test(n))).toBe(false);
+            expect(names.some((n: string) => n.startsWith('signal:'))).toBe(true);
+        }
+    });
+});

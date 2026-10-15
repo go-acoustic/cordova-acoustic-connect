@@ -151,6 +151,29 @@ function screenViewContext(method, action) {
     };
 }
 
+/**
+ * Shared by the four dialog events. Same payload keys on both platforms:
+ * dialogId, eventType and a millisecond timestamp, plus the per-event fields.
+ */
+function dialogEvent(label, eventName, eventType, dialogId, fields, requiredStrings) {
+    if (!isNonEmptyString(dialogId)) {
+        return Promise.reject(invalidArgs(label + ': dialogId must be a non-empty string'));
+    }
+    for (var i = 0; i < requiredStrings.length; i++) {
+        if (!isNonEmptyString(fields[requiredStrings[i]])) {
+            return Promise.reject(invalidArgs(
+                label + ': ' + requiredStrings[i] + ' must be a non-empty string'
+            ));
+        }
+    }
+    var values = Object.assign({}, fields, {
+        dialogId: dialogId,
+        eventType: eventType,
+        timestamp: String(Date.now())
+    });
+    return AcousticConnect.logCustomEvent(eventName, values);
+}
+
 var AcousticConnect = {
 
     /**
@@ -384,7 +407,7 @@ var AcousticConnect = {
      * Android note: Connect Android SDK versions before 11.0.24-beta drop a number
      * at the TOP level of the payload (seen on 11.0.21-beta; strings and booleans
      * arrive, numbers nested inside an object or array are never affected). The
-     * plugin's default, 11.1.10-beta, sends it; nest the number only if you pin an
+     * plugin's default, 11.1.17, sends it; nest the number only if you pin an
      * older `AndroidVersion`.
      *
      * @param {Record<string, unknown>} values JSON-serialisable plain object.
@@ -451,6 +474,133 @@ var AcousticConnect = {
      */
     logScreenViewContextUnload:
         screenViewContext('logScreenViewContextUnload', 'logScreenViewContextUnload'),
+
+    /**
+     * Ask the native SDK to capture the layout of the screen on display.
+     *
+     * Android and iOS both capture the native screen (the WebView), named `name`.
+     * On iOS the plugin already requests one layout after the page loads.
+     *
+     * @param {string} name Screen name, e.g. 'Login'.
+     * @param {number} [delayMs] Milliseconds to wait before capturing (>= 0).
+     *   Omitted: capture straight away.
+     * @returns {Promise<void>}
+     */
+    logScreenLayout: function (name, delayMs) {
+        if (!isNonEmptyString(name)) {
+            return Promise.reject(invalidArgs(
+                'logScreenLayout: name must be a non-empty string'
+            ));
+        }
+        if (delayMs !== undefined && !isNonNegativeInteger(delayMs)) {
+            return Promise.reject(invalidArgs(
+                'logScreenLayout: delayMs must be a non-negative integer'
+            ));
+        }
+        return call('logScreenLayout', delayMs === undefined ? [name] : [name, delayMs]);
+    },
+
+    /**
+     * Log the device's current location, as the native SDK reads it.
+     * Subject to the app's location permission and `LocationLoggingEnabled`.
+     * @returns {Promise<void>}
+     */
+    logLocation: function () {
+        return call('logLocation', []);
+    },
+
+    /**
+     * Log a location you already have.
+     * @param {number} latitude  -90..90
+     * @param {number} longitude -180..180
+     * @param {number} [level=3] Monitoring level (non-negative integer).
+     * @returns {Promise<void>}
+     */
+    logLocationUpdate: function (latitude, longitude, level) {
+        if (typeof latitude !== 'number' || !isFinite(latitude) ||
+            latitude < -90 || latitude > 90) {
+            return Promise.reject(invalidArgs(
+                'logLocationUpdate: latitude must be a number between -90 and 90'
+            ));
+        }
+        if (typeof longitude !== 'number' || !isFinite(longitude) ||
+            longitude < -180 || longitude > 180) {
+            return Promise.reject(invalidArgs(
+                'logLocationUpdate: longitude must be a number between -180 and 180'
+            ));
+        }
+        var lvl = level === undefined ? DEFAULT_EVENT_LEVEL : level;
+        if (!isNonNegativeInteger(lvl)) {
+            return Promise.reject(invalidArgs(
+                'logLocationUpdate: level must be a non-negative integer'
+            ));
+        }
+        return call('logLocationUpdate', [latitude, longitude, lvl]);
+    },
+
+    /**
+     * Log that a dialog was shown, as a `DialogShowEvent` custom event.
+     * @param {string} dialogId
+     * @param {string} dialogTitle
+     * @param {string} dialogType e.g. 'alert', 'custom', 'modal'
+     * @returns {Promise<void>}
+     */
+    logDialogShowEvent: function (dialogId, dialogTitle, dialogType) {
+        return dialogEvent('logDialogShowEvent', 'DialogShowEvent', 'dialog_show', dialogId, {
+            dialogTitle: dialogTitle,
+            dialogType: dialogType
+        }, ['dialogTitle', 'dialogType']);
+    },
+
+    /**
+     * Log that a dialog was dismissed, as a `DialogDismissEvent` custom event.
+     * @param {string} dialogId
+     * @param {string} dismissReason e.g. 'cancel', 'outside_touch', 'back'
+     * @returns {Promise<void>}
+     */
+    logDialogDismissEvent: function (dialogId, dismissReason) {
+        return dialogEvent('logDialogDismissEvent', 'DialogDismissEvent', 'dialog_dismiss', dialogId, {
+            dismissReason: dismissReason
+        }, ['dismissReason']);
+    },
+
+    /**
+     * Log a tap on a dialog button, as a `DialogButtonClickEvent` custom event.
+     * @param {string} dialogId
+     * @param {string} buttonText
+     * @param {number} buttonIndex Position of the button (non-negative integer).
+     * @returns {Promise<void>}
+     */
+    logDialogButtonClickEvent: function (dialogId, buttonText, buttonIndex) {
+        if (!isNonNegativeInteger(buttonIndex)) {
+            return Promise.reject(invalidArgs(
+                'logDialogButtonClickEvent: buttonIndex must be a non-negative integer'
+            ));
+        }
+        return dialogEvent('logDialogButtonClickEvent', 'DialogButtonClickEvent', 'dialog_button_click', dialogId, {
+            buttonText: buttonText,
+            buttonIndex: String(buttonIndex)
+        }, ['buttonText']);
+    },
+
+    /**
+     * Log your own event for a dialog, as a `DialogCustomEvent` custom event.
+     * @param {string} dialogId
+     * @param {string} eventName Carried as `customEventName`.
+     * @param {Record<string, string|number|boolean>} [values] Flat extra values.
+     * @returns {Promise<void>}
+     */
+    logDialogCustomEvent: function (dialogId, eventName, values) {
+        var extra = values === undefined ? {} : values;
+        if (!isFlatScalarMap(extra)) {
+            return Promise.reject(invalidArgs(
+                'logDialogCustomEvent: values must be a flat object of ' +
+                'string, number or boolean values'
+            ));
+        }
+        return dialogEvent('logDialogCustomEvent', 'DialogCustomEvent', 'dialog_custom_event', dialogId,
+            Object.assign({}, extra, { customEventName: eventName }), ['customEventName']);
+    },
 
     /**
      * Flush buffered events to the collector immediately.

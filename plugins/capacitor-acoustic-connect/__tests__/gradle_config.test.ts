@@ -39,16 +39,20 @@ function gradleWarnings(args: string[]) {
 describeIfJava('android/build.gradle configuration', () => {
   jest.setTimeout(180000);
 
-  it('configures with the defaults: the pinned beta, push off, useRelease off', () => {
+  it('configures with the defaults: the pinned release, push off, useRelease off', () => {
     const r = gradle([]);
     expect(r.status).toBe(0);
   });
 
-  it('refuses a beta SDK when useRelease is on, and says what to do', () => {
+  it('accepts useRelease with the default version: it is a release', () => {
     const r = gradle(['-PacousticUseRelease=true']);
+    expect(r.status).toBe(0);
+  });
+
+  it('refuses a beta SDK when useRelease is on, and says what to do', () => {
+    const r = gradle(['-PacousticUseRelease=true', '-PconnectSdkVersion=11.1.10-beta']);
     expect(r.status).not.toBe(0);
     expect(r.stderr).toMatch(/useRelease is true/);
-    // the version it names is the plugin's default pin
     expect(r.stderr).toMatch(/11\.1\.10-beta/);
     expect(r.stderr).toMatch(/connectSdkVersion/);
   });
@@ -56,12 +60,6 @@ describeIfJava('android/build.gradle configuration', () => {
   it('accepts useRelease with a release version', () => {
     const r = gradle(['-PacousticUseRelease=true', '-PconnectSdkVersion=11.0.24']);
     expect(r.status).toBe(0);
-  });
-
-  it('rejects a beta pin while useRelease is on, however the pin is given', () => {
-    const r = gradle(['-PacousticUseRelease=true', '-PconnectSdkVersion=11.1.10-beta']);
-    expect(r.status).not.toBe(0);
-    expect(r.stderr).toMatch(/11\.1\.10-beta/);
   });
 
   it('takes the Firebase BOM version from firebaseBomVersion', () => {
@@ -133,9 +131,9 @@ describeIfJava('android/build.gradle configuration', () => {
     });
 
     it.each([[''], ['  '], [undefined]])('is not set when it is %j: the default is used', (androidVersion) => {
+      // with useRelease on, a missing version falls back to the plugin's default, which is a release: it configures
       const r = withConfig({ useRelease: true, androidVersion });
-      expect(r.status).not.toBe(0);
-      expect(r.stderr).toMatch(/version '11\.1\.10-beta' is a beta/);
+      expect(r.status).toBe(0);
     });
 
     it('is checked against the supported range, like the property', () => {

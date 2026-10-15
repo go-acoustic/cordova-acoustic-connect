@@ -20,6 +20,36 @@ function overallVerdict(args) {
     return 'PASS';
 }
 
+/**
+ * What reached the sink, batch by batch, so a missing message can be placed: was it never sent, or
+ * did it come in a batch that was not there yet? One line per batch: when it arrived (seconds after
+ * the first batch), how many messages, the message types with counts and the screen views in it.
+ * Returns [] when there is nothing to describe.
+ */
+function batchSummary(messages) {
+    const batches = new Map();
+    (messages || []).forEach(function (m) {
+        const key = m.batchSeq === undefined ? '?' : String(m.batchSeq);
+        if (!batches.has(key)) batches.set(key, { at: Date.parse(m.receivedAt), types: {}, screens: [], count: 0 });
+        const b = batches.get(key);
+        b.count += 1;
+        b.types[m.type] = (b.types[m.type] || 0) + 1;
+        const sv = m.message && m.message.screenview;
+        if (sv && sv.name) b.screens.push(sv.type + ' ' + sv.name);
+    });
+    const list = Array.from(batches.entries());
+    const first = list.map(function (e) { return e[1].at; }).filter(function (t) { return !isNaN(t); })
+        .reduce(function (a, t) { return Math.min(a, t); }, Infinity);
+    return list.map(function (e) {
+        const b = e[1];
+        const when = isNaN(b.at) || first === Infinity ? '' : ' +' + Math.round((b.at - first) / 1000) + 's';
+        const types = Object.keys(b.types).sort(function (a, c) { return a - c; })
+            .map(function (t) { return 'type ' + t + (b.types[t] > 1 ? ' x' + b.types[t] : ''); }).join(', ');
+        return 'batch ' + e[0] + when + ': ' + b.count + ' messages (' + types + ')' +
+            (b.screens.length ? '; screen views: ' + b.screens.join(', ') : '');
+    });
+}
+
 function exitCodeFor(verdict) {
     return verdict === 'PASS' ? 0 : verdict === 'FAIL' ? 1 : 2;
 }
@@ -92,4 +122,4 @@ function buildReport(r) {
     return lines.join('\n');
 }
 
-module.exports = { overallVerdict, exitCodeFor, buildReport };
+module.exports = { overallVerdict, exitCodeFor, buildReport, batchSummary };

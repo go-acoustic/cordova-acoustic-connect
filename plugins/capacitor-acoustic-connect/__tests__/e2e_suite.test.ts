@@ -13,6 +13,10 @@ type Row = {
   na?: string;
 };
 
+const scenario = require('../../../applications/Demo/www/js/e2e/scenario.js');
+// steps for APIs only the Cordova plugin has (OPTIONAL_STEP_IDS) are left out of the Capacitor suite
+const forCapacitor = (rows: Row[]) =>
+  rows.filter((r) => !scenario.OPTIONAL_STEP_IDS.some((id: string) => r.name.startsWith(id + ':')));
 const renamed = (r: Row) => r.name.replace('Cordova Plugin', 'Capacitor Plugin');
 
 describe('wire suite for the Capacitor plugin', () => {
@@ -20,7 +24,7 @@ describe('wire suite for the Capacitor plugin', () => {
     const rows: Row[] = buildSuite({ platform: 'android', layoutExpected: true, pushExpected: true }).filter(
       (r: Row) => !r.name.startsWith('push: '),
     );
-    const base: Row[] = cordova.buildSuite({ platform: 'android', phase: 'default' });
+    const base: Row[] = forCapacitor(cordova.buildSuite({ platform: 'android', phase: 'default' }));
     expect(rows).toHaveLength(base.length);
     expect(rows.map((r) => r.name)).toEqual(base.map(renamed));
   });
@@ -64,7 +68,7 @@ describe('wire suite for the Capacitor plugin', () => {
     const rows: Row[] = buildSuite({ platform: 'ios', layoutExpected: true, pushExpected: true }).filter(
       (r: Row) => !r.name.startsWith('push: '),
     );
-    const base: Row[] = cordova.buildSuite({ platform: 'ios', phase: 'default' });
+    const base: Row[] = forCapacitor(cordova.buildSuite({ platform: 'ios', phase: 'default' }));
     expect(rows.map((r) => r.name)).toEqual(base.map(renamed));
   });
 

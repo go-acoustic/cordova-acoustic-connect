@@ -170,6 +170,15 @@ class ConnectPlugin : CordovaPlugin() {
             ACTION_LOG_SCREEN_VIEW_CONTEXT_UNLOAD -> {
                 handleLogScreenViewContextUnload(args, callbackContext); true
             }
+            ACTION_LOG_SCREEN_LAYOUT -> {
+                handleLogScreenLayout(args, callbackContext); true
+            }
+            ACTION_LOG_LOCATION -> {
+                handleLogLocation(callbackContext); true
+            }
+            ACTION_LOG_LOCATION_UPDATE -> {
+                handleLogLocationUpdate(args, callbackContext); true
+            }
             ACTION_GET_SDK_VERSION -> {
                 callbackContext.sendPluginResult(
                     PluginResult(PluginResult.Status.OK, Connect.getLibraryVersion())
@@ -791,6 +800,72 @@ class ConnectPlugin : CordovaPlugin() {
     internal fun handleLogScreenViewContextUnload(args: JSONArray, callbackContext: CallbackContext) =
         logScreenViewContext(args, callbackContext, ConnectScreenviewType.UNLOAD, "logScreenViewContextUnload")
 
+    /**
+     * Captures the layout of the foreground screen.
+     * @param args[0] name     String, required
+     * @param args[1] delayMs  Int >= 0 (optional; omitted = capture straight away)
+     */
+    internal fun handleLogScreenLayout(args: JSONArray, callbackContext: CallbackContext) {
+        val name = args.optString(0, "").trim()
+        if (name.isBlank()) {
+            callbackContext.error(errorJson(CODE_INVALID_ARGS, "logScreenLayout: name is required"))
+            return
+        }
+        val delayMs = if (args.isNull(1)) null else args.optInt(1, 0).coerceAtLeast(0)
+        val activity = cordova.activity ?: run {
+            callbackContext.error(errorJson(CODE_INTERNAL_ERROR, "logScreenLayout: no foreground activity"))
+            return
+        }
+        activity.runOnUiThread {
+            try {
+                val ok = if (delayMs == null) Connect.logScreenLayout(activity, name)
+                else Connect.logScreenLayout(activity, name, delayMs)
+                if (ok) callbackContext.success()
+                else workWrapper.error(callbackContext, CODE_INTERNAL_ERROR, "logScreenLayout returned false")
+            } catch (t: Throwable) {
+                workWrapper.error(callbackContext, CODE_INTERNAL_ERROR, t.message ?: "logScreenLayout failed")
+            }
+        }
+    }
+
+    /** Logs the device's current location. */
+    internal fun handleLogLocation(callbackContext: CallbackContext) {
+        val activity = cordova.activity ?: run { callbackContext.success(); return }
+        activity.runOnUiThread {
+            try {
+                if (Connect.logGeolocation(DEFAULT_EVENT_LEVEL)) callbackContext.success()
+                else workWrapper.error(callbackContext, CODE_INTERNAL_ERROR, "logLocation returned false")
+            } catch (t: Throwable) {
+                workWrapper.error(callbackContext, CODE_INTERNAL_ERROR, t.message ?: "logLocation failed")
+            }
+        }
+    }
+
+    /**
+     * Logs a location supplied by the app.
+     * @param args[0] latitude   Double
+     * @param args[1] longitude  Double
+     * @param args[2] level      Int monitoring level (optional, default 3)
+     */
+    internal fun handleLogLocationUpdate(args: JSONArray, callbackContext: CallbackContext) {
+        val latitude = args.optDouble(0, Double.NaN)
+        val longitude = args.optDouble(1, Double.NaN)
+        if (latitude.isNaN() || latitude !in -90.0..90.0 || longitude.isNaN() || longitude !in -180.0..180.0) {
+            callbackContext.error(errorJson(CODE_INVALID_ARGS, "logLocationUpdate: latitude/longitude out of range"))
+            return
+        }
+        val level = args.optInt(2, DEFAULT_EVENT_LEVEL)
+        val activity = cordova.activity ?: run { callbackContext.success(); return }
+        activity.runOnUiThread {
+            try {
+                if (Connect.logLocationUpdateEventWithLatitude(latitude, longitude, level)) callbackContext.success()
+                else workWrapper.error(callbackContext, CODE_INTERNAL_ERROR, "logLocationUpdate returned false")
+            } catch (t: Throwable) {
+                workWrapper.error(callbackContext, CODE_INTERNAL_ERROR, t.message ?: "logLocationUpdate failed")
+            }
+        }
+    }
+
     private fun logScreenViewContext(
         args: JSONArray,
         callbackContext: CallbackContext,
@@ -1204,6 +1279,9 @@ class ConnectPlugin : CordovaPlugin() {
         internal const val ACTION_GET_CONFIG_ITEM           = "getConfigItem"
         internal const val ACTION_LOG_SCREEN_VIEW_CONTEXT_LOAD   = "logScreenViewContextLoad"
         internal const val ACTION_LOG_SCREEN_VIEW_CONTEXT_UNLOAD = "logScreenViewContextUnload"
+        internal const val ACTION_LOG_SCREEN_LAYOUT = "logScreenLayout"
+        internal const val ACTION_LOG_LOCATION = "logLocation"
+        internal const val ACTION_LOG_LOCATION_UPDATE = "logLocationUpdate"
         internal const val ACTION_GET_SDK_VERSION           = "getSdkVersion"
 
         internal const val PUSH_MODE_AUTOMATIC = "automatic"
@@ -1223,6 +1301,8 @@ class ConnectPlugin : CordovaPlugin() {
         // schedules a KillSwitchEnabled=true / KillSwitchUrl overwrite 100ms after
         // being called (its own ENABLE_DELAY). This must run comfortably after that.
         internal const val CONFIG_REAPPLY_DELAY_MS = 300L
+        /** Monitoring level used when the JS call does not pass one (matches logCustomEvent). */
+        internal const val DEFAULT_EVENT_LEVEL = 3
 
         private const val CONNECT_PUSH_FCM_PROBE_CLASS =
             "com.acoustic.connect.android.connectmod.push.services.fcm.FCMPushService"

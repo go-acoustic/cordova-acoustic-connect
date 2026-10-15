@@ -98,13 +98,10 @@ function adapt(source, platform) {
                 row.expected = platform === 'android' ? String(e.expected) : e.expected;
                 row.jsonType = platform === 'android' ? 'string' : jsonTypeOf(e.expected);
             } else {
-                // signals keep their JSON types on both platforms, but a logSignal payload is
-                // nested under signal.data.value on iOS and sits at the root on Android
+                // signals keep their JSON types on both platforms. A logSignal payload sits at the root of
+                // signal on Android and on iOS SDK 2.1.17+ (debug) / 2.1.26+ (release); older iOS SDKs
+                // nested it under signal.data.value. The engine reads either, so no shape is forced.
                 if (e.type === 21) row.platform = platform;
-                // iOS must nest a logSignal payload under signal.data.value; without the shape the engine
-                // falls back to the root of signal, which a flat (broken) payload would also satisfy.
-                // logIdentity signals are never wrapped, so they stay lenient.
-                if (e.type === 21 && e.viaLogSignal && platform === 'ios') row.shape = 'wrapped';
                 row.expected = e.expected;
                 row.jsonType = jsonTypeOf(e.expected);
             }

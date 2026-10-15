@@ -258,9 +258,9 @@ describe('the SDK versions of the config', () => {
   });
 
   it.each([
-    ['2.1.18', 'ok'],
-    ['2.1.15', 'ok'],
-    ['2.1.13', 'fail'],
+    ['2.2.5', 'ok'],
+    ['2.2.2', 'ok'],
+    ['2.1.15', 'fail'],
     ['2.1', 'fail'],
     ['latest', 'fail'],
     ['', 'skip'],
@@ -270,14 +270,14 @@ describe('the SDK versions of the config', () => {
 
   it('warns that iosVersion does nothing in a Swift Package Manager app, where the plugin pins the SDK in its Package.swift', () => {
     const spm = find(
-      version({ iosVersion: '2.1.18' }, { 'ios/App/App.xcodeproj/project.pbxproj': PBX() }),
+      version({ iosVersion: '2.2.5' }, { 'ios/App/App.xcodeproj/project.pbxproj': PBX() }),
       'ios-version',
     );
     expect(spm.status).toBe('warn');
     expect(spm.message).toMatch(/Swift Package Manager/);
     const pods = find(
       version(
-        { iosVersion: '2.1.18' },
+        { iosVersion: '2.2.5' },
         { 'ios/App/App.xcodeproj/project.pbxproj': PBX(), 'ios/App/Podfile': "target 'App' do\nend\n" },
       ),
       'ios-version',

@@ -12,14 +12,15 @@
  *
  * It also updates pods.json so the state stays consistent.
  *
- *   useRelease: true  (or missing) → AcousticConnect    (= 2.1.15)
- *   useRelease: false               → AcousticConnectDebug (= 2.1.13)
+ *   useRelease: true  (or missing) → AcousticConnect    (>= 2.1.51)
+ *   useRelease: false               → AcousticConnectDebug (>= 2.1.51)
  *
  * Connect.iOSVersion optionally pins a different Connect SDK version (mirrors
  * AndroidVersion in build-extras.gradle). Values below MIN_CONNECT_VERSION are
- * rejected — 2.1.13 is the floor that fixes the podspec/duplicate-xcframework
- * bug described below for the podspec default; letting an override go below
- * that would silently reintroduce it.
+ * rejected. 2.1.51 is the first build with
+ * the iOS screen-capture and WebView fixes, and (2.1.13 and later) free of the
+ * podspec/duplicate-xcframework bug described below. The plugin's explicit layout
+ * capture (ConnectPlugin.swift) is written for these builds.
  */
 
 'use strict';
@@ -28,11 +29,11 @@ var fs   = require('fs');
 var path = require('path');
 
 var RELEASE_NAME = 'AcousticConnect';
-var RELEASE_SPEC = '= 2.1.15';
+var RELEASE_SPEC = '>= 2.1.51';
 var DEBUG_NAME   = 'AcousticConnectDebug';
-var DEBUG_SPEC   = '= 2.1.13';
+var DEBUG_SPEC   = '>= 2.1.51';
 var MIN_IOS      = '15.1';
-var MIN_CONNECT_VERSION = '2.1.13';
+var MIN_CONNECT_VERSION = '2.1.51';
 
 // Parses a leading "x.y.z" out of a version string, ignoring any pre-release
 // suffix (e.g. "2.1.20-beta" → [2, 1, 20]). Returns null if it doesn't match.

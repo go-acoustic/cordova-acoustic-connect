@@ -35,15 +35,15 @@ function dependencyOf(block: Record<string, unknown> | null) {
 
 describeIfPod('the podspec and iosVersion', () => {
   jest.setTimeout(120000);
-  const pin = /Connect-SP[^\n]*exact:\s*"([\d.]+)"/.exec(
+  const pin = /Connect-SP[^\n]*(?:exact|from):\s*"([\d.]+)"/.exec(
     fs.readFileSync(path.join(__dirname, '..', 'Package.swift'), 'utf8'),
   )?.[1];
 
-  it('pins the SDK of the plugin when the app names no version, or no config', () => {
-    expect(dependencyOf(null)).toEqual({ requirement: [pin] });
-    expect(dependencyOf({ appKey: 'k' })).toEqual({ requirement: [pin] });
-    expect(dependencyOf({ iosVersion: '' })).toEqual({ requirement: [pin] });
-    expect(dependencyOf({ iosVersion: '  ' })).toEqual({ requirement: [pin] });
+  it('floats from the SDK floor of the plugin when the app names no version, or no config', () => {
+    expect(dependencyOf(null)).toEqual({ requirement: [`>= ${pin}`] });
+    expect(dependencyOf({ appKey: 'k' })).toEqual({ requirement: [`>= ${pin}`] });
+    expect(dependencyOf({ iosVersion: '' })).toEqual({ requirement: [`>= ${pin}`] });
+    expect(dependencyOf({ iosVersion: '  ' })).toEqual({ requirement: [`>= ${pin}`] });
   });
 
   it('takes the version of the app, with the pin of the plugin as the floor', () => {
@@ -59,7 +59,7 @@ describeIfPod('the podspec and iosVersion', () => {
     },
   );
 
-  it('stays the pin of the plugin when the config cannot be read', () => {
+  it('stays the floor of the plugin when the config cannot be read', () => {
     // a config that is not JSON is the app's problem to see elsewhere; the SDK version is then the plugin's
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'acoustic-podspec-'));
     const file = path.join(dir, 'capacitor.config.json');
@@ -69,7 +69,7 @@ describeIfPod('the podspec and iosVersion', () => {
       env: { ...process.env, ACOUSTIC_APP_CONFIG: file },
     });
     fs.rmSync(dir, { recursive: true, force: true });
-    expect(JSON.parse(r.stdout).dependencies.AcousticConnect).toEqual([pin]);
+    expect(JSON.parse(r.stdout).dependencies.AcousticConnect).toEqual([`>= ${pin}`]);
   });
 });
 
@@ -97,11 +97,11 @@ export {};
 
 describe('the SDK pin of the podspec', () => {
   // Plain text comparison, so that drift is caught on CI without CocoaPods too.
-  it('is the exact version of Package.swift', () => {
-    const swift = /Connect-SP[^\n]*exact:\s*"([\d.]+)"/.exec(
+  it('is the floor of Package.swift', () => {
+    const swift = /Connect-SP[^\n]*(?:exact|from):\s*"([\d.]+)"/.exec(
       fs.readFileSync(path.join(__dirname, '..', 'Package.swift'), 'utf8'),
     )?.[1];
-    const ruby = /^SDK_PIN\s*=\s*'([\d.]+)'/m.exec(fs.readFileSync(PODSPEC, 'utf8'))?.[1];
+    const ruby = /^SDK_FLOOR\s*=\s*'([\d.]+)'/m.exec(fs.readFileSync(PODSPEC, 'utf8'))?.[1];
     expect(swift).toBeDefined();
     expect(ruby).toBe(swift);
   });

@@ -217,6 +217,9 @@ async function runE2E(opts, deps) {
         await runStep(deps, 'install', cmd.install);
         if (platform === 'android') {
             await deps.exec(cmd.stop[0], cmd.stop[1]);
+            await deps.exec(cmd.clearData[0], cmd.clearData[1]);
+            // before Android 13 there is nothing to grant, and the command's failure does not matter
+            await deps.exec(cmd.grantNotifications[0], cmd.grantNotifications[1]);
             await deps.exec(cmd.clearLog[0], cmd.clearLog[1]);
         }
         await sink.reset();                                           // earlier traffic must not count
@@ -261,6 +264,8 @@ async function runE2E(opts, deps) {
                     return { name: e.name, status: e.status, reason: e.reason, detail: e.detail || (e.result && e.result.detail) };
                 })
             };
+            // a failed check: say what did arrive and when, so a missing message can be placed
+            if (!evaluation.pass) report.batchSummary(messages).forEach(function (line) { notes.push('received ' + line); });
         } else {
             notes.push('nothing reached the collector sink, so there is no evidence to assert on');
         }

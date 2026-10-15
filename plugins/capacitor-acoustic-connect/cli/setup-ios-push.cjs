@@ -88,9 +88,9 @@ function appGroupFor(options) {
     return group;
 }
 
-/** The Connect-SP version the plugin pins, which the extensions have to use as well. */
+/** The Connect-SP version the plugin requires at least (`from:` in Package.swift; `exact:` is read too), which the extensions use as their floor. */
 function sdkVersionFrom(packageSwift) {
-    const match = /Connect-SP[^\n]*exact:\s*"(\d+\.\d+\.\d+)"/.exec(packageSwift);
+    const match = /Connect-SP[^\n]*(?:exact|from):\s*"(\d+\.\d+\.\d+)"/.exec(packageSwift);
     return match ? match[1] : null;
 }
 

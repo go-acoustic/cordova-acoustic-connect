@@ -48,8 +48,8 @@ Create `ConnectConfig.json` at your Cordova project root (gitignored — never c
 | `PostMessageUrl` | Required. Connect collector endpoint. |
 | `iOSAppGroupIdentifier` | Shared App Group ID between the app and its iOS NSE/NCE extensions. |
 | `iOSDevelopmentTeam` | Apple Team ID. Sets the Xcode signing team automatically, skipping the manual Signing & Capabilities step below. |
-| `AndroidVersion` | Pins a specific Connect Android SDK version (`x.y.z`) instead of the plugin's default (currently `11.1.10-beta`). Invalid values are ignored with a build warning. |
-| `iOSVersion` | Pins a specific Connect iOS SDK pod version (`x.y.z`) instead of the plugin's default (`2.1.15` release / `2.1.13` debug). Values below `2.1.13` — the floor that fixes a podspec/duplicate-xcframework bug — and non-version strings are ignored with a build warning. |
+| `AndroidVersion` | Pins a specific Connect Android SDK version (`x.y.z`) instead of the plugin's default (currently `11.1.17`). Invalid values are ignored with a build warning. |
+| `iOSVersion` | Pins a specific Connect iOS SDK pod version (`x.y.z`) instead of the plugin's default (`>= 2.1.51`, floating: CocoaPods resolves the newest release, for both the release and the debug pod). Values below `2.1.51` — the first build with the iOS screen-capture and WebView fixes — and non-version strings are ignored with a build warning. |
 | `iOSPushMode` | `'automatic'` (default) or `'manual'`. iOS only — Android is always `'automatic'` at the bridge boundary. |
 | `AndroidNotificationIconResName` | Drawable resource name for the push notification icon on Android. Fallback chain: your name → the plugin's bundled `ic_notification` (correct default — launcher icons crash at delivery) → `ic_launcher` (legacy) → the SDK's own default. |
 | `KillSwitchEnabled` | `false` (default) or `true`. Controls the native SDK's remote kill switch on both platforms — see below. The SDK's own bundled default is `true`; this plugin defaults it `false` so apps must opt in explicitly. |

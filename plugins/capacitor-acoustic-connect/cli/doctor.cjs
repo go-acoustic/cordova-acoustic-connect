@@ -257,7 +257,7 @@ function androidVersionCheck(config) {
     return ['ok', 'androidVersion ' + text];
 }
 
-/** iosVersion: x.y.z, not below the SDK the plugin pins; it takes effect for CocoaPods only. */
+/** iosVersion: x.y.z, not below the SDK floor of the plugin; it takes effect for CocoaPods only. */
 function iosVersionCheck(config, hasIosProject, usesPods) {
     const value = config.iosVersion;
     if (value === undefined || value === null || (typeof value === 'string' && !value.trim())) return ['skip', 'iosVersion is not set: the plugin\'s pin is used'];
@@ -270,7 +270,7 @@ function iosVersionCheck(config, hasIosProject, usesPods) {
         return ['fail', 'iosVersion ' + text + ' is below the ' + pin + ' that the plugin is built against: `pod install` cannot give it'];
     }
     if (hasIosProject && !usesPods) {
-        return ['warn', 'iosVersion ' + text + ' has no effect in a Swift Package Manager app: the plugin\'s Package.swift fixes the SDK at ' + pin +
+        return ['warn', 'iosVersion ' + text + ' has no effect in a Swift Package Manager app: the plugin\'s Package.swift takes the newest 2.x from ' + pin +
             '. It applies to an app that uses CocoaPods'];
     }
     return ['ok', 'iosVersion ' + text];

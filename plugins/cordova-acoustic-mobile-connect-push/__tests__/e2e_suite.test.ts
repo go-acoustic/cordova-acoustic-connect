@@ -57,6 +57,8 @@ function ideal(platform: 'ios' | 'android', opts: { layout?: boolean; leak?: boo
         : { name: 'Cordova Plugin', description: 'e2e exception', unhandled: false, stackTrace: 'Error: e2e\n    at e2e.js:1', data: {} } }));
     out.push(m(21, { signal: { loginMethod: 'email', identifierName: 'Email' } }));
     out.push(m(2, { screenview: { type: 'UNLOAD', name: 'e2e_cart', class: 'C', referrer: 'e2e_checkout' } }));
+    out.push(m(5, { customEvent: { name: 'DialogShowEvent', data: wrap(asWire({ dialogId: 'e2e_dialog', dialogTitle: 'Delete item?', dialogType: 'alert' })) } }));
+    out.push(m(5, { customEvent: { name: 'DialogButtonClickEvent', data: wrap(asWire({ dialogId: 'e2e_dialog', buttonText: 'Delete', buttonIndex: '0' })) } }));
     if (opts.layout) out.push(m(10, { layout: { name: 'e2e', controls: [{ id: '1' }] } }));
     return out;
 }
@@ -188,16 +190,8 @@ describe('default suite', () => {
         expect(JSON.stringify(android)).not.toMatch(/\d+\.\d+\.\d+-?beta/);
     });
 
-    it('ios: requires the wrapped shape for the logSignal payload rows and for nothing else', () => {
-        const strict = ios.filter((r: any) => r.shape === 'wrapped');
-        expect(strict.length).toBeGreaterThan(0);
-        for (const r of strict) {
-            expect(r.type).toBe(21);
-            expect(r.platform).toBe('ios');
-            expect(['signalContent.signalType', 'cart.items', 'cart.total']).toContain(r.path);
-        }
-        // the identity signal is never wrapped, so its row must stay lenient
-        expect(ios.find((r: any) => r.type === 21 && r.path === 'loginMethod')!.shape).toBeUndefined();
+    it('ios: reads a logSignal payload at the root or under signal.data.value (SDK-version dependent)', () => {
+        expect(ios.some((r: any) => r.shape !== undefined)).toBe(false);
     });
 
     it('android: has no shape requirement', () => {

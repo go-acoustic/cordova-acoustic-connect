@@ -33,7 +33,7 @@ and in `android/variables.gradle`: `minSdkVersion = 26`.
 
 Analytics needs no Firebase. For push, set `pushEnabled: true` in the plugin config, add your
 `google-services.json`, then run `npx cap sync` and rebuild: the build then uses the push artifact and
-Firebase Messaging. The plugin pins Connect Android `11.1.10-beta`;
+Firebase Messaging. The plugin pins Connect Android `11.1.17`;
 override it with `androidVersion` in the plugin block of `capacitor.config`, or with the Gradle property `connectSdkVersion` (`-PconnectSdkVersion=...`,
 `gradle.properties` or `variables.gradle`), which wins.
 The Firebase BOM version used for push is `firebaseBomVersion`, set the same way. With `useRelease: true` the
@@ -41,7 +41,7 @@ build rejects `-beta` SDK versions, so pin a release version first.
 
 ### iOS
 
-The plugin links the Connect iOS SDK (release build, pinned to `2.1.15`; `iosVersion` in the plugin block pins a newer one in an app that uses
+The plugin links the Connect iOS SDK (release build, `2.1.51` or newer, floating: CocoaPods and Swift Package Manager take the newest 2.x release; `iosVersion` in the plugin block pins one in an app that uses
 CocoaPods) either through Swift Package Manager or
 through CocoaPods; Capacitor 8 projects use Swift Package Manager by default.
 
@@ -58,7 +58,7 @@ through CocoaPods; Capacitor 8 projects use Swift Package Manager by default.
   ```
 
   The sample app (`applications/DemoCapacitor`) has this phase.
-- **CocoaPods** (`npx cap add ios --packagemanager CocoaPods`): the `AcousticConnect` pod (pinned to `2.1.15`)
+- **CocoaPods** (`npx cap add ios --packagemanager CocoaPods`): the `AcousticConnect` pod (`>= 2.1.51`, floating)
   puts the bundle in place itself. The SDK needs iOS 15.1 here: raise `platform :ios` in the Podfile and the
   project's deployment target to `15.1`, because Capacitor's template targets 15.0.
 

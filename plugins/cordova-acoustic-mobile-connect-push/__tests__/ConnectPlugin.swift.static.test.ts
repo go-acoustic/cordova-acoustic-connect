@@ -438,8 +438,10 @@ describe('ConnectPlugin.swift — dead code absent', () => {
         expect(SWIFT).not.toMatch(/\bdeinit\b/);
     });
 
-    test('no removeObserver call present', () => {
-        expect(SWIFT).not.toMatch(/removeObserver/);
+    test('the only observer is the CDVPageDidLoad layout capture, removed in dispose()', () => {
+        expect(SWIFT.match(/addObserver\(/g)).toHaveLength(1);
+        expect(SWIFT).toMatch(/CDVPageDidLoad/);
+        expect(SWIFT).toMatch(/override func dispose\(\)[\s\S]*?removeObserver/);
     });
 
     test('pushDidRegisterWithToken selector is absent', () => {
@@ -538,3 +540,18 @@ describe('ConnectPlugin.swift — runtime config items', () => {
     });
 });
 
+
+describe('ConnectPlugin.swift — layout and location actions', () => {
+    test.each([
+        ['logScreenLayout', /ConnectCustomEvent\(\)\.logScreenLayout\s*\(\s*with:/],
+        ['logLocation', /ConnectCustomEvent\(\)\.logLocation\(nil\)/],
+        ['logLocationUpdate', /ConnectCustomEvent\(\)\.logLocationUpdate\s*\(withLatitude:/],
+    ])('%s is exposed to Cordova and calls the SDK', (action, sdkCall) => {
+        expect(SWIFT).toMatch(new RegExp(`@objc\\(${action}:\\)`));
+        expect(SWIFT).toMatch(sdkCall);
+    });
+
+    test('logScreenLayout converts the millisecond delay to the seconds the SDK expects', () => {
+        expect(SWIFT).toMatch(/andDelay:\s*delayMs\s*\/\s*1000\.0/);
+    });
+});

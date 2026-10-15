@@ -48,7 +48,7 @@
                 }
                 // Give the SDK a moment after it reports ready (push setup, first screen view).
                 return new Promise(function (resolve) {
-                    setTimeout(resolve, config.settleMs === undefined ? 2000 : config.settleMs);
+                    setTimeout(resolve, config.settleMs === undefined ? 10000 : config.settleMs);
                 }).then(function () { return scenario.runScenario(api); }).then(finish);
             });
     }

@@ -32,7 +32,8 @@ does not list. Add it to `allprojects.repositories` in the app's `android/build.
 a real version number, not `+` or `latest`. Set `-PconnectSdkVersion=x.y.z`, or leave it out.
 
 **`useRelease is true but the Connect Android SDK version '…' is a beta`.** `useRelease` rejects every `-beta`
-version, and the plugin's default is one. Pin a release version, or set `useRelease` to `false`.
+version; the plugin's default is a release, so this comes from a beta you pinned. Pin a release version, leave
+`androidVersion` out, or set `useRelease` to `false`.
 
 **Push does not start; the log says `pushEnabled is true but the push transport … is not in the app`.** The Android
 build reads `pushEnabled` when it builds. Run `npx cap sync` and rebuild. The build also warns when

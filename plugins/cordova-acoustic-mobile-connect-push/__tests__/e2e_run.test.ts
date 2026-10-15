@@ -49,6 +49,12 @@ describe('androidCommands', () => {
         expect(c.stop[1]).toEqual(['-s', 'emulator-5554', 'shell', 'am', 'force-stop', 'co.x.app']);
     });
 
+    it('clears the app data and grants the notification permission, so a fresh install and a reinstall start alike', () => {
+        expect(c.clearData[1]).toEqual(['-s', 'emulator-5554', 'shell', 'pm', 'clear', 'co.x.app']);
+        expect(c.grantNotifications[1]).toEqual(
+            ['-s', 'emulator-5554', 'shell', 'pm', 'grant', 'co.x.app', 'android.permission.POST_NOTIFICATIONS']);
+    });
+
     it('refuses to build commands without a serial', () => {
         expect(() => commands.androidCommands({ appId: 'x', apk: 'y' })).toThrow('serial');
     });
@@ -238,6 +244,47 @@ describe('overallVerdict', () => {
 
     it.each([['PASS', 0], ['FAIL', 1], ['INCONCLUSIVE', 2]])('exit code for %s is %i', (v, code) => {
         expect(report.exitCodeFor(v)).toBe(code);
+    });
+});
+
+describe('batchSummary', () => {
+    const msg = (batchSeq: string, type: number, receivedAt: string, message: unknown = {}) => ({ batchSeq, index: 0, type, receivedAt, message });
+
+    it('describes each batch: when it came, how many messages, the types and the screen views', () => {
+        const lines = report.batchSummary([
+            msg('00001', 22, '2026-10-14T09:27:28.000Z'),
+            msg('00001', 2, '2026-10-14T09:27:28.100Z', { screenview: { type: 'LOAD', name: 'Home' } }),
+            msg('00001', 5, '2026-10-14T09:27:28.200Z'),
+            msg('00001', 5, '2026-10-14T09:27:28.300Z'),
+            msg('00002', 1, '2026-10-14T09:28:51.000Z'),
+        ]);
+        expect(lines).toEqual([
+            'batch 00001 +0s: 4 messages (type 2, type 5 x2, type 22); screen views: LOAD Home',
+            'batch 00002 +83s: 1 messages (type 1)',
+        ]);
+    });
+
+    it('shows a missing type by its absence: no type 10 in the line of the batch', () => {
+        const lines = report.batchSummary([msg('00001', 2, '2026-10-14T09:27:28.000Z')]);
+        expect(lines.join('\n')).not.toContain('type 10');
+    });
+
+    it('copes with no messages and with an unreadable time', () => {
+        expect(report.batchSummary([])).toEqual([]);
+        expect(report.batchSummary(undefined)).toEqual([]);
+        expect(report.batchSummary([msg('00001', 5, 'x')])).toEqual(['batch 00001: 1 messages (type 5)']);
+    });
+});
+
+describe('the runners report what arrived when a check fails', () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { readFileSync } = require('fs');
+    it.each([
+        ['applications/Demo/e2e/run.js'],
+        ['applications/DemoCapacitor/e2e/run.js'],
+    ])('%s adds the batch summary to the notes when the evaluation fails', (file) => {
+        const src = readFileSync(join(__dirname, '..', '..', '..', file), 'utf8');
+        expect(src).toMatch(/if \(!evaluation\.pass\) report\.batchSummary\(messages\)/);
     });
 });
 
@@ -522,6 +569,15 @@ describe('runE2E on Android', () => {
         const { deps, calls } = makeDeps();
         await runner.runE2E(RUN_OPTS, deps);
         expect(inOrder(calls, ['install -r', 'sink.reset', 'am start'])).toBe('ok');
+    });
+
+    it('starts Android from the same state every time: data cleared, notification permission granted, before launch', async () => {
+        const { deps } = makeDeps();
+        const seen: string[] = [];
+        const base = deps.exec;
+        deps.exec = jest.fn(async (cmd: string, args: string[]) => { seen.push([cmd, ...args].join(' ')); return base(cmd, args); });
+        await runner.runE2E(RUN_OPTS, deps);
+        expect(inOrder(seen, ['install -r', 'force-stop', 'pm clear', 'pm grant', 'logcat -c', 'am start'])).toBe('ok');
     });
 
     it('waits for the app to say it is done, polling the log', async () => {

@@ -102,6 +102,7 @@ describe('sdkVersionFrom', () => {
   it('reads the pinned Connect-SP version out of Package.swift, so the extensions use the SDK of the app', () => {
     const swift = '.package(url: "https://github.com/go-acoustic/Connect-SP.git", exact: "2.1.15")';
     expect(sdkVersionFrom(swift)).toBe('2.1.15');
+    expect(sdkVersionFrom('.package(url: "https://github.com/go-acoustic/Connect-SP.git", from: "2.1.51")')).toBe('2.1.51');
     expect(sdkVersionFrom(fs.readFileSync(path.join(__dirname, '..', 'Package.swift'), 'utf8'))).toMatch(
       /^\d+\.\d+\.\d+$/,
     );

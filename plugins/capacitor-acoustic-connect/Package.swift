@@ -11,9 +11,9 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/ionic-team/capacitor-swift-pm.git", from: "8.0.0"),
-        // The Connect iOS SDK (release build), pinned to the version the CocoaPods route pins too. The package
+        // The Connect iOS SDK (release build): 2.1.51 or newer within 2.x, the same floor and floating range as the CocoaPods route. The package
         // declares iOS 15, so this one does too; the CocoaPods route needs 15.1.
-        .package(url: "https://github.com/go-acoustic/Connect-SP.git", exact: "2.1.15")
+        .package(url: "https://github.com/go-acoustic/Connect-SP.git", from: "2.1.51")
     ],
     targets: [
         .target(

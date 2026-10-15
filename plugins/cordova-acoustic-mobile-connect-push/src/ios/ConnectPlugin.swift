@@ -34,6 +34,13 @@ public class ConnectPlugin: CDVPlugin {
     private var locationLoggingEnabled: Bool?
     private var screenCaptureEnabled: Bool?
     private var layoutConfigIos: [String: Any]?
+    private var pageLoadObserver: NSObjectProtocol?
+
+    /// Delay (seconds) between the page finishing loading and the layout capture, so the
+    /// WebView has rendered the first screen. 500ms is the capture delay used by default on the
+    /// other platforms and by the SDK's own `CaptureLayoutDelay`; the e2e runs on an iOS 26.5
+    /// simulator captured the layout with it on every run.
+    private static let layoutCaptureDelay: TimeInterval = 0.5
 
     // MARK: - Lifecycle
 
@@ -43,6 +50,40 @@ public class ConnectPlugin: CDVPlugin {
         // Apply runtime settings (debug env vars, etc.) from the bundled config
         // before any SDK call. Must run before enable() which is called later from JS.
         applyRuntimeConfig()
+        observePageLoadForLayoutCapture()
+    }
+
+    public override func dispose() {
+        if let pageLoadObserver {
+            NotificationCenter.default.removeObserver(pageLoadObserver)
+        }
+        super.dispose()
+    }
+
+    /// Captures the screen layout (type 10) once the WebView page has loaded.
+    ///
+    /// Connect iOS SDK 2.1.39 (debug) and 2.2.2 (release) no longer capture a layout for the
+    /// Cordova WebView screen on their own (verified on an iOS 26.5 simulator: debug 2.1.36 and
+    /// release 2.1.33 do, debug 2.1.39+ and release 2.2.2 do not), so the plugin requests it
+    /// explicitly, the same request the public `logScreenLayout` API makes. Skipped when the app opted
+    /// out with `ScreenCaptureEnabled: false`.
+    ///
+    /// The observer fires on every page load, not only the first: a page reload is a new screen
+    /// state, so a repeated capture on reload is intentional.
+    private func observePageLoadForLayoutCapture() {
+        pageLoadObserver = NotificationCenter.default.addObserver(
+            forName: NSNotification.Name.CDVPageDidLoad, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.screenCaptureEnabled != false,
+                      let controller = self.viewController else { return }
+                let ok = ConnectCustomEvent().logScreenLayout(
+                    with: controller, andDelay: Self.layoutCaptureDelay, andName: "Cordova")
+                if !ok {
+                    NSLog("[AcousticConnect] logScreenLayout was not accepted by the SDK")
+                }
+            }
+        }
     }
 
     // MARK: - Core actions (enable / disable / setLogLevel)
@@ -368,6 +409,64 @@ public class ConnectPlugin: CDVPlugin {
             sendSuccess(command)
         } else {
             sendError(command, code: Constants.codeInternalError, message: "\(label) returned false")
+        }
+    }
+
+    // MARK: - Screen layout and location
+
+    /// JS: `AcousticConnect.logScreenLayout(name, delayMs?)`
+    @objc(logScreenLayout:)
+    func logScreenLayout(command: CDVInvokedUrlCommand) {
+        let name = (command.argument(at: 0) as? String ?? "").trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty else {
+            sendError(command, code: Constants.codeInvalidArgs, message: "logScreenLayout: name is required")
+            return
+        }
+        guard let controller = viewController else {
+            sendError(command, code: Constants.codeInternalError, message: "logScreenLayout: no view controller")
+            return
+        }
+        // The delay crosses the bridge in milliseconds; the SDK's `andDelay:` takes seconds.
+        // With no delay the SDK captures synchronously, which is fine: plugin calls arrive on main.
+        let delayMs = (command.argument(at: 1) as? NSNumber)?.doubleValue ?? 0
+        let ok: Bool
+        if delayMs > 0 {
+            ok = ConnectCustomEvent().logScreenLayout(with: controller, andDelay: delayMs / 1000.0, andName: name)
+        } else {
+            ok = ConnectCustomEvent().logScreenLayout(with: controller, andName: name)
+        }
+        if ok {
+            sendSuccess(command)
+        } else {
+            sendError(command, code: Constants.codeInternalError, message: "logScreenLayout returned false")
+        }
+    }
+
+    /// JS: `AcousticConnect.logLocation()`
+    @objc(logLocation:)
+    func logLocation(command: CDVInvokedUrlCommand) {
+        if ConnectCustomEvent().logLocation(nil) {
+            sendSuccess(command)
+        } else {
+            sendError(command, code: Constants.codeInternalError, message: "logLocation returned false")
+        }
+    }
+
+    /// JS: `AcousticConnect.logLocationUpdate(latitude, longitude, level?)`
+    @objc(logLocationUpdate:)
+    func logLocationUpdate(command: CDVInvokedUrlCommand) {
+        guard let latitude = (command.argument(at: 0) as? NSNumber)?.doubleValue, (-90.0...90.0).contains(latitude),
+              let longitude = (command.argument(at: 1) as? NSNumber)?.doubleValue, (-180.0...180.0).contains(longitude)
+        else {
+            sendError(command, code: Constants.codeInvalidArgs,
+                      message: "logLocationUpdate: latitude/longitude out of range")
+            return
+        }
+        let level = mapMonitoringLevel((command.argument(at: 2) as? NSNumber)?.intValue ?? 3)
+        if ConnectCustomEvent().logLocationUpdate(withLatitude: latitude, longitude: longitude, level: level) {
+            sendSuccess(command)
+        } else {
+            sendError(command, code: Constants.codeInternalError, message: "logLocationUpdate returned false")
         }
     }
 

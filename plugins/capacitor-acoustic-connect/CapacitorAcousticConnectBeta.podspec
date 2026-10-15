@@ -2,8 +2,9 @@ require 'json'
 
 package = JSON.parse(File.read(File.join(__dir__, 'package.json')))
 
-# The Connect iOS SDK the plugin is built and tried against. It is the version when the app names none, and the floor of the one it names.
-SDK_PIN = '2.1.15'
+# The oldest Connect iOS SDK the plugin supports, the first build with the iOS screen-capture and WebView fixes. With no iosVersion the pod floats: CocoaPods
+# takes the newest release. It is also the floor of an iosVersion the app names.
+SDK_FLOOR = '2.1.51'
 
 # A setting of the plugin block (plugins.AcousticConnect) in the app's config, which `pod install` reads while it evaluates this file,
 # as the RN podspec reads ConnectConfig.json. `npx cap sync` leaves the config in ios/App/App/; the app's own file is the fallback.
@@ -45,7 +46,7 @@ ios_version = ios_version.to_s.strip
 unless ios_version.empty? || ios_version.match?(/\A\d+\.\d+\.\d+\z/)
   raise "AcousticConnect: iosVersion '#{ios_version}' in the plugin block of capacitor.config is not a version: write it as x.y.z, or leave it empty to use the plugin's default."
 end
-sdk_requirements = ios_version.empty? ? [SDK_PIN] : [">= #{SDK_PIN}", "= #{ios_version}"]
+sdk_requirements = ios_version.empty? ? [">= #{SDK_FLOOR}"] : [">= #{SDK_FLOOR}", "= #{ios_version}"]
 
 Pod::Spec.new do |s|
   s.name = 'CapacitorAcousticConnectBeta'

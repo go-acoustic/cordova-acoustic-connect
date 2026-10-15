@@ -47,8 +47,8 @@ describe('build-extras.gradle: where the Connect Android SDK comes from', () => 
         expect(GRADLE.indexOf('useRelease    = cfg?.Connect?.useRelease')).toBeLessThan(GRADLE.indexOf('Android_Maven'));
     });
 
-    it('pins Connect Android 11.1.10-beta by default, the build the plugin and its e2e run on', () => {
-        expect(GRADLE).toMatch(/def defaultSdkVersion = [^\n]*"11\.1\.10-beta"/);
+    it('pins Connect Android 11.1.17 by default, a release build, so useRelease works without a pin', () => {
+        expect(GRADLE).toMatch(/def defaultSdkVersion = [^\n]*"11\.1\.17"/);
         expect(GRADLE).not.toContain('11.0.21-beta');
     });
 });

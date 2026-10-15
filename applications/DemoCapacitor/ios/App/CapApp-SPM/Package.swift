@@ -12,7 +12,7 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/ionic-team/capacitor-swift-pm.git", exact: "8.5.2"),
-        .package(name: "CapacitorAcousticConnectBeta", path: "../../../../../plugins/capacitor-acoustic-connect")
+        .package(name: "CapacitorAcousticConnectBeta", path: "../../../node_modules/capacitor-acoustic-connect-beta")
     ],
     targets: [
         .target(

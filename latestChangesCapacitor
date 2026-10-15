@@ -45,7 +45,7 @@ Known Issues
 - The manual push calls (`didRegisterWithToken` and the others) are checked with
   a fake SDK, not against a real push
 - `iosVersion` applies only to apps that use CocoaPods; with Swift Package
-  Manager the plugin's `Package.swift` fixes the SDK version
+  Manager the plugin's `Package.swift` takes the newest 2.x from 2.1.51
 - Native masking rules do not reach the page: the SDK sees the WebView as one
   control. Use `screenCaptureEnabled: false` to keep page content out of
   captures
@@ -58,5 +58,5 @@ Our environment for this release:
 - Xcode 26.5
 - MacOS 26.5
 - Capacitor 8, Node 22
-- iOS 15.1 or newer (Connect iOS SDK 2.1.15)
-- Android minSdk 26, SDK 36 (Connect Android SDK 11.1.10-beta)
+- iOS 15.1 or newer (Connect iOS SDK 2.1.51 or newer, floating)
+- Android minSdk 26, SDK 36 (Connect Android SDK 11.1.17)

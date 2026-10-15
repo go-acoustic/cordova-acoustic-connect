@@ -987,3 +987,99 @@ describe('flat value maps accept plain objects only', () => {
     });
 });
 
+
+describe('logScreenLayout, logLocation, logLocationUpdate', () => {
+    const lastCall = (): ExecCall => mockExec.mock.calls[mockExec.mock.calls.length - 1] as ExecCall;
+
+    it('logScreenLayout sends the name alone, or the name and the delay', async () => {
+        await AcousticConnect.logScreenLayout('Home');
+        expect(lastCall().slice(2)).toEqual(['ConnectPlugin', 'logScreenLayout', ['Home']]);
+        await AcousticConnect.logScreenLayout('Home', 300);
+        expect(lastCall().slice(2)).toEqual(['ConnectPlugin', 'logScreenLayout', ['Home', 300]]);
+    });
+
+    it.each([[''], ['  '], [undefined], [5]])('logScreenLayout rejects name %p', async (name) => {
+        await expect(AcousticConnect.logScreenLayout(name)).rejects.toMatchObject({ code: 'ACOUSTIC_INVALID_ARGS' });
+        expect(mockExec).not.toHaveBeenCalled();
+    });
+
+    it.each([[-1], [1.5], ['10']])('logScreenLayout rejects delayMs %p', async (delay) => {
+        await expect(AcousticConnect.logScreenLayout('Home', delay)).rejects.toMatchObject({ code: 'ACOUSTIC_INVALID_ARGS' });
+    });
+
+    it('logLocation takes no arguments', async () => {
+        await AcousticConnect.logLocation();
+        expect(lastCall().slice(2)).toEqual(['ConnectPlugin', 'logLocation', []]);
+    });
+
+    it('logLocationUpdate sends latitude, longitude and the default level 3', async () => {
+        await AcousticConnect.logLocationUpdate(52.5, 13.4);
+        expect(lastCall().slice(2)).toEqual(['ConnectPlugin', 'logLocationUpdate', [52.5, 13.4, 3]]);
+        await AcousticConnect.logLocationUpdate(-90, 180, 1);
+        expect(lastCall().slice(2)).toEqual(['ConnectPlugin', 'logLocationUpdate', [-90, 180, 1]]);
+    });
+
+    it.each([[91, 0], [-91, 0], [0, 181], [0, -181], [NaN, 0], ['1', 0], [0, Infinity]])(
+        'logLocationUpdate rejects (%p, %p)', async (lat, lon) => {
+            await expect(AcousticConnect.logLocationUpdate(lat, lon)).rejects.toMatchObject({ code: 'ACOUSTIC_INVALID_ARGS' });
+            expect(mockExec).not.toHaveBeenCalled();
+        });
+
+    it('logLocationUpdate rejects a bad level', async () => {
+        await expect(AcousticConnect.logLocationUpdate(1, 1, -1)).rejects.toMatchObject({ code: 'ACOUSTIC_INVALID_ARGS' });
+    });
+});
+
+describe('dialog events', () => {
+    const sent = (): { name: unknown; values: Record<string, unknown> } => {
+        const c = mockExec.mock.calls[mockExec.mock.calls.length - 1] as ExecCall;
+        expect(c[3]).toBe('logCustomEvent');
+        return { name: c[4][0], values: c[4][1] as Record<string, unknown> };
+    };
+
+    it('logDialogShowEvent', async () => {
+        await AcousticConnect.logDialogShowEvent('d1', 'Delete?', 'alert');
+        const { name, values } = sent();
+        expect(name).toBe('DialogShowEvent');
+        expect(values).toMatchObject({ dialogId: 'd1', dialogTitle: 'Delete?', dialogType: 'alert', eventType: 'dialog_show' });
+        expect(values.timestamp).toMatch(/^\d{13}$/);
+    });
+
+    it('logDialogDismissEvent', async () => {
+        await AcousticConnect.logDialogDismissEvent('d1', 'cancel');
+        const { name, values } = sent();
+        expect(name).toBe('DialogDismissEvent');
+        expect(values).toMatchObject({ dialogId: 'd1', dismissReason: 'cancel', eventType: 'dialog_dismiss' });
+    });
+
+    it('logDialogButtonClickEvent sends the index as a string', async () => {
+        await AcousticConnect.logDialogButtonClickEvent('d1', 'OK', 1);
+        const { name, values } = sent();
+        expect(name).toBe('DialogButtonClickEvent');
+        expect(values).toMatchObject({ dialogId: 'd1', buttonText: 'OK', buttonIndex: '1', eventType: 'dialog_button_click' });
+    });
+
+    it('logDialogCustomEvent merges the values and carries the name as customEventName', async () => {
+        await AcousticConnect.logDialogCustomEvent('d1', 'swiped', { direction: 'left', n: 2 });
+        const { name, values } = sent();
+        expect(name).toBe('DialogCustomEvent');
+        expect(values).toMatchObject({
+            dialogId: 'd1', customEventName: 'swiped', direction: 'left', n: 2, eventType: 'dialog_custom_event'
+        });
+    });
+
+    it.each([
+        ['logDialogShowEvent', ['', 't', 'alert']],
+        ['logDialogShowEvent', ['d', '', 'alert']],
+        ['logDialogShowEvent', ['d', 't', '']],
+        ['logDialogDismissEvent', ['d', '']],
+        ['logDialogButtonClickEvent', ['d', '', 0]],
+        ['logDialogButtonClickEvent', ['d', 'OK', -1]],
+        ['logDialogButtonClickEvent', ['d', 'OK', 1.5]],
+        ['logDialogCustomEvent', ['d', '', {}]],
+        ['logDialogCustomEvent', ['d', 'e', { nested: { a: 1 } }]],
+    ])('%s rejects %j without crossing the bridge', async (method, args) => {
+        await expect(AcousticConnect[method](...(args as unknown[]))).rejects.toMatchObject({ code: 'ACOUSTIC_INVALID_ARGS' });
+        expect(mockExec).not.toHaveBeenCalled();
+    });
+});

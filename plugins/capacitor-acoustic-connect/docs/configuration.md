@@ -27,8 +27,8 @@ export default config;
 | `appKey`, `postMessageUrl` | string | none | With both set the SDK starts when the plugin loads, so the first screen is captured. `enable()` from JavaScript then resolves without starting it again. |
 | `autoEnable` | boolean | `true` | `false` starts the SDK only from `enable()`, even with both keys set. |
 | `useRelease` | boolean | `false` | `true` is for production builds: the native SDK's own logging is off, and on Android the build takes Connect from Maven Central only and rejects every `-beta` version. The plugin's pinned SDK is a beta, so set a release version first (`-PconnectSdkVersion=x.y.z`); otherwise the build stops with a message saying so. Needs a `cap sync` and a rebuild. `-PacousticUseRelease=true\|false` overrides it. |
-| `androidVersion` | string | none | Pins another Connect Android SDK than the plugin's default (`11.1.10-beta`), as `x.y.z` or `x.y.z-beta`: the Cordova plugin's `AndroidVersion`. The Gradle property `connectSdkVersion` wins over it. It has to be in the supported range (11.0.21 up to, not including, 12) and not a beta under `useRelease`; a wrong value stops the build. Read when Android builds. |
-| `iosVersion` | string | none | Pins another Connect iOS SDK, as `x.y.z`, not below the plugin's own pin (`2.1.15`): the Cordova plugin's `iOSVersion`. It is read when `pod install` runs, so it applies to an app that uses CocoaPods; with Swift Package Manager the plugin's `Package.swift` fixes the version and the setting has no effect (`npx acoustic-connect doctor` says so). A wrong value stops `pod install`. |
+| `androidVersion` | string | none | Pins another Connect Android SDK than the plugin's default (`11.1.17`), as `x.y.z` or `x.y.z-beta`: the Cordova plugin's `AndroidVersion`. The Gradle property `connectSdkVersion` wins over it. It has to be in the supported range (11.0.21 up to, not including, 12) and not a beta under `useRelease`; a wrong value stops the build. Read when Android builds. |
+| `iosVersion` | string | none | Pins another Connect iOS SDK, as `x.y.z`, not below the plugin's floor (`2.1.51`): the Cordova plugin's `iOSVersion`. It is read when `pod install` runs, so it applies to an app that uses CocoaPods; with Swift Package Manager the plugin's `Package.swift` takes the newest 2.x from `2.1.51` and the setting has no effect (`npx acoustic-connect doctor` says so). A wrong value stops `pod install`. |
 | `killSwitchEnabled`, `killSwitchUrl` | boolean, string | `false` | The SDK's remote kill switch. Off unless you opt in; the SDKs ship with it on. The URL applies only when it is on. |
 | `locationLoggingEnabled` | boolean or `null` | `null` | `null` keeps the SDK default; a value turns location data on or off. |
 | `screenCaptureEnabled` | boolean or `null` | `null` | `false` turns automatic layout and screenshot capture off (screen views keep flowing). |
@@ -54,5 +54,5 @@ log says so; run `npx cap sync` and rebuild.
 
 ## Not covered yet
 
-- Choosing the iOS SDK version in a Swift Package Manager app: the plugin pins it (`Connect-SP` 2.1.15 in `Package.swift`). `iosVersion` works for CocoaPods apps.
+- Choosing the iOS SDK version in a Swift Package Manager app: the plugin sets it (`Connect-SP` `from: "2.1.51"` in `Package.swift`, the newest 2.x). `iosVersion` works for CocoaPods apps.
 - iOS push extensions for an app that uses CocoaPods: `npx acoustic-connect setup-ios-push` covers Swift Package Manager apps (README, "Rich push on iOS"); with CocoaPods it stops and the extensions are added by hand.

@@ -63,7 +63,7 @@ function inspect(dir: string): Result {
     end
     project.root_object.package_references.each do |r|
       next unless r.respond_to?(:repositoryURL)
-      out[:packages] << { url: r.repositoryURL, kind: r.requirement['kind'], version: r.requirement['version'].to_s }
+      out[:packages] << { url: r.repositoryURL, kind: r.requirement['kind'], version: (r.requirement['minimumVersion'] || r.requirement['version']).to_s }
     end
     puts JSON.generate(out)
   `;
@@ -107,15 +107,15 @@ describeIfXcodeproj('setup-ios-push on the Xcode project of a Capacitor app', ()
     }
   });
 
-  it('links the Connect SDK into both extensions through Swift Package Manager, at the version the plugin pins', () => {
+  it('links the Connect SDK into both extensions through Swift Package Manager, from the version the plugin requires', () => {
     const dir = copyApp();
     setup(dir);
     const { targets, packages } = inspect(dir);
-    const pin = /Connect-SP[^\n]*exact:\s*"([\d.]+)"/.exec(
+    const pin = /Connect-SP[^\n]*(?:exact|from):\s*"([\d.]+)"/.exec(
       fs.readFileSync(path.join(__dirname, '..', 'Package.swift'), 'utf8'),
     )?.[1];
     expect(packages.filter((p) => /Connect-SP/.test(p.url))).toEqual([
-      { url: 'https://github.com/go-acoustic/Connect-SP.git', kind: 'exactVersion', version: pin },
+      { url: 'https://github.com/go-acoustic/Connect-SP.git', kind: 'upToNextMajorVersion', version: pin },
     ]);
     expect(targets.ConnectNSE.products).toEqual(['Connect']);
     expect(targets.ConnectNCE.products).toEqual(['Connect']);

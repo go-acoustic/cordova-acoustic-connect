@@ -137,7 +137,7 @@ describe('buildE2EConfigFile', () => {
     }
 
     it('enables the scenario with the default timings', () => {
-        expect(evaluate(prep.buildE2EConfigFile({}))).toEqual({ enabled: true, settleMs: 2000, sdkMaxTries: 30, sdkIntervalMs: 1000 });
+        expect(evaluate(prep.buildE2EConfigFile({}))).toEqual({ enabled: true, settleMs: 10000, sdkMaxTries: 30, sdkIntervalMs: 1000 });
     });
 
     it('takes overrides', () => {

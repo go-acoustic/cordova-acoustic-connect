@@ -72,7 +72,9 @@ function pushConfigured() {
 }
 
 function parseArgs(argv) {
-    const opts = { platform: 'android', phase: 'default', port: 9877, layout: 'auto', skipBuild: false, runWaitSec: 45, settleSec: 10, stableWaitSec: 60 };
+    // settle/stable-wait: the main batch reaches the sink late on the Android emulator; with 10s/60s a
+    // run reported missing messages that arrived afterwards (PASS 25/25 with 30s/120s)
+    const opts = { platform: 'android', phase: 'default', port: 9877, layout: 'auto', skipBuild: false, runWaitSec: 45, settleSec: 30, stableWaitSec: 120 };
     const value = {
         '--platform': 'platform', '--device': 'device', '--out': 'out', '--sink-repo': 'sinkRepo', '--layout': 'layout',
         '--sdk-version': 'sdkVersion', '--phase': 'phase', '--ios-host': 'iosHost', '--app': 'app'
@@ -359,6 +361,8 @@ async function runPrepared(opts) {
                     return { name: e.name, status: e.status, reason: e.reason, detail: e.detail || (e.result && e.result.detail) };
                 })
             };
+            // a failed check: say what did arrive and when, so a missing message can be placed
+            if (!evaluation.pass) report.batchSummary(messages).forEach(function (line) { notes.push('received ' + line); });
         } else {
             notes.push('nothing reached the collector sink, so there is no evidence to assert on');
         }

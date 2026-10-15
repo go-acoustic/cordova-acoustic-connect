@@ -10,7 +10,9 @@ import { AcousticConnect } from 'capacitor-acoustic-connect-beta';
 
 const SDK_MAX_TRIES = 30;
 const SDK_INTERVAL_MS = 1000;
-const SETTLE_MS = 2000;
+// After the SDK reports ready it makes its own start-up messages (session start, the first screen and its layout, the push
+// registration). A scenario that starts sooner overwrites the first screen and loses them: 2s was not enough on a cold launch.
+const SETTLE_MS = 10000;
 
 interface Scenario {
   formatDoneLine(summary: unknown): string;

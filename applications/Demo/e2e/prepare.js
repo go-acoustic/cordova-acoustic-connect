@@ -93,7 +93,10 @@ function buildE2EConfigFile(options) {
     const o = options || {};
     const config = {
         enabled: true,
-        settleMs: o.settleMs === undefined ? 2000 : o.settleMs,
+        // how long the app waits after the SDK reports ready before the scenario starts: the SDK makes its own start-up
+        // messages (session start, the first screen and its layout, the push registration) in that time, and a scenario
+        // that starts sooner overwrites the first screen and loses them. On a cold first launch 2s was not enough.
+        settleMs: o.settleMs === undefined ? 10000 : o.settleMs,
         sdkMaxTries: o.sdkMaxTries === undefined ? 30 : o.sdkMaxTries,
         sdkIntervalMs: o.sdkIntervalMs === undefined ? 1000 : o.sdkIntervalMs
     };

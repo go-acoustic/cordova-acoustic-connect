@@ -126,6 +126,44 @@
             ]
         },
         {
+            id: 'dialog-show',
+            optional: true,
+            description: 'Log a dialog shown (a DialogShowEvent custom event)',
+            needs: 'logDialogShowEvent',
+            run: function (A) { return A.logDialogShowEvent('e2e_dialog', 'Delete item?', 'alert'); },
+            expect: [
+                { check: 'value', type: 5, eventName: 'DialogShowEvent', path: 'dialogId', expected: 'e2e_dialog' },
+                { check: 'value', type: 5, eventName: 'DialogShowEvent', path: 'dialogType', expected: 'alert' }
+            ]
+        },
+        {
+            id: 'dialog-button',
+            optional: true,
+            description: 'Log a dialog button tap (a DialogButtonClickEvent custom event)',
+            needs: 'logDialogButtonClickEvent',
+            run: function (A) { return A.logDialogButtonClickEvent('e2e_dialog', 'Delete', 0); },
+            expect: [
+                { check: 'value', type: 5, eventName: 'DialogButtonClickEvent', path: 'buttonText', expected: 'Delete' },
+                { check: 'value', type: 5, eventName: 'DialogButtonClickEvent', path: 'buttonIndex', expected: '0' }
+            ]
+        },
+        {
+            id: 'screen-layout',
+            optional: true,
+            description: 'Request a layout capture explicitly (only that the call is accepted; the layout itself is checked by the capture checks)',
+            needs: 'logScreenLayout',
+            run: function (A) { return A.logScreenLayout('e2e_checkout', 500); },
+            expect: []
+        },
+        {
+            id: 'location-update',
+            optional: true,
+            description: 'Log a location supplied by the app (only that the call is accepted)',
+            needs: 'logLocationUpdate',
+            run: function (A) { return A.logLocationUpdate(52.52, 13.405); },
+            expect: []
+        },
+        {
             id: 'flush',
             description: 'Flush the queue',
             needs: 'flushQueues',
@@ -133,6 +171,12 @@
             expect: []
         }
     ];
+
+    // Steps marked `optional` call an API that not every plugin has (the Cordova plugin has
+    // them all; the Capacitor plugin has none yet). Where the plugin lacks the method the step
+    // is reported as 'skipped', which is not a failure, and the suite leaves its checks out.
+    var OPTIONAL_STEP_IDS = STEPS.filter(function (step) { return step.optional; })
+        .map(function (step) { return step.id; });
 
     // Present on any run regardless of the steps (the SDK registers the device itself).
     var BASELINE = [{ check: 'type-present', type: 22 }];
@@ -151,6 +195,10 @@
         for (var i = 0; i < STEPS.length; i += 1) {
             var step = STEPS[i];
             if (typeof api[step.needs] !== 'function') {
+                if (step.optional) {
+                    results.push({ id: step.id, status: 'skipped', error: 'plugin has no ' + step.needs + '()' });
+                    continue;
+                }
                 results.push({ id: step.id, status: 'unavailable', error: 'plugin has no ' + step.needs + '()' });
                 continue;
             }
@@ -211,6 +259,7 @@
     return {
         SECRET_TEXT: SECRET_TEXT,
         STEPS: STEPS,
+        OPTIONAL_STEP_IDS: OPTIONAL_STEP_IDS,
         BASELINE: BASELINE,
         runScenario: runScenario,
         expectations: expectations,

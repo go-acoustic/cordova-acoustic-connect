@@ -79,7 +79,7 @@ def connectSdkArtifact = "io.github.go-acoustic:connect-push-fcm"
 
 // AndroidVersion in ConnectConfig.json takes precedence over the Cordova
 // preference and the default pin.
-def defaultSdkVersion = project.hasProperty("connectSdkVersion") ? project.connectSdkVersion : "11.1.10-beta"
+def defaultSdkVersion = project.hasProperty("connectSdkVersion") ? project.connectSdkVersion : "11.1.17"
 def connectSdkVersion
 if (!androidVersion.isEmpty()) {
     if (androidVersion ==~ /\d+\.\d+\.\d+(-[A-Za-z0-9._-]+)?/) {
@@ -97,16 +97,15 @@ if (!androidVersion.isEmpty()) {
 // fixed-version dependency request is still resolved through componentSelection.
 // Left unchecked, that combination fails with a generic "could not resolve
 // dependency" error with no indication of why. Fail fast with an actionable message
-// instead: as of this default, no non-beta connect-push-fcm build has been published
-// since Tealeaf/EOCore merged into Connect, so useRelease:true builds must pin an
-// explicit non-beta AndroidVersion in ConnectConfig.json until one exists.
+// instead. The plugin's default is a release build, so this only fires for an explicit
+// beta pin (AndroidVersion in ConnectConfig.json or -PconnectSdkVersion).
 if (useRelease && connectSdkVersion.endsWith('-beta')) {
     throw new GradleException(
         "[Acoustic] useRelease is true but the resolved Android Connect SDK version " +
         "'${connectSdkVersion}' is a beta build, which the useRelease guard above always " +
         "rejects — the build would otherwise fail with an unresolvable dependency graph. " +
-        "Set Connect.AndroidVersion in ConnectConfig.json to an explicit non-beta version, " +
-        "or set useRelease to false, until a non-beta release is published."
+        "Set Connect.AndroidVersion in ConnectConfig.json to a non-beta version (or leave it out " +
+        "to use the plugin's default), or set useRelease to false."
     )
 }
 

@@ -62,7 +62,7 @@ ext {
     // The Connect Android SDK: -PconnectSdkVersion=..., gradle.properties or ext in the app's variables.gradle, else androidVersion of the plugin
     // block (the Cordova plugin's AndroidVersion), else the plugin's default. A version written wrongly stops the build, not
     // gets ignored: the app would ship a SDK it did not ask for.
-    connectSdkVersion = rootProject.findProperty('connectSdkVersion') ?: (acousticConfigVersion ?: '11.1.10-beta')
+    connectSdkVersion = rootProject.findProperty('connectSdkVersion') ?: (acousticConfigVersion ?: '11.1.17')
     // -PfirebaseBomVersion=..., gradle.properties or ext in the app's variables.gradle
     firebaseBomVersion = rootProject.findProperty('firebaseBomVersion') ?: '33.7.0'
     androidxCoreKTXVersion = project.hasProperty('androidxCoreKTXVersion') ? rootProject.ext.androidxCoreKTXVersion : '1.17.0'
@@ -87,7 +87,7 @@ if (acousticVersionParts == null ||
 }
 
 // The betas are published only to the Maven tree; with useRelease on they are rejected, so a beta pin
-// (the plugin's default is one) has to be replaced by a release version. Said here, at configuration, because
+// has to be replaced by a release version (the plugin's default is one). Said here, at configuration, because
 // the failure Gradle would give later is a bare "could not resolve" with no hint of the cause.
 if (acousticUseRelease && connectSdkVersion.endsWith('-beta')) {
     throw new GradleException(
