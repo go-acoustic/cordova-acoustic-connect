@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Default small icon of the push notifications. An app that has its own drawable named ic_notification (or names
+    another one with androidNotificationIconResName) uses that instead.
+
+    Android draws a notification's small icon in one colour from the alpha channel alone, so this file may use only
+    opaque white (#FFFFFFFF) or transparent. A launcher icon is not valid and crashes at delivery.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+
+    <!-- Bell body -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12,2C10.9,2 10,2.9 10,4C10,4.06 10.01,4.12 10.01,4.18C7.15,4.86 5,7.46 5,10.5L5,16L3,18L3,19L21,19L21,18L19,16L19,10.5C19,7.46 16.85,4.86 14,4.18C14,4.12 14,4.06 14,4C14,2.9 13.1,2 12,2Z" />
+
+    <!-- Bell clapper -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12,22C13.1,22 14,21.1 14,20L10,20C10,21.1 10.9,22 12,22Z" />
+
+</vector>

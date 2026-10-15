@@ -1,0 +1,265 @@
+import groovy.json.JsonOutput
+import groovy.json.JsonSlurper
+
+// The plugin block of the app's capacitor.config (plugins.AcousticConnect) decides what the build contains.
+// `cap sync` copies the config to the app's assets, which is where it is read; a Gradle property of the same
+// name with the `acoustic` prefix overrides each key (-PacousticPushEnabled=true), and -PacousticConfigFile=<path>
+// points at another config file. Changing a key needs a sync and a rebuild.
+//   pushEnabled: off (the default) takes the analytics-only Connect artifact and no Firebase at all; on takes
+//     the artifact with the FCM push transport and Firebase Messaging.
+//   useRelease: off (the default) lets the Connect betas come from their Maven tree; on takes Maven Central
+//     and Google only and rejects every `-beta` version.
+//   layoutConfig, layoutConfigAndroid: the screen-capture rules, written to the ConnectLayoutConfig.json asset
+//     the Android SDK reads (see generateAcousticLayoutConfig below).
+def acousticPluginConfig = {
+    def custom = rootProject.findProperty('acousticConfigFile')
+    def file = custom ? new File(custom.toString()) : new File(rootProject.projectDir, 'app/src/main/assets/capacitor.config.json')
+    if (!file.exists()) return [:]
+    try {
+        return new JsonSlurper().parse(file).plugins?.AcousticConnect ?: [:]
+    } catch (Exception e) {
+        logger.warn("AcousticConnect: could not read ${file}: ${e.message}")
+        return [:]
+    }
+}()
+def acousticFlag = { String key, String property ->
+    def override = rootProject.findProperty(property)
+    override != null ? override.toString().toBoolean() : acousticPluginConfig[key] == true
+}
+// A text setting of the plugin block: empty when it is not there, and a stop of the build when it is there and not text.
+def acousticText = { String key ->
+    def value = acousticPluginConfig[key]
+    if (value == null) return ''
+    if (!(value instanceof CharSequence)) {
+        throw new GradleException("AcousticConnect: ${key} in the plugin block of capacitor.config must be a string, got ${value.getClass().simpleName}")
+    }
+    value.toString().trim()
+}
+def acousticPushEnabled = acousticFlag('pushEnabled', 'acousticPushEnabled')
+def acousticUseRelease = acousticFlag('useRelease', 'acousticUseRelease')
+def acousticConnectArtifact = acousticPushEnabled ? 'connect-push-fcm' : 'connect'
+
+// Without google-services.json the Google services plugin is not applied, Firebase stays uninitialised and push
+// does not start; the only sign would be a line in the device log. Said here, while the developer is building.
+if (acousticPushEnabled && !new File(rootProject.projectDir, 'app/google-services.json').exists()) {
+    logger.warn("AcousticConnect: pushEnabled is true but ${rootProject.projectDir}/app/google-services.json is missing, " +
+        "so push will not start. Add the Firebase config for the app's package to android/app/, or set pushEnabled to false.")
+}
+
+def acousticConfigVersion = acousticText('androidVersion')
+if (acousticConfigVersion && !(acousticConfigVersion ==~ /^\d+\.\d+\.\d+(-beta)?$/)) {
+    throw new GradleException(
+        "AcousticConnect: androidVersion '${acousticConfigVersion}' in the plugin block of capacitor.config is not a version: " +
+        "write it as x.y.z or x.y.z-beta, or leave it empty to use the plugin's default."
+    )
+}
+
+ext {
+    junitVersion = project.hasProperty('junitVersion') ? rootProject.ext.junitVersion : '4.13.2'
+    androidxAppCompatVersion = project.hasProperty('androidxAppCompatVersion') ? rootProject.ext.androidxAppCompatVersion : '1.7.1'
+    androidxJunitVersion = project.hasProperty('androidxJunitVersion') ? rootProject.ext.androidxJunitVersion : '1.3.0'
+    androidxEspressoCoreVersion = project.hasProperty('androidxEspressoCoreVersion') ? rootProject.ext.androidxEspressoCoreVersion : '3.7.0'
+    // The Connect Android SDK: -PconnectSdkVersion=..., gradle.properties or ext in the app's variables.gradle, else androidVersion of the plugin
+    // block (the Cordova plugin's AndroidVersion), else the plugin's default. A version written wrongly stops the build, not
+    // gets ignored: the app would ship a SDK it did not ask for.
+    connectSdkVersion = rootProject.findProperty('connectSdkVersion') ?: (acousticConfigVersion ?: '11.1.17')
+    // -PfirebaseBomVersion=..., gradle.properties or ext in the app's variables.gradle
+    firebaseBomVersion = rootProject.findProperty('firebaseBomVersion') ?: '33.7.0'
+    androidxCoreKTXVersion = project.hasProperty('androidxCoreKTXVersion') ? rootProject.ext.androidxCoreKTXVersion : '1.17.0'
+}
+
+// The Connect Android versions this plugin has been run against: from 11.0.21-beta, the oldest checked, up to
+// but not including the next major. A pin outside it, or one that is not a version at all (a dynamic `+` would
+// float past the upper bound), stops the build here instead of failing later in the SDK.
+def acousticMinVersion = [11, 0, 21]
+def acousticMaxVersionExclusive = [12, 0, 0]
+def acousticSupportedRange = "[${acousticMinVersion.join('.')}, ${acousticMaxVersionExclusive.join('.')})"
+def acousticVersionParts = (connectSdkVersion.toString() =~ /^(\d+)\.(\d+)\.(\d+)/).with { it.find() ? [it.group(1), it.group(2), it.group(3)]*.toInteger() : null }
+def acousticCompare = { List a, List b -> [a, b].transpose().collect { x, y -> x <=> y }.find { it != 0 } ?: 0 }
+if (acousticVersionParts == null ||
+        acousticCompare(acousticVersionParts, acousticMinVersion) < 0 ||
+        acousticCompare(acousticVersionParts, acousticMaxVersionExclusive) >= 0) {
+    throw new GradleException(
+        "AcousticConnect: connectSdkVersion '${connectSdkVersion}' is outside the supported Connect Android range " +
+        "${acousticSupportedRange}. Set a version in that range with -PconnectSdkVersion=x.y.z (or in gradle.properties " +
+        "or variables.gradle), or leave it out to use the plugin's default."
+    )
+}
+
+// The betas are published only to the Maven tree; with useRelease on they are rejected, so a beta pin
+// has to be replaced by a release version (the plugin's default is one). Said here, at configuration, because
+// the failure Gradle would give later is a bare "could not resolve" with no hint of the cause.
+if (acousticUseRelease && connectSdkVersion.endsWith('-beta')) {
+    throw new GradleException(
+        "AcousticConnect: useRelease is true but the Connect Android SDK version '${connectSdkVersion}' is a beta " +
+        "build, which useRelease always rejects. Set a release version with -PconnectSdkVersion=x.y.z (or " +
+        "connectSdkVersion in gradle.properties or variables.gradle), or set useRelease to false."
+    )
+}
+
+buildscript {
+    ext.kotlin_version = project.hasProperty("kotlin_version") ? rootProject.ext.kotlin_version : '2.2.20'
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.13.0'
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+    }
+}
+
+apply plugin: 'com.android.library'
+apply plugin: 'kotlin-android'
+
+// ---- Screen-capture rules (ConnectLayoutConfig.json) --------------------------------------------------------
+// The Android SDK reads its rules from this asset, and an asset of the same name replaces the SDK's own file
+// as a whole. `layoutConfig` (shared) with `layoutConfigAndroid` merged over it is written there; objects merge
+// key by key, arrays and scalars of the Android block replace the shared ones. Without either block nothing is
+// written and the SDK keeps its defaults. `layoutConfigIos` is for iOS and never read here.
+def acousticLayoutKeys = ['AutoLayout', 'AppendMapIds']
+def acousticLayoutBlock = { String name ->
+    def value = acousticPluginConfig[name]
+    if (value == null) return null
+    if (!(value instanceof Map)) {
+        throw new GradleException("AcousticConnect: plugins.AcousticConnect.${name} must be a JSON object")
+    }
+    def kept = [:]
+    value.each { key, entry ->
+        if (acousticLayoutKeys.contains(key)) {
+            kept[key] = entry
+        } else {
+            logger.warn("AcousticConnect: ${name}.${key} is not a recognised layout key " +
+                "(expected ${acousticLayoutKeys.join(' and/or ')}), ignoring it")
+        }
+    }
+    return kept
+}
+def acousticDeepMerge
+acousticDeepMerge = { Map base, Map override ->
+    def result = new LinkedHashMap(base)
+    override.each { key, value ->
+        result[key] = (value instanceof Map && base[key] instanceof Map) ? acousticDeepMerge(base[key], value) : value
+    }
+    return result
+}
+def acousticLayout = {
+    def shared = acousticLayoutBlock('layoutConfig')
+    def android = acousticLayoutBlock('layoutConfigAndroid')
+    if (shared == null && android == null) return null
+    def merged = acousticDeepMerge(shared ?: [:], android ?: [:])
+    return merged.isEmpty() ? null : merged
+}()
+if (acousticLayout != null) {
+    def screens = acousticLayout.AutoLayout instanceof Map ? acousticLayout.AutoLayout.GlobalScreenSettings : null
+    if (!(screens instanceof Map)) {
+        logger.warn("AcousticConnect: the layout config replaces the Android SDK's whole layout config and has no " +
+            "AutoLayout.GlobalScreenSettings, so the SDK's own screen rules are dropped. Give a complete block, or " +
+            "leave layoutConfigAndroid out to keep the SDK defaults.")
+    }
+    def appAsset = new File(rootProject.projectDir, 'app/src/main/assets/ConnectLayoutConfig.json')
+    if (appAsset.exists()) {
+        logger.warn("AcousticConnect: ${appAsset} exists. Android gives the app's copy priority over the plugin's, " +
+            "so the layout block in capacitor.config will NOT take effect. Keep one or the other, not both.")
+    }
+}
+def acousticLayoutJson = acousticLayout == null ? '' : JsonOutput.prettyPrint(JsonOutput.toJson(acousticLayout)) + '\n'
+// Built on its own (its tests, CI) the plugin is the root project and builds into build/standalone. Included in an app it builds
+// into build/, which only that app uses: sharing the folder let a run of the plugin's own tests replace the generated layout asset
+// (empty without an app config) that the app build then reused, so the app shipped the SDK's own layout config.
+if (project == rootProject) {
+    layout.buildDirectory = layout.projectDirectory.dir('build/standalone')
+}
+def acousticLayoutDir = layout.buildDirectory.dir('generated/acousticConnect/assets')
+tasks.register('generateAcousticLayoutConfig') {
+    inputs.property('layout', acousticLayoutJson)
+    outputs.dir(acousticLayoutDir)
+    doLast {
+        def file = new File(acousticLayoutDir.get().asFile, 'ConnectLayoutConfig.json')
+        file.parentFile.mkdirs()
+        if (acousticLayoutJson.isEmpty()) file.delete() else file.text = acousticLayoutJson
+    }
+}
+tasks.named('preBuild') { dependsOn 'generateAcousticLayoutConfig' }
+
+
+android {
+    namespace = "co.acoustic.connect.capacitor"
+    sourceSets.main.assets.srcDir(acousticLayoutDir)
+    compileSdk = project.hasProperty('compileSdkVersion') ? rootProject.ext.compileSdkVersion : 36
+    defaultConfig {
+        minSdkVersion project.hasProperty('minSdkVersion') ? rootProject.ext.minSdkVersion : 26
+        targetSdkVersion project.hasProperty('targetSdkVersion') ? rootProject.ext.targetSdkVersion : 36
+        versionCode 1
+        versionName "1.0"
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+    testOptions {
+        unitTests.returnDefaultValues = true
+        unitTests.includeAndroidResources = true
+    }
+    lintOptions {
+        abortOnError = false
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
+    }
+}
+
+kotlin {
+    jvmToolchain(21)
+}
+
+repositories {
+    google()
+    mavenCentral()
+    // Connect Android betas are published to this tree, not to Maven Central. The content filter is not
+    // cosmetic: without it every dependency would first hit raw.githubusercontent.com and 404.
+    if (!acousticUseRelease) {
+        maven {
+            url "https://raw.githubusercontent.com/go-acoustic/Android_Maven/master"
+            content { includeGroup "io.github.go-acoustic" }
+        }
+    }
+}
+
+if (acousticUseRelease) {
+    configurations.all {
+        resolutionStrategy.componentSelection.all { selection ->
+            // tealeaf and eocore are version-locked to connect's own release line, so no module is exempt.
+            if (selection.candidate.group == 'io.github.go-acoustic' && selection.candidate.version.endsWith('-beta')) {
+                selection.reject("useRelease is true: rejecting beta version ${selection.candidate.version}")
+            }
+        }
+    }
+}
+
+
+dependencies {
+    implementation fileTree(dir: 'libs', include: ['*.jar'])
+    implementation project(':capacitor-android')
+    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    implementation "androidx.core:core-ktx:$androidxCoreKTXVersion"
+    implementation "io.github.go-acoustic:$acousticConnectArtifact:$connectSdkVersion"
+    if (acousticPushEnabled) {
+        // connect-push-fcm declares no Firebase dependency: the app supplies it, and the SDK's
+        // Google Play services availability check needs play-services-base from firebase-messaging.
+        implementation platform("com.google.firebase:firebase-bom:$firebaseBomVersion")
+        implementation 'com.google.firebase:firebase-messaging'
+    }
+    testImplementation "junit:junit:$junitVersion"
+    testImplementation 'org.mockito.kotlin:mockito-kotlin:5.2.1'
+    testImplementation 'io.mockk:mockk:1.14.5'
+    testImplementation 'org.robolectric:robolectric:4.16'
+    // android.jar stubs org.json in unit tests; the real one is needed to build and read JSObject.
+    testImplementation 'org.json:json:20240303'
+    androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
+    androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
+}

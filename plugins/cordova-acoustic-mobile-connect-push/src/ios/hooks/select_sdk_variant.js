@@ -8,8 +8,8 @@
  * copies the plugin into the host app. cordova prepare then reads the
  * rewritten copy to generate the Podfile.
  *
- *   useRelease: true  → AcousticConnect (= 2.1.15)       — production / release SDK
- *   useRelease: false → AcousticConnectDebug (= 2.1.13) — debug SDK (default)
+ *   useRelease: true  → AcousticConnect (>= 2.1.51)       — production / release SDK
+ *   useRelease: false → AcousticConnectDebug (>= 2.1.51) — debug SDK (default)
  *
  * This hook is iOS-only. Android always uses connect-push-fcm regardless of
  * useRelease (connect-push-fcm-debug is not published to public Maven).
@@ -33,9 +33,9 @@ var fs   = require('fs');
 var path = require('path');
 
 var RELEASE_NAME = 'AcousticConnect';
-var RELEASE_SPEC = '= 2.1.15';
+var RELEASE_SPEC = '>= 2.1.51';
 var DEBUG_NAME   = 'AcousticConnectDebug';
-var DEBUG_SPEC   = '= 2.1.13';
+var DEBUG_SPEC   = '>= 2.1.51';
 
 function escapeRegExp(value) {
     return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

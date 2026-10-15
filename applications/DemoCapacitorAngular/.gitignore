@@ -1,0 +1,22 @@
+.idea/
+.vscode/
+node_modules/
+.angular/
+dist/
+.DS_Store
+*.log
+
+# generated native projects: npm run native:setup creates them
+/android/
+/ios/
+
+# the developer's own config (the app key); capacitor.config.example.json is the tracked template
+/capacitor.config.json
+
+# wire-verification runs: raw collector captures and results (can hold app data), and the saved original config
+/e2e/evidence/
+/e2e/.prepare-state.json
+
+/google-services.json
+
+/ConnectBasicConfig.properties

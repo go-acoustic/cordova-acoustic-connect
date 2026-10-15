@@ -31,6 +31,149 @@ function isNonEmptyString(value) {
     return typeof value === 'string' && value.trim().length > 0;
 }
 
+function isConfigValue(value) {
+    return typeof value === 'boolean' || typeof value === 'string' ||
+        (typeof value === 'number' && isFinite(value));
+}
+
+// Reads a stored config item back as the type of `fallback`. The native side hands over the
+// raw item (a string on Android; text, number or boolean on iOS), or nothing when the item
+// is not set. A missing item and one that does not fit the type both give `fallback`.
+function parseConfigItem(raw, fallback) {
+    if (raw === undefined || raw === null || raw === '') return fallback;
+    if (typeof fallback === 'boolean') {
+        if (typeof raw === 'boolean') return raw;
+        var text = String(raw).trim().toLowerCase();
+        if (text === 'true') return true;
+        if (text === 'false') return false;
+        return fallback;
+    }
+    if (typeof fallback === 'number') {
+        var n = typeof raw === 'number' ? raw : Number(String(raw).trim());
+        return isFinite(n) ? n : fallback;
+    }
+    return String(raw);
+}
+
+// Native default for logCustomEvent when no level is supplied
+// (kEOMonitoringLevelInfo on Android, connectMonitoringLevelWiFi on iOS).
+var DEFAULT_EVENT_LEVEL = 3;
+
+function isNonNegativeInteger(value) {
+    return typeof value === 'number' && isFinite(value) &&
+        Math.floor(value) === value && value >= 0;
+}
+
+function isFlatScalarMap(value) {
+    // A Date, Map, Set or RegExp has no own enumerable keys, so it would pass the check below and
+    // reach the native side as {}. Only a plain object is a map of values.
+    if (!isPlainObject(value)) {
+        return false;
+    }
+    return Object.keys(value).every(function (key) {
+        var v = value[key];
+        return typeof v === 'string' || typeof v === 'boolean' ||
+            (typeof v === 'number' && isFinite(v));
+    });
+}
+
+// Deepest nesting a signal payload may have. Also what stops a circular
+// reference from recursing forever.
+var MAX_SIGNAL_DEPTH = 32;
+
+function isPlainObject(value) {
+    return Object.prototype.toString.call(value) === '[object Object]';
+}
+
+// True when `value` survives JSON serialisation unchanged: strings, booleans,
+// finite numbers, null, arrays and plain objects of the same.
+function isJsonValue(value, depth) {
+    if (depth > MAX_SIGNAL_DEPTH) {
+        return false;
+    }
+    if (value === null) {
+        return true;
+    }
+    var type = typeof value;
+    if (type === 'string' || type === 'boolean') {
+        return true;
+    }
+    if (type === 'number') {
+        return isFinite(value);
+    }
+    if (Array.isArray(value)) {
+        return value.every(function (item) {
+            return isJsonValue(item, depth + 1);
+        });
+    }
+    if (isPlainObject(value)) {
+        return Object.keys(value).every(function (key) {
+            return isJsonValue(value[key], depth + 1);
+        });
+    }
+    return false;
+}
+
+// Replaces every character of `text` with 'X', keeping only its length.
+// Iterates by code point so an emoji counts as one character.
+//
+// Why here and not in the native SDKs? They cannot do it for this path, on either platform. They
+// mask only native controls (by id, tag or accessibility label, from the MaskValueList /
+// MaskIdList rules): Android while capturing a layout (Logger.trimAndMaskValueForControl), iOS in
+// the control and layout layer (TLFMaskingManager). logCustomEvent / ConnectCustomEvent.logEvent
+// queue the values unchanged, and an input inside the WebView has no native control to match, so
+// the text would reach the collector as typed. Masking in JS also means the plaintext never
+// crosses the bridge.
+function maskText(text) {
+    return Array.from(text).map(function () { return 'X'; }).join('');
+}
+
+function isOptionalString(value) {
+    return value === undefined || value === null || typeof value === 'string';
+}
+
+// Builds a screen-view load/unload method. Both share one validation path
+// and differ only in the native action name.
+function screenViewContext(method, action) {
+    return function (logicalPageName, referrer) {
+        if (!isNonEmptyString(logicalPageName)) {
+            return Promise.reject(invalidArgs(
+                method + ': logicalPageName must be a non-empty string'
+            ));
+        }
+        if (!isOptionalString(referrer)) {
+            return Promise.reject(
+                invalidArgs(method + ': referrer must be a string or null')
+            );
+        }
+        var ref = isNonEmptyString(referrer) ? referrer : null;
+        return call(action, [logicalPageName, ref]);
+    };
+}
+
+/**
+ * Shared by the four dialog events. Same payload keys on both platforms:
+ * dialogId, eventType and a millisecond timestamp, plus the per-event fields.
+ */
+function dialogEvent(label, eventName, eventType, dialogId, fields, requiredStrings) {
+    if (!isNonEmptyString(dialogId)) {
+        return Promise.reject(invalidArgs(label + ': dialogId must be a non-empty string'));
+    }
+    for (var i = 0; i < requiredStrings.length; i++) {
+        if (!isNonEmptyString(fields[requiredStrings[i]])) {
+            return Promise.reject(invalidArgs(
+                label + ': ' + requiredStrings[i] + ' must be a non-empty string'
+            ));
+        }
+    }
+    var values = Object.assign({}, fields, {
+        dialogId: dialogId,
+        eventType: eventType,
+        timestamp: String(Date.now())
+    });
+    return AcousticConnect.logCustomEvent(eventName, values);
+}
+
 var AcousticConnect = {
 
     /**
@@ -123,6 +266,416 @@ var AcousticConnect = {
         var type   = (typeof signalType === 'string' && signalType.trim()) ? signalType.trim() : 'loggedIn';
         var params = (additionalParameters && typeof additionalParameters === 'object') ? additionalParameters : {};
         return call('logIdentificationEvent', [identifierName, identifierValue, type, params]);
+    },
+
+    /**
+     * Read the native Connect SDK's own library version — distinct from the
+     * Cordova plugin's version (`www/js/connect-config.js`'s `PluginVersion`,
+     * generated from this plugin's `package.json`).
+     * @returns {Promise<string>}
+     */
+    getSdkVersion: function () {
+        return call('getSdkVersion', []);
+    },
+
+    /**
+     * Log a named custom event.
+     *
+     * `values` is deliberately flat (string | number | boolean): the Android
+     * SDK's custom-event path is typed `HashMap<String, String>`, so nested
+     * structures would be silently flattened there while iOS keeps them.
+     *
+     * @param {string} eventName
+     * @param {Record<string, string|number|boolean>} [values={}]
+     * @param {number} [level=3] Monitoring level (non-negative integer).
+     * @returns {Promise<void>}
+     */
+    logCustomEvent: function (eventName, values, level) {
+        if (!isNonEmptyString(eventName)) {
+            return Promise.reject(
+                invalidArgs('logCustomEvent: eventName must be a non-empty string')
+            );
+        }
+        var payload = values === undefined ? {} : values;
+        if (!isFlatScalarMap(payload)) {
+            return Promise.reject(invalidArgs(
+                'logCustomEvent: values must be a flat object of ' +
+                'string, number or boolean values'
+            ));
+        }
+        var lvl = level === undefined ? DEFAULT_EVENT_LEVEL : level;
+        if (!isNonNegativeInteger(lvl)) {
+            return Promise.reject(
+                invalidArgs('logCustomEvent: level must be a non-negative integer')
+            );
+        }
+        return call('logCustomEvent', [eventName, payload, lvl]);
+    },
+
+    /**
+     * Set the logical screen name that subsequent events are attributed to.
+     * @param {string} name
+     * @returns {Promise<void>}
+     */
+    setCurrentScreenName: function (name) {
+        if (!isNonEmptyString(name)) {
+            return Promise.reject(
+                invalidArgs('setCurrentScreenName: name must be a non-empty string')
+            );
+        }
+        return call('setCurrentScreenName', [name]);
+    },
+
+    /**
+     * Log a click on a UI control, as a `click` custom event.
+     *
+     * Implemented on top of `logCustomEvent` on both platforms: the native
+     * control-event APIs are not usable from a WebView (verified on a device:
+     * iOS rejects them for every view; Android only reports the whole WebView
+     * as the target). The event therefore arrives as a custom event, not a
+     * native control event.
+     *
+     * @param {string} controlId Identifier of the clicked control.
+     * @param {Record<string, string|number|boolean>} [data] Extra flat values
+     *   merged into the event. `controlId` cannot be overridden.
+     * @returns {Promise<void>}
+     */
+    logClickEvent: function (controlId, data) {
+        if (!isNonEmptyString(controlId)) {
+            return Promise.reject(invalidArgs(
+                'logClickEvent: controlId must be a non-empty string'
+            ));
+        }
+        var extra = data === undefined ? {} : data;
+        if (!isFlatScalarMap(extra)) {
+            return Promise.reject(invalidArgs(
+                'logClickEvent: data must be a flat object of ' +
+                'string, number or boolean values'
+            ));
+        }
+        var values = Object.assign({}, extra, { controlId: controlId });
+        return AcousticConnect.logCustomEvent('click', values);
+    },
+
+    /**
+     * Log a text change on an input control, as a `textChange` custom event.
+     *
+     * The text is MASKED by default: each character is replaced with 'X' in
+     * JavaScript, so the plaintext never crosses the bridge. Pass
+     * `masked: false` explicitly to send it as is (never do this for
+     * passwords or personal data).
+     *
+     * @param {string} controlId Identifier of the input control.
+     * @param {{ text?: string, masked?: boolean }} [options]
+     * @returns {Promise<void>}
+     */
+    logTextChangeEvent: function (controlId, options) {
+        if (!isNonEmptyString(controlId)) {
+            return Promise.reject(invalidArgs(
+                'logTextChangeEvent: controlId must be a non-empty string'
+            ));
+        }
+        var opts = options === undefined ? {} : options;
+        if (!isPlainObject(opts)) {
+            return Promise.reject(invalidArgs(
+                'logTextChangeEvent: options must be an object'
+            ));
+        }
+        if (opts.text !== undefined && typeof opts.text !== 'string') {
+            return Promise.reject(
+                invalidArgs('logTextChangeEvent: text must be a string')
+            );
+        }
+        if (opts.masked !== undefined && typeof opts.masked !== 'boolean') {
+            return Promise.reject(
+                invalidArgs('logTextChangeEvent: masked must be a boolean')
+            );
+        }
+        var values = { controlId: controlId };
+        if (opts.text !== undefined) {
+            var masked = opts.masked !== false;
+            values.text = masked ? maskText(opts.text) : opts.text;
+            values.masked = masked;
+        }
+        return AcousticConnect.logCustomEvent('textChange', values);
+    },
+
+    /**
+     * Log a signal. Unlike `logCustomEvent`, `values` may be arbitrary JSON:
+     * nested objects and arrays are carried through unchanged.
+     *
+     * Android note: Connect Android SDK versions before 11.0.24-beta drop a number
+     * at the TOP level of the payload (seen on 11.0.21-beta; strings and booleans
+     * arrive, numbers nested inside an object or array are never affected). The
+     * plugin's default, 11.1.17, sends it; nest the number only if you pin an
+     * older `AndroidVersion`.
+     *
+     * @param {Record<string, unknown>} values JSON-serialisable plain object.
+     * @param {number} [level=3] Monitoring level (non-negative integer).
+     * @returns {Promise<void>}
+     */
+    logSignal: function (values, level) {
+        if (!isPlainObject(values) || !isJsonValue(values, 0)) {
+            return Promise.reject(invalidArgs(
+                'logSignal: values must be a JSON-serialisable plain object'
+            ));
+        }
+        var lvl = level === undefined ? DEFAULT_EVENT_LEVEL : level;
+        if (!isNonNegativeInteger(lvl)) {
+            return Promise.reject(
+                invalidArgs('logSignal: level must be a non-negative integer')
+            );
+        }
+        return call('logSignal', [values, lvl]);
+    },
+
+    /**
+     * Log an exception event.
+     * @param {string} message
+     * @param {string} [stackInfo=''] Stack trace text.
+     * @param {boolean} [unhandled=false] Whether the exception was uncaught.
+     * @returns {Promise<void>}
+     */
+    logExceptionEvent: function (message, stackInfo, unhandled) {
+        if (!isNonEmptyString(message)) {
+            return Promise.reject(invalidArgs(
+                'logExceptionEvent: message must be a non-empty string'
+            ));
+        }
+        var stack = stackInfo === undefined ? '' : stackInfo;
+        if (typeof stack !== 'string') {
+            return Promise.reject(
+                invalidArgs('logExceptionEvent: stackInfo must be a string')
+            );
+        }
+        var isUnhandled = unhandled === undefined ? false : unhandled;
+        if (typeof isUnhandled !== 'boolean') {
+            return Promise.reject(
+                invalidArgs('logExceptionEvent: unhandled must be a boolean')
+            );
+        }
+        return call('logExceptionEvent', [message, stack, isUnhandled]);
+    },
+
+    /**
+     * Log that a screen was entered (a `LOAD` screen view).
+     * @param {string} logicalPageName e.g. 'Login'
+     * @param {string|null} [referrer] Name of the screen that led here.
+     * @returns {Promise<void>}
+     */
+    logScreenViewContextLoad:
+        screenViewContext('logScreenViewContextLoad', 'logScreenViewContextLoad'),
+
+    /**
+     * Log that a screen was left (an `UNLOAD` screen view).
+     * @param {string} logicalPageName e.g. 'Login'
+     * @param {string|null} [referrer] Name of the screen that led here.
+     * @returns {Promise<void>}
+     */
+    logScreenViewContextUnload:
+        screenViewContext('logScreenViewContextUnload', 'logScreenViewContextUnload'),
+
+    /**
+     * Ask the native SDK to capture the layout of the screen on display.
+     *
+     * Android and iOS both capture the native screen (the WebView), named `name`.
+     * On iOS the plugin already requests one layout after the page loads.
+     *
+     * @param {string} name Screen name, e.g. 'Login'.
+     * @param {number} [delayMs] Milliseconds to wait before capturing (>= 0).
+     *   Omitted: capture straight away.
+     * @returns {Promise<void>}
+     */
+    logScreenLayout: function (name, delayMs) {
+        if (!isNonEmptyString(name)) {
+            return Promise.reject(invalidArgs(
+                'logScreenLayout: name must be a non-empty string'
+            ));
+        }
+        if (delayMs !== undefined && !isNonNegativeInteger(delayMs)) {
+            return Promise.reject(invalidArgs(
+                'logScreenLayout: delayMs must be a non-negative integer'
+            ));
+        }
+        return call('logScreenLayout', delayMs === undefined ? [name] : [name, delayMs]);
+    },
+
+    /**
+     * Log the device's current location, as the native SDK reads it.
+     * Subject to the app's location permission and `LocationLoggingEnabled`.
+     * @returns {Promise<void>}
+     */
+    logLocation: function () {
+        return call('logLocation', []);
+    },
+
+    /**
+     * Log a location you already have.
+     * @param {number} latitude  -90..90
+     * @param {number} longitude -180..180
+     * @param {number} [level=3] Monitoring level (non-negative integer).
+     * @returns {Promise<void>}
+     */
+    logLocationUpdate: function (latitude, longitude, level) {
+        if (typeof latitude !== 'number' || !isFinite(latitude) ||
+            latitude < -90 || latitude > 90) {
+            return Promise.reject(invalidArgs(
+                'logLocationUpdate: latitude must be a number between -90 and 90'
+            ));
+        }
+        if (typeof longitude !== 'number' || !isFinite(longitude) ||
+            longitude < -180 || longitude > 180) {
+            return Promise.reject(invalidArgs(
+                'logLocationUpdate: longitude must be a number between -180 and 180'
+            ));
+        }
+        var lvl = level === undefined ? DEFAULT_EVENT_LEVEL : level;
+        if (!isNonNegativeInteger(lvl)) {
+            return Promise.reject(invalidArgs(
+                'logLocationUpdate: level must be a non-negative integer'
+            ));
+        }
+        return call('logLocationUpdate', [latitude, longitude, lvl]);
+    },
+
+    /**
+     * Log that a dialog was shown, as a `DialogShowEvent` custom event.
+     * @param {string} dialogId
+     * @param {string} dialogTitle
+     * @param {string} dialogType e.g. 'alert', 'custom', 'modal'
+     * @returns {Promise<void>}
+     */
+    logDialogShowEvent: function (dialogId, dialogTitle, dialogType) {
+        return dialogEvent('logDialogShowEvent', 'DialogShowEvent', 'dialog_show', dialogId, {
+            dialogTitle: dialogTitle,
+            dialogType: dialogType
+        }, ['dialogTitle', 'dialogType']);
+    },
+
+    /**
+     * Log that a dialog was dismissed, as a `DialogDismissEvent` custom event.
+     * @param {string} dialogId
+     * @param {string} dismissReason e.g. 'cancel', 'outside_touch', 'back'
+     * @returns {Promise<void>}
+     */
+    logDialogDismissEvent: function (dialogId, dismissReason) {
+        return dialogEvent('logDialogDismissEvent', 'DialogDismissEvent', 'dialog_dismiss', dialogId, {
+            dismissReason: dismissReason
+        }, ['dismissReason']);
+    },
+
+    /**
+     * Log a tap on a dialog button, as a `DialogButtonClickEvent` custom event.
+     * @param {string} dialogId
+     * @param {string} buttonText
+     * @param {number} buttonIndex Position of the button (non-negative integer).
+     * @returns {Promise<void>}
+     */
+    logDialogButtonClickEvent: function (dialogId, buttonText, buttonIndex) {
+        if (!isNonNegativeInteger(buttonIndex)) {
+            return Promise.reject(invalidArgs(
+                'logDialogButtonClickEvent: buttonIndex must be a non-negative integer'
+            ));
+        }
+        return dialogEvent('logDialogButtonClickEvent', 'DialogButtonClickEvent', 'dialog_button_click', dialogId, {
+            buttonText: buttonText,
+            buttonIndex: String(buttonIndex)
+        }, ['buttonText']);
+    },
+
+    /**
+     * Log your own event for a dialog, as a `DialogCustomEvent` custom event.
+     * @param {string} dialogId
+     * @param {string} eventName Carried as `customEventName`.
+     * @param {Record<string, string|number|boolean>} [values] Flat extra values.
+     * @returns {Promise<void>}
+     */
+    logDialogCustomEvent: function (dialogId, eventName, values) {
+        var extra = values === undefined ? {} : values;
+        if (!isFlatScalarMap(extra)) {
+            return Promise.reject(invalidArgs(
+                'logDialogCustomEvent: values must be a flat object of ' +
+                'string, number or boolean values'
+            ));
+        }
+        return dialogEvent('logDialogCustomEvent', 'DialogCustomEvent', 'dialog_custom_event', dialogId,
+            Object.assign({}, extra, { customEventName: eventName }), ['customEventName']);
+    },
+
+    /**
+     * Flush buffered events to the collector immediately.
+     * @returns {Promise<void>}
+     */
+    flushQueues: function () {
+        return call('flushQueues', []);
+    },
+
+    /**
+     * Whether the native SDK is currently enabled. iOS bridges a native
+     * boolean as 1/0, so the result is normalised to a strict boolean.
+     * @returns {Promise<boolean>}
+     */
+    isSdkEnabled: function () {
+        return call('isSdkEnabled', []).then(function (value) {
+            return value === true || value === 1;
+        });
+    },
+
+    /**
+     * Set a configuration item of a native SDK module at runtime.
+     *
+     * `moduleName` selects the module on Android ("EOCore" for core settings such as
+     * DisplayLogging, "Tealeaf" for capture settings such as LogViewLayoutOnScreenTransition,
+     * "Connect"); iOS keeps one config store and ignores it. Most items are read when the SDK
+     * starts, so set them before `enable()` where you can; whether a later change takes effect
+     * depends on the item.
+     *
+     * @param {string} key
+     * @param {boolean|string|number} value
+     * @param {string} moduleName
+     * @returns {Promise<void>} Rejects ACOUSTIC_INTERNAL_ERROR when the SDK refuses the item.
+     */
+    setConfigItem: function (key, value, moduleName) {
+        if (!isNonEmptyString(key)) {
+            return Promise.reject(invalidArgs('setConfigItem: key must be a non-empty string'));
+        }
+        if (!isConfigValue(value)) {
+            return Promise.reject(invalidArgs(
+                'setConfigItem: value must be a boolean, a string or a finite number'
+            ));
+        }
+        if (!isNonEmptyString(moduleName)) {
+            return Promise.reject(invalidArgs('setConfigItem: moduleName must be a non-empty string'));
+        }
+        return call('setConfigItem', [key, value, moduleName]).then(function () {});
+    },
+
+    /**
+     * Read a configuration item of a native SDK module.
+     *
+     * The type of the result is the type of `defaultValue` (boolean, string or number). The
+     * default is returned when the item is not set or does not fit that type.
+     *
+     * @param {string} key
+     * @param {boolean|string|number} defaultValue
+     * @param {string} moduleName See `setConfigItem`.
+     * @returns {Promise<boolean|string|number>}
+     */
+    getConfigItem: function (key, defaultValue, moduleName) {
+        if (!isNonEmptyString(key)) {
+            return Promise.reject(invalidArgs('getConfigItem: key must be a non-empty string'));
+        }
+        if (!isConfigValue(defaultValue)) {
+            return Promise.reject(invalidArgs(
+                'getConfigItem: defaultValue must be a boolean, a string or a finite number'
+            ));
+        }
+        if (!isNonEmptyString(moduleName)) {
+            return Promise.reject(invalidArgs('getConfigItem: moduleName must be a non-empty string'));
+        }
+        return call('getConfigItem', [key, moduleName]).then(function (raw) {
+            return parseConfigItem(raw, defaultValue);
+        });
     },
 
     push: {

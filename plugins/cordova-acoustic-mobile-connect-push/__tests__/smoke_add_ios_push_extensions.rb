@@ -46,7 +46,7 @@ Dir.mktmpdir('acoustic-smoke-') do |tmp|
     dir = File.join(tmp, ext)
     FileUtils.mkdir_p(dir)
     File.write(File.join(dir, src),               "// placeholder\n")
-    File.write(File.join(dir, 'Info.plist'),       "<?xml version=\"1.0\"?><plist version=\"1.0\"><dict/></plist>\n")
+    File.write(File.join(dir, "#{ext}-Info.plist"), "<?xml version=\"1.0\"?><plist version=\"1.0\"><dict/></plist>\n")
     File.write(File.join(dir, "#{ext}.entitlements"), "<?xml version=\"1.0\"?><plist version=\"1.0\"><dict/></plist>\n")
   end
 
@@ -75,6 +75,13 @@ Dir.mktmpdir('acoustic-smoke-') do |tmp|
     xcfw_idx = t.build_phases.index { |p| p.respond_to?(:name) && p.name&.include?('xcframeworks') }
     assert xcfw_idx && src_idx && xcfw_idx < src_idx,
            "#{name} xcframeworks phase is before Compile Sources"
+
+    # The entire point of this script's *-Info.plist naming is that
+    # cordova-ios's pbxproj parser requires it — assert the build setting
+    # itself, not just that the target exists.
+    expected_plist = "#{name}/#{name}-Info.plist"
+    bad_setting = t.build_configurations.reject { |c| c.build_settings['INFOPLIST_FILE'] == expected_plist }
+    assert bad_setting.empty?, "#{name} INFOPLIST_FILE is '#{expected_plist}' in every configuration"
   end
 
   app = proj2.targets.find { |t| t.name == 'App' }
@@ -106,6 +113,125 @@ Dir.mktmpdir('acoustic-smoke-') do |tmp|
   embed3    = app3.copy_files_build_phases.find { |p| p.symbol_dst_subfolder_spec == :plug_ins }
   embed3_ct = embed3&.files&.count { |f| %w[ConnectNSE ConnectNCE].any? { |n| f.display_name.include?(n) } }
   assert embed3_ct == 2, 'no duplicate embed entries (exactly 2 extension files)'
+
+  # ── Run 3 (SDK variant switch, e.g. useRelease false -> true) ───────────────
+  # Regression coverage for: stale "[CP] Prepare <old variant> xcframeworks"
+  # phase left behind after a Debug<->Release pod switch, whose xcfilelist no
+  # longer exists post-switch and fails the Xcode build outright.
+  new_variant = 'AcousticConnect'
+  puts "\nRun 3 (SDK variant switch #{VARIANT} -> #{new_variant}):"
+  ok3 = system(env.merge('ACOUSTIC_SDK_VARIANT' => new_variant), 'ruby', SCRIPT, exception: false)
+  assert ok3, 'third run (variant switch) exits 0'
+
+  proj4 = Xcodeproj::Project.open(proj_path)
+  %w[ConnectNSE ConnectNCE].each do |name|
+    t = proj4.targets.find { |x| x.name == name }
+    xcfw_phases = t.build_phases.select { |p| p.respond_to?(:name) && p.name&.include?('xcframeworks') }
+    assert xcfw_phases.length == 1, "#{name} has exactly one xcframeworks phase after variant switch"
+    assert xcfw_phases.first.name.include?(new_variant), "#{name}'s xcframeworks phase reflects the new variant (#{new_variant})"
+    assert xcfw_phases.none? { |p| p.name.include?(VARIANT) }, "#{name} has no stale #{VARIANT} xcframeworks phase left behind"
+  end
+
+  # ── Run 4 (stale ConnectPlugin.swift reference recovery) ────────────────────
+  # Regression coverage for a real bug report: after a plugin rm/add cycle, a
+  # stale PBXFileReference/PBXBuildFile for ConnectPlugin.swift at the bare
+  # parent path ("App/Plugins/ConnectPlugin.swift", missing the per-plugin-id
+  # subdirectory the file actually lives in on disk) survived because the
+  # previous matching logic only checked basename suffix, not the full path —
+  # Xcode then failed the build with "Build input file cannot be found"
+  # since no file exists at that stale path. Reproduced end-to-end against a
+  # real generated project and confirmed a real xcodebuild fails/succeeds
+  # accordingly; this asserts the pbxproj-level recovery in isolation.
+  expected_path = 'App/Plugins/co.acoustic.connect.push/ConnectPlugin.swift'
+
+  puts "\nRun 4 (stale ConnectPlugin.swift reference recovery):"
+  proj5 = Xcodeproj::Project.open(proj_path)
+  app5  = proj5.targets.find { |t| t.name == 'App' }
+  sources5 = app5.source_build_phase
+
+  correct_ct = proj5.files.count { |f| f.full_path.to_s == expected_path }
+  assert correct_ct == 1, 'exactly one correct ConnectPlugin.swift reference before corruption'
+
+  # Simulate the bug: remove the correct reference, add a stale bare one.
+  sources5.files.select { |bf| bf.file_ref && bf.file_ref.path.to_s.include?('ConnectPlugin') }.each do |bf|
+    sources5.remove_build_file(bf)
+  end
+  proj5.files.select { |f| f.full_path.to_s == expected_path }.each(&:remove_from_project)
+  plugins_group = proj5.main_group.find_subpath('App/Plugins', false)
+  stale_ref = plugins_group.new_reference('ConnectPlugin.swift')
+  sources5.add_file_reference(stale_ref)
+  proj5.save
+
+  ok4 = system(env.merge('ACOUSTIC_SDK_VARIANT' => new_variant), 'ruby', SCRIPT, exception: false)
+  assert ok4, 'fourth run (stale reference recovery) exits 0'
+
+  proj6 = Xcodeproj::Project.open(proj_path)
+  app6  = proj6.targets.find { |t| t.name == 'App' }
+
+  matching_refs = proj6.files.select { |f| f.full_path.to_s.end_with?('ConnectPlugin.swift') }
+  assert matching_refs.length == 1, 'exactly one ConnectPlugin.swift reference after recovery (stale one purged)'
+  assert matching_refs.first.full_path.to_s == expected_path, 'surviving reference is at the correct, full subdirectoried path'
+
+  compile_sources_refs = app6.source_build_phase.files.select { |bf| bf.file_ref && bf.file_ref.full_path.to_s.end_with?('ConnectPlugin.swift') }
+  assert compile_sources_refs.length == 1, 'exactly one ConnectPlugin.swift entry in Compile Sources after recovery'
+  assert compile_sources_refs.first.file_ref.full_path.to_s == expected_path, 'Compile Sources entry is at the correct, full subdirectoried path'
+
+  # ── Run 5 (idempotency after recovery) ───────────────────────────────────────
+  # Guards against a second regression found while fixing this: creating the
+  # ConnectPlugin.swift reference via a group per path segment (rather than
+  # under the real physical "Plugins" group with the subdirectory embedded in
+  # the file's own relative path) produced a virtual, unpathed intermediate
+  # group — full_path silently dropped that segment, so every subsequent run
+  # saw a "mismatch" and re-purged/re-created the same reference forever.
+  puts "\nRun 5 (idempotency after recovery):"
+  ok5 = system(env.merge('ACOUSTIC_SDK_VARIANT' => new_variant), 'ruby', SCRIPT, exception: false)
+  assert ok5, 'fifth run exits 0'
+
+  proj7 = Xcodeproj::Project.open(proj_path)
+  app7  = proj7.targets.find { |t| t.name == 'App' }
+  final_refs = proj7.files.select { |f| f.full_path.to_s.end_with?('ConnectPlugin.swift') }
+  assert final_refs.length == 1, 'still exactly one ConnectPlugin.swift reference — no re-purge churn on a stable project'
+  final_cs = app7.source_build_phase.files.select { |bf| bf.file_ref && bf.file_ref.full_path.to_s.end_with?('ConnectPlugin.swift') }
+  assert final_cs.length == 1, 'still exactly one Compile Sources entry — no re-purge churn on a stable project'
+
+  # ── Run 6 (legacy bare "Info.plist" migration) ───────────────────────────────
+  # Simulates a project whose ConnectNSE/ConnectNCE target was created by a
+  # pre-fix version of this script: INFOPLIST_FILE pointing at the bare
+  # "Info.plist" and a matching stale group reference. The `unless target`
+  # creation block never runs again for an existing target, so this has to be
+  # healed by the "every run" migration section, not the creation path.
+  puts "\nRun 6 (legacy bare Info.plist migration):"
+  proj8 = Xcodeproj::Project.open(proj_path)
+
+  %w[ConnectNSE ConnectNCE].each do |name|
+    t = proj8.targets.find { |x| x.name == name }
+    legacy_path = "#{name}/Info.plist"
+    correct_path = "#{name}/#{name}-Info.plist"
+
+    t.build_configurations.each { |c| c.build_settings['INFOPLIST_FILE'] = legacy_path }
+
+    group = proj8.main_group.find_subpath(name, false)
+    group.files.select { |f| f.path == correct_path }.each(&:remove_from_project)
+    group.new_reference(legacy_path)
+  end
+  proj8.save
+
+  ok6 = system(env.merge('ACOUSTIC_SDK_VARIANT' => new_variant), 'ruby', SCRIPT, exception: false)
+  assert ok6, 'sixth run (legacy migration) exits 0'
+
+  proj9 = Xcodeproj::Project.open(proj_path)
+  %w[ConnectNSE ConnectNCE].each do |name|
+    t = proj9.targets.find { |x| x.name == name }
+    legacy_path = "#{name}/Info.plist"
+    correct_path = "#{name}/#{name}-Info.plist"
+
+    bad_setting = t.build_configurations.reject { |c| c.build_settings['INFOPLIST_FILE'] == correct_path }
+    assert bad_setting.empty?, "#{name} INFOPLIST_FILE migrated to '#{correct_path}'"
+
+    group = proj9.main_group.find_subpath(name, false)
+    assert group.files.none? { |f| f.path == legacy_path }, "#{name} stale '#{legacy_path}' reference removed"
+    assert group.files.one? { |f| f.path == correct_path }, "#{name} exactly one '#{correct_path}' reference"
+  end
 
   puts "\nAll smoke tests passed.\n"
 end

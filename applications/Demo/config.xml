@@ -12,13 +12,14 @@
     <allow-intent href="https://*/*" />
     <preference name="android-minSdkVersion" value="26" />
 
+    <!-- the shared e2e scenario (../../e2e/core/scenario.js) into www/js/e2e, where index.html loads it -->
+    <hook type="before_prepare" src="hooks/before_prepare_e2e_scenario.js" />
+    <!-- e2e only: acts while `node e2e/prepare.js prepare` is active, for every platform -->
+    <hook type="after_prepare" src="hooks/after_prepare_e2e.js" />
+
     <platform name="android">
         <hook type="before_build" src="hooks/before_build_check_credentials.js" />
         <hook type="after_prepare" src="hooks/after_prepare_icons.js" />
-
-        <preference name="AndroidJavaSourceCompatibility" value="17" />
-        <preference name="AndroidJavaTargetCompatibility" value="17" />
-        <preference name="AndroidKotlinJVMTarget" value="17" />
 
         <preference name="GradlePluginGoogleServicesEnabled" value="true" />
         <preference name="GradlePluginGoogleServicesVersion" value="4.4.2" />
@@ -30,6 +31,11 @@
     <platform name="ios">
         <preference name="deployment-target" value="15.1" />
         <preference name="SplashScreenBackgroundColor" value="0xFFFFFFFF" />
+        <!-- Demo/sample app only — never shipped to end users. Makes the WKWebView inspectable
+             (iOS 16.4+) even in release builds so Appium can attach to the WEBVIEW context for UI
+             automation (the E2E tests run against a release .ipa). Release WebViews are not
+             inspectable by default; a production app that ships to users must NOT enable this. -->
+        <preference name="InspectableWebview" value="true" />
         <hook type="after_prepare" src="hooks/after_prepare_entitlements.js" />
     </platform>
 </widget>

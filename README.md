@@ -10,7 +10,7 @@ Cordova plugin for integrating [Acoustic Connect](https://acoustic.com/connect/)
 
 ```
 .
-├── applications/Demo/                            Sample Cordova app
+├── applications/Demo/                            Sample Cordova app (+ e2e/: wire-level verification, see its README)
 ├── plugins/cordova-acoustic-mobile-connect-push/ Plugin source (iOS + Android)
 ├── scripts/                                      Repo-level tooling (e.g. Jenkinsfile validation)
 └── .github/workflows/                            GitHub Actions (npm publish, AI review)
@@ -60,6 +60,8 @@ Only `AppKey` and `PostMessageUrl` are required; everything else has a default.
 | `iOSPushMode` | `'automatic'` (default) or `'manual'`. iOS only — Android is always `'automatic'` at the bridge boundary. |
 | `AndroidNotificationIconResName` | Drawable resource name for the push notification icon on Android. Fallback chain: your name → the plugin's bundled `ic_notification` (correct default — launcher icons crash at delivery) → `ic_launcher` (legacy) → the SDK's own default. |
 | `KillSwitchUrl` | Remote kill-switch URL for the Android SDK. Currently has no effect — the bridge always generates the native config with the kill switch disabled. |
+| `ScreenCaptureEnabled` | Optional boolean. Omit (or `true`) leaves the SDK default; `false` turns layout and screenshot capture off on both platforms (screen views keep flowing). Details: [plugin README](plugins/cordova-acoustic-mobile-connect-push/README.md#screen-capture-and-privacy). |
+| `layoutConfig`, `layoutConfigIos`, `layoutConfigAndroid` | Optional screen-capture rules (`AutoLayout`, `AppendMapIds`); the platform block is deep-merged over the shared one. Details: [plugin README](plugins/cordova-acoustic-mobile-connect-push/README.md#screen-capture-and-privacy). |
 
 `ConnectConfig.example.json` also contains an `iOSVersion` field — it isn't read anywhere in the plugin (no iOS equivalent of `AndroidVersion` exists yet); leave it unset.
 

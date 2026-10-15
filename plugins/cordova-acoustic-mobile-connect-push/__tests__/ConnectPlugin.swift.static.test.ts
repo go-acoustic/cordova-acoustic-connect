@@ -4,8 +4,10 @@
  * Static-source checks against `src/ios/ConnectPlugin.swift`.
  *
  * Covers ACs testable without running XCTest / a real iOS SDK:
- *  - Kill-switch bypass: setConfigurableItem("KillSwitchEnabled", ...) is
- *    called twice inside enable() — before and after ConnectSDK.enable().
+ *  - Kill-switch config: applyKillSwitchConfig() is called twice inside
+ *    enable() — before and after ConnectSDK.enable() — and applies the
+ *    configured killSwitchEnabled/killSwitchUrl (from ConnectConfig.json via
+ *    AcousticConnectNativeConfig.json), not a hardcoded value.
  *  - Readiness guard: _connectIsReadyForLogging() gates both waitForEnabled
  *    and logIdentificationEvent so calls before kill-switch completion are
  *    rejected with a clear error rather than silently returning false.
@@ -41,34 +43,253 @@ function stripSwiftComments(src: string): string {
 
 const SWIFT = stripSwiftComments(SWIFT_RAW);
 
+// Extracts a `{ ... }` block by counting braces from an opening brace, instead of
+// guessing at indentation. `anchorPattern` must match text ending in the literal
+// `{` that opens the block (e.g. /func\s+enable\s*\([^)]*\)\s*\{/ or
+// /guard\s+let\s+self\s+else\s*\{/). A lazy regex like [\s\S]*?(?=\n    }) breaks
+// as soon as ANY nested closure/guard happens to close at the same indentation as
+// the outer block — which is exactly what happened when enable() grew a
+// multi-line guard-else body: its closing brace could be mistaken for enable()'s
+// own, silently truncating the extracted block. Brace-counting has no such
+// indentation dependency, so it stays correct regardless of nesting depth.
+function extractBlock(source: string, anchorPattern: RegExp): string | undefined {
+    const match = anchorPattern.exec(source);
+    if (!match) return undefined;
+    const openBraceIndex = match.index + match[0].length - 1;
+    if (source[openBraceIndex] !== '{') return undefined;
+    let depth = 0;
+    for (let i = openBraceIndex; i < source.length; i++) {
+        if (source[i] === '{') depth++;
+        else if (source[i] === '}') {
+            depth--;
+            if (depth === 0) return source.slice(match.index, i + 1);
+        }
+    }
+    return undefined; // unbalanced braces — anchor's block never closes
+}
+
+const ENABLE_HEADER = /func\s+enable\s*\([^)]*\)\s*\{/;
+
 // ── Kill-switch bypass ─────────────────────────────────────────────────────
 
-describe('ConnectPlugin.swift — kill-switch bypass', () => {
-    test('setConfigurableItem("KillSwitchEnabled") appears twice in enable()', () => {
+describe('ConnectPlugin.swift — kill-switch config', () => {
+    test('applyKillSwitchConfig() appears exactly once in enable(), before ConnectSDK.shared.enable(...)', () => {
         // Scope to enable() body so a future call in another method doesn't
-        // satisfy this count. Terminates at the first class-body-level `}` which
-        // is the function's own closing brace (inner guards close at 8+ spaces).
-        const enableBlock = SWIFT.match(
-            /func\s+enable\s*\([\s\S]*?(?=\n(?:    |\t)\})/
-        )?.[0];
+        // satisfy this count.
+        const enableBlock = extractBlock(SWIFT, ENABLE_HEADER);
         expect(enableBlock).toBeDefined();
-        const matches = enableBlock!.match(/setConfigurableItem\s*\(\s*"KillSwitchEnabled"/g);
+        const matches = enableBlock!.match(/applyKillSwitchConfig\s*\(\s*\)/g);
         expect(matches).not.toBeNull();
-        expect(matches!.length).toBe(2);
+        expect(matches!.length).toBe(1);
+        // No re-apply after enable(): that was a defensive guess, not a fix for an
+        // observed issue on this closed-source iOS binary — dropped until there's
+        // evidence the SDK actually needs it.
+        expect(enableBlock!.indexOf('applyKillSwitchConfig()'))
+            .toBeLessThan(enableBlock!.indexOf('ConnectSDK.shared.enable('));
     });
 
-    test('KillSwitchEnabled is set to false (not true)', () => {
-        const enableBlock = SWIFT.match(
-            /func\s+enable\s*\([\s\S]*?(?=\n(?:    |\t)\})/
+    test('applyKillSwitchConfig applies the configured value, not a hardcoded literal', () => {
+        const block = SWIFT.match(
+            /func\s+applyKillSwitchConfig[\s\S]*?(?=\n(?:    |\t)(?:private |internal |public |open |fileprivate |@objc\b|@objc\(|func |\/\/\s*MARK:|\}))/
         )?.[0];
+        expect(block).toBeDefined();
+        expect(block).toMatch(/setConfigurableItem\s*\(\s*"KillSwitchEnabled"\s*,\s*value:\s*killSwitchEnabled\b/);
+        // Must not be a hardcoded true/false literal.
+        expect(block).not.toMatch(/setConfigurableItem\s*\(\s*"KillSwitchEnabled"\s*,\s*value:\s*(true|false)\b/);
+    });
+
+    test('applyKillSwitchConfig applies KillSwitchUrl via setKillSwitchURL only when enabled', () => {
+        const block = SWIFT.match(
+            /func\s+applyKillSwitchConfig[\s\S]*?(?=\n(?:    |\t)(?:private |internal |public |open |fileprivate |@objc\b|@objc\(|func |\/\/\s*MARK:|\}))/
+        )?.[0];
+        expect(block).toBeDefined();
+        expect(block).toMatch(/setKillSwitchURL\s*\(/);
+        expect(block).toMatch(/killSwitchEnabled/);
+    });
+
+    test('killSwitchEnabled/killSwitchUrl are populated from AcousticConnectNativeConfig.json in applyRuntimeConfig', () => {
+        const block = SWIFT.match(
+            /func\s+applyRuntimeConfig[\s\S]*?(?=\n(?:    |\t)(?:private |internal |public |open |fileprivate |@objc\b|@objc\(|func |\/\/\s*MARK:|\}))/
+        )?.[0];
+        expect(block).toBeDefined();
+        expect(block).toMatch(/killSwitchEnabled\s*=\s*config\[\s*"killSwitchEnabled"\s*\]/);
+        expect(block).toMatch(/killSwitchUrl\s*=\s*config\[\s*"killSwitchUrl"\s*\]/);
+    });
+});
+
+// ── Location-logging config ─────────────────────────────────────────────────
+
+describe('ConnectPlugin.swift — location-logging config', () => {
+    test('applyLocationLoggingConfig() appears exactly once in enable(), before ConnectSDK.shared.enable(...)', () => {
+        const enableBlock = extractBlock(SWIFT, ENABLE_HEADER);
         expect(enableBlock).toBeDefined();
-        const matches = [...enableBlock!.matchAll(
-            /setConfigurableItem\s*\(\s*"KillSwitchEnabled"\s*,\s*value:\s*(\w+)/g
-        )];
-        expect(matches.length).toBe(2);
-        for (const m of matches) {
-            expect(m[1]).toBe('false');
-        }
+        const matches = enableBlock!.match(/applyLocationLoggingConfig\s*\(\s*\)/g);
+        expect(matches).not.toBeNull();
+        expect(matches!.length).toBe(1);
+        expect(enableBlock!.indexOf('applyLocationLoggingConfig()'))
+            .toBeLessThan(enableBlock!.indexOf('ConnectSDK.shared.enable('));
+    });
+
+    test('applyLocationLoggingConfig is a no-op when locationLoggingEnabled is unset (tri-state, not forced on/off)', () => {
+        const block = extractBlock(SWIFT, /func\s+applyLocationLoggingConfig\s*\([^)]*\)\s*\{/);
+        expect(block).toBeDefined();
+        expect(block).toMatch(/guard\s+let\s+locationLoggingEnabled\s+else\s*\{\s*return\s*\}/);
+    });
+
+    test('applyLocationLoggingConfig applies the configured value, not a hardcoded literal', () => {
+        const block = extractBlock(SWIFT, /func\s+applyLocationLoggingConfig\s*\([^)]*\)\s*\{/);
+        expect(block).toBeDefined();
+        expect(block).toMatch(/setConfigurableItem\s*\(\s*"LogLocationEnabled"\s*,\s*value:\s*locationLoggingEnabled\b/);
+        expect(block).not.toMatch(/setConfigurableItem\s*\(\s*"LogLocationEnabled"\s*,\s*value:\s*(true|false)\b/);
+    });
+
+    test('locationLoggingEnabled is populated from AcousticConnectNativeConfig.json in applyRuntimeConfig', () => {
+        const block = extractBlock(SWIFT, /func\s+applyRuntimeConfig\s*\([^)]*\)\s*\{/);
+        expect(block).toBeDefined();
+        expect(block).toMatch(/locationLoggingEnabled\s*=\s*config\[\s*"locationLoggingEnabled"\s*\]\s*as\?\s*Bool/);
+    });
+});
+
+// ── Screen-capture config ──────────────────────────────────────────────────
+
+describe('ConnectPlugin.swift — screen-capture config', () => {
+    test('applyScreenCaptureConfig() is called from enable(), once, AFTER ConnectSDK.shared.enable()', () => {
+        // Verified on a simulator: the layout/screenshot keys only take effect when
+        // applied after enable(); applied before it, the SDK reloads its defaults.
+        const enableBlock = extractBlock(SWIFT, ENABLE_HEADER);
+        expect(enableBlock).toBeDefined();
+        const matches = enableBlock!.match(/applyScreenCaptureConfig\s*\(\s*\)/g);
+        expect(matches).not.toBeNull();
+        expect(matches!.length).toBe(1);
+        expect(enableBlock!.indexOf('applyScreenCaptureConfig()'))
+            .toBeGreaterThan(enableBlock!.indexOf('ConnectSDK.shared.enable('));
+    });
+
+    test('applyScreenCaptureConfig is a no-op unless the app explicitly opted out', () => {
+        const block = extractBlock(SWIFT, /func\s+applyScreenCaptureConfig\s*\([^)]*\)\s*\{/);
+        expect(block).toBeDefined();
+        expect(block).toMatch(/guard\s+let\s+screenCaptureEnabled\s+else\s*\{\s*return\s*\}/);
+        expect(block).toMatch(/guard\s+!\s*screenCaptureEnabled\s+else\s*\{\s*return\s*\}/);
+    });
+
+    test('applyScreenCaptureConfig turns layout capture off via CaptureLayoutOn without discarding the rest of AutoLayout', () => {
+        const block = extractBlock(SWIFT, /func\s+applyScreenCaptureConfig\s*\([^)]*\)\s*\{/);
+        expect(block).toBeDefined();
+        // reads the effective AutoLayout so masking and other rules are preserved
+        expect(block).toMatch(/value\s*\(\s*forConfigurableItem:\s*"AutoLayout"\s*\)/);
+        expect(block).toMatch(/GlobalScreenSettings/);
+        expect(block).toMatch(/\[\s*"CaptureLayoutOn"\s*\]\s*=\s*0\b/);
+        expect(block).toMatch(/setConfigurableItem\s*\(\s*"AutoLayout"\s*,\s*value:/);
+    });
+
+    test('applyScreenCaptureConfig does not use DisableAutoInstrumentation (it also drops screen views)', () => {
+        const block = extractBlock(SWIFT, /func\s+applyScreenCaptureConfig\s*\([^)]*\)\s*\{/);
+        expect(block).toBeDefined();
+        expect(block).not.toMatch(/DisableAutoInstrumentation/);
+    });
+
+    test('screenCaptureEnabled is populated from AcousticConnectNativeConfig.json in applyRuntimeConfig', () => {
+        const block = extractBlock(SWIFT, /func\s+applyRuntimeConfig\s*\([^)]*\)\s*\{/);
+        expect(block).toBeDefined();
+        expect(block).toMatch(/screenCaptureEnabled\s*=\s*config\[\s*"screenCaptureEnabled"\s*\]\s*as\?\s*Bool/);
+    });
+});
+
+// ── Layout config ───────────────────────────────────────────────────────────
+
+describe('ConnectPlugin.swift — layout config', () => {
+    test('applyLayoutConfig() is called from enable(), once, after ConnectSDK.shared.enable() and before applyScreenCaptureConfig()', () => {
+        const enableBlock = extractBlock(SWIFT, ENABLE_HEADER);
+        expect(enableBlock).toBeDefined();
+        const matches = enableBlock!.match(/applyLayoutConfig\s*\(\s*\)/g);
+        expect(matches).not.toBeNull();
+        expect(matches!.length).toBe(1);
+        const layoutAt = enableBlock!.indexOf('applyLayoutConfig()');
+        expect(layoutAt).toBeGreaterThan(enableBlock!.indexOf('ConnectSDK.shared.enable('));
+        // The screen-capture opt-out merges over whatever AutoLayout is in effect, so it must run last.
+        expect(layoutAt).toBeLessThan(enableBlock!.indexOf('applyScreenCaptureConfig()'));
+    });
+
+    test('applyLayoutConfig is a no-op when layoutConfigIos is unset (the SDK keeps its bundled defaults)', () => {
+        const block = extractBlock(SWIFT, /func\s+applyLayoutConfig\s*\([^)]*\)\s*\{/);
+        expect(block).toBeDefined();
+        expect(block).toMatch(/guard\s+let\s+layoutConfigIos\s+else\s*\{\s*return\s*\}/);
+    });
+
+    test('applyLayoutConfig merges AutoLayout and AppendMapIds over the SDK\'s effective block, only when present', () => {
+        const block = extractBlock(SWIFT, /func\s+applyLayoutConfig\s*\([^)]*\)\s*\{/);
+        expect(block).toBeDefined();
+        expect(block).toContain('"AutoLayout"');
+        expect(block).toContain('"AppendMapIds"');
+        expect(block).toMatch(/layoutConfigIos\[\s*key\s*\]/);
+        expect(block).toMatch(/ConnectApplicationHelper\.sharedInstance\(\)/);
+        // reads what the SDK has in effect so a partial block does not discard the rest
+        expect(block).toMatch(/value\s*\(\s*forConfigurableItem:\s*key\s*\)/);
+        expect(block).toMatch(/deepMerging\s*\(/);
+        expect(block).toMatch(/setConfigurableItem\s*\(\s*key\s*,\s*value:/);
+    });
+
+    test('deepMerging merges nested dictionaries recursively and lets the override replace arrays and scalars', () => {
+        const block = extractBlock(
+            SWIFT,
+            /func\s+deepMerging\s*\(\s*_\s+base:\s*\[String:\s*Any\]\s*,\s*_\s+override:\s*\[String:\s*Any\]\s*\)\s*->\s*\[String:\s*Any\]\s*\{/
+        );
+        expect(block).toBeDefined();
+        // recurses into dictionaries that exist on both sides
+        expect(block).toMatch(/deepMerging\s*\(/);
+        expect(block).toMatch(/as\?\s*\[String:\s*Any\]/);
+    });
+
+    test('layoutConfigIos is populated from AcousticConnectNativeConfig.json in applyRuntimeConfig', () => {
+        const block = extractBlock(SWIFT, /func\s+applyRuntimeConfig\s*\([^)]*\)\s*\{/);
+        expect(block).toBeDefined();
+        expect(block).toMatch(/layoutConfigIos\s*=\s*config\[\s*"layoutConfigIos"\s*\]\s*as\?\s*\[\s*String\s*:\s*Any\s*\]/);
+    });
+});
+
+// ── enable() thread dispatch ────────────────────────────────────────────────
+
+describe('ConnectPlugin.swift — enable() thread dispatch', () => {
+    test('enable() dispatches SDK work via Task, not inline, so the action handler returns immediately', () => {
+        const enableBlock = extractBlock(SWIFT, ENABLE_HEADER);
+        expect(enableBlock).toBeDefined();
+        expect(enableBlock).toMatch(/Task\s*\{\s*@MainActor\s*\[weak self\]/);
+        // ConnectSDK.shared.enable(...) itself must be inside that Task, not called
+        // synchronously before it (that would defeat the point of deferring).
+        const taskBody = enableBlock!.split(/Task\s*\{\s*@MainActor\s*\[weak self\]\s*in/)[1];
+        expect(taskBody).toBeDefined();
+        expect(taskBody).toMatch(/ConnectSDK\.shared\.enable\s*\(/);
+    });
+
+    test('argument validation (appKey/postURL/pushMode) still happens synchronously, before the Task', () => {
+        const enableBlock = extractBlock(SWIFT, ENABLE_HEADER);
+        expect(enableBlock).toBeDefined();
+        const taskIndex = enableBlock!.search(/Task\s*\{\s*@MainActor\s*\[weak self\]/);
+        expect(taskIndex).toBeGreaterThan(-1);
+        const beforeTask = enableBlock!.slice(0, taskIndex);
+        expect(beforeTask).toMatch(/appKey\.isEmpty/);
+        expect(beforeTask).toMatch(/postURL\.isEmpty/);
+        expect(beforeTask).toMatch(/validPushModes\.contains/);
+    });
+
+    test('enable() captures commandDelegate and callbackId before the Task, so the guard-else branch can still resolve the JS Promise if the plugin is deallocated', () => {
+        const enableBlock = extractBlock(SWIFT, ENABLE_HEADER);
+        expect(enableBlock).toBeDefined();
+        const taskIndex = enableBlock!.search(/Task\s*\{\s*@MainActor\s*\[weak self\]/);
+        expect(taskIndex).toBeGreaterThan(-1);
+        const beforeTask = enableBlock!.slice(0, taskIndex);
+        expect(beforeTask).toMatch(/let\s+delegate\s*=\s*commandDelegate/);
+        expect(beforeTask).toMatch(/let\s+callbackId[^=]*=\s*command\.callbackId/);
+
+        // The guard-else (self deallocated) branch must send a failure result via
+        // the captured `delegate`, not silently `return` — otherwise the JS Promise
+        // from AcousticConnect.enable(...) hangs forever with no resolve/reject.
+        // Brace-counted rather than split on a fixed indentation depth, so this
+        // stays correct regardless of how the guard-else body is indented.
+        const guardElseBody = extractBlock(enableBlock!, /guard\s+let\s+self\s+else\s*\{/);
+        expect(guardElseBody).toBeDefined();
+        expect(guardElseBody).toMatch(/delegate\??\.send/);
+        expect(guardElseBody).toMatch(/status:\s*\.error/);
     });
 });
 
@@ -217,8 +438,10 @@ describe('ConnectPlugin.swift — dead code absent', () => {
         expect(SWIFT).not.toMatch(/\bdeinit\b/);
     });
 
-    test('no removeObserver call present', () => {
-        expect(SWIFT).not.toMatch(/removeObserver/);
+    test('the only observer is the CDVPageDidLoad layout capture, removed in dispose()', () => {
+        expect(SWIFT.match(/addObserver\(/g)).toHaveLength(1);
+        expect(SWIFT).toMatch(/CDVPageDidLoad/);
+        expect(SWIFT).toMatch(/override func dispose\(\)[\s\S]*?removeObserver/);
     });
 
     test('pushDidRegisterWithToken selector is absent', () => {
@@ -227,5 +450,108 @@ describe('ConnectPlugin.swift — dead code absent', () => {
 
     test('pushDidFailToRegister selector is absent', () => {
         expect(SWIFT).not.toMatch(/pushDidFailToRegister/);
+    });
+});
+
+// ── Screen view load / unload ──────────────────────────────────────────────
+
+describe('ConnectPlugin.swift — screen view load/unload', () => {
+    test.each([
+        ['logScreenViewContextLoad', 'load'],
+        ['logScreenViewContextUnload', 'unload'],
+    ])('%s is exposed to Cordova and passes ConnectScreenViewType.%s to the helper',
+        (action, screenViewType) => {
+            expect(SWIFT).toMatch(
+                new RegExp(`@objc\\(${action}:\\)`)
+            );
+            const block = extractBlock(
+                SWIFT,
+                new RegExp(`func\\s+${action}\\s*\\([^)]*\\)\\s*\\{`)
+            );
+            expect(block).toBeDefined();
+            expect(block).toMatch(/logScreenView\s*\(/);
+            expect(block).toContain(`ConnectScreenViewType.${screenViewType}`);
+        }
+    );
+
+    test('shared helper validates the page name and logs via ConnectCustomEvent', () => {
+        const block = extractBlock(
+            SWIFT,
+            /private\s+func\s+logScreenView\s*\([^{]*\{/
+        );
+        expect(block).toBeDefined();
+        expect(block).toMatch(/Constants\.codeInvalidArgs/);
+        expect(block).toMatch(/Constants\.codeInternalError/);
+        expect(block).toMatch(/ConnectCustomEvent\(\)\.logScreenViewContext\s*\(/);
+    });
+});
+
+// ── Signal and exception events ────────────────────────────────────────────
+
+describe('ConnectPlugin.swift — signal and exception events', () => {
+    test('logSignal is exposed to Cordova, validates the payload and logs via ConnectCustomEvent', () => {
+        expect(SWIFT).toMatch(/@objc\(logSignal:\)/);
+        const block = extractBlock(SWIFT, /func\s+logSignal\s*\([^)]*\)\s*\{/);
+        expect(block).toBeDefined();
+        expect(block).toMatch(/Constants\.codeInvalidArgs/);
+        expect(block).toMatch(/Constants\.codeInternalError/);
+        expect(block).toMatch(/ConnectCustomEvent\(\)\.logSignal\s*\(/);
+        expect(block).toMatch(/mapMonitoringLevel\s*\(/);
+    });
+
+    test('logExceptionEvent is exposed to Cordova, validates the message and logs a real NSException', () => {
+        expect(SWIFT).toMatch(/@objc\(logExceptionEvent:\)/);
+        const block = extractBlock(SWIFT, /func\s+logExceptionEvent\s*\([^)]*\)\s*\{/);
+        expect(block).toBeDefined();
+        expect(block).toMatch(/Constants\.codeInvalidArgs/);
+        expect(block).toMatch(/Constants\.codeInternalError/);
+        // The SDK takes the message from the NSException. Passing nil there lost the message and
+        // the stack: on a simulator the wire carried only { unhandled } (found by the e2e run).
+        expect(block).toMatch(/NSException\s*\(\s*name:\s*NSExceptionName\(\s*"Cordova Plugin"\s*\)\s*,\s*reason:\s*message/);
+        expect(block).toMatch(/logNSExceptionEvent\s*\(\s*exception\s*,/);
+        expect(block).not.toMatch(/logNSExceptionEvent\s*\(\s*nil/);
+        // the stack travels as additional data
+        expect(block).toMatch(/dataDictionary:\s*\[\s*"stacktrace"\s*:\s*stackInfo\s*\]/);
+    });
+});
+
+// ── Runtime config items ───────────────────────────────────────────────────
+
+describe('ConnectPlugin.swift — runtime config items', () => {
+    test('setConfigItem is exposed to Cordova, validates its arguments and writes via ConnectApplicationHelper', () => {
+        expect(SWIFT).toMatch(/@objc\(setConfigItem:\)/);
+        const block = extractBlock(SWIFT, /func\s+setConfigItem\s*\([^)]*\)\s*\{/);
+        expect(block).toBeDefined();
+        expect(block).toMatch(/Constants\.codeInvalidArgs/);
+        expect(block).toMatch(/Constants\.codeInternalError/);
+        expect(block).toMatch(/ConnectApplicationHelper\.sharedInstance\(\)\.setConfigurableItem\s*\(/);
+    });
+
+    test('getConfigItem is exposed to Cordova and reads the raw item via ConnectApplicationHelper', () => {
+        expect(SWIFT).toMatch(/@objc\(getConfigItem:\)/);
+        const block = extractBlock(SWIFT, /func\s+getConfigItem\s*\([^)]*\)\s*\{/);
+        expect(block).toBeDefined();
+        expect(block).toMatch(/Constants\.codeInvalidArgs/);
+        expect(block).toMatch(/value\(forConfigurableItem:/);
+    });
+
+    test('a JSON boolean is told apart from a number before it is stored', () => {
+        expect(SWIFT).toMatch(/CFBooleanGetTypeID\(\)/);
+    });
+});
+
+
+describe('ConnectPlugin.swift — layout and location actions', () => {
+    test.each([
+        ['logScreenLayout', /ConnectCustomEvent\(\)\.logScreenLayout\s*\(\s*with:/],
+        ['logLocation', /ConnectCustomEvent\(\)\.logLocation\(nil\)/],
+        ['logLocationUpdate', /ConnectCustomEvent\(\)\.logLocationUpdate\s*\(withLatitude:/],
+    ])('%s is exposed to Cordova and calls the SDK', (action, sdkCall) => {
+        expect(SWIFT).toMatch(new RegExp(`@objc\\(${action}:\\)`));
+        expect(SWIFT).toMatch(sdkCall);
+    });
+
+    test('logScreenLayout converts the millisecond delay to the seconds the SDK expects', () => {
+        expect(SWIFT).toMatch(/andDelay:\s*delayMs\s*\/\s*1000\.0/);
     });
 });

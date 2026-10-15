@@ -35,6 +35,7 @@ const {
     patchXcframeworksScriptPhases,
     resolveConnectConfigPath,
     resolveIosDevelopmentTeam,
+    resolveAppVersion,
     addApsEnvironmentToEntitlementsFile,
     resolveApsEnvironmentForEntitlementsFile,
 } = hook._internal as {
@@ -42,6 +43,7 @@ const {
     patchXcframeworksScriptPhases: (p: string, variant?: string) => void;
     resolveConnectConfigPath:      (projectRoot: string) => string;
     resolveIosDevelopmentTeam:     (projectRoot: string) => string | null;
+    resolveAppVersion:             (projectRoot: string) => string;
     addApsEnvironmentToEntitlementsFile:    (filePath: string, environment?: string) => void;
     resolveApsEnvironmentForEntitlementsFile: (filename: string) => 'development' | 'production';
 };
@@ -282,6 +284,43 @@ describe('resolveConnectConfigPath', () => {
         } finally {
             fs.rmSync(dir, { recursive: true, force: true });
         }
+    });
+});
+
+// ---------------------------------------------------------------------------
+// resolveAppVersion
+// ---------------------------------------------------------------------------
+
+describe('resolveAppVersion', () => {
+    let dir: string;
+
+    beforeEach(() => {
+        dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ver-'));
+    });
+
+    afterEach(() => {
+        fs.rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('reads the widget version attribute from config.xml', () => {
+        fs.writeFileSync(
+            path.join(dir, 'config.xml'),
+            '<widget id="com.example.app" version="2.3.4"></widget>'
+        );
+        expect(resolveAppVersion(dir)).toBe('2.3.4');
+    });
+
+    it('defaults to 1.0.0 (not throwing) when the version attribute is absent', () => {
+        fs.writeFileSync(path.join(dir, 'config.xml'), '<widget id="com.example.app"></widget>');
+        expect(resolveAppVersion(dir)).toBe('1.0.0');
+    });
+
+    it('works regardless of attribute order in the widget tag', () => {
+        fs.writeFileSync(
+            path.join(dir, 'config.xml'),
+            '<widget version="9.9.9" id="com.example.app"></widget>'
+        );
+        expect(resolveAppVersion(dir)).toBe('9.9.9');
     });
 });
 

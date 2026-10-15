@@ -18,9 +18,8 @@ import android.os.Looper
 import android.util.Log
 import androidx.activity.ComponentActivity
 import com.acoustic.connect.android.connectmod.Connect
+import com.acoustic.connect.android.connectmod.model.ConnectScreenviewType
 import com.acoustic.connect.android.connectmod.push.PushPermissionState
-import com.tl.uic.Tealeaf
-import com.tl.uic.model.ScreenviewType
 import com.acoustic.connect.android.connectmod.push.core.MobileServiceType
 import org.apache.cordova.CallbackContext
 import org.apache.cordova.CordovaInterface
@@ -81,11 +80,26 @@ class ConnectPlugin : CordovaPlugin() {
     private val mainHandler = Handler(Looper.getMainLooper())
     @Volatile private var autoInitRunnable: Runnable? = null
 
+    // applyKillSwitchConfig's re-apply runnable, tracked the same way as
+    // autoInitRunnable so onDestroy() can cancel it — mainHandler is bound to
+    // the process-wide main Looper, not this plugin instance's lifecycle, so a
+    // pending postDelayed(..., CONFIG_REAPPLY_DELAY_MS) would otherwise
+    // still fire after the WebView/Activity that created this plugin is gone.
+    @Volatile private var killSwitchRunnable: Runnable? = null
+
     override fun pluginInitialize() {
         super.pluginInitialize()
         workWrapper = WorkWrapper(cordova)
         Log.d(TAG, "pluginInitialize pushMode=$pushMode logLevel=$bridgeLogLevel")
         tryBundledConfigInit()
+    }
+
+    override fun onDestroy() {
+        autoInitRunnable?.let { mainHandler.removeCallbacks(it) }
+        autoInitRunnable = null
+        killSwitchRunnable?.let { mainHandler.removeCallbacks(it) }
+        killSwitchRunnable = null
+        super.onDestroy()
     }
 
     @Throws(JSONException::class)
@@ -137,6 +151,38 @@ class ConnectPlugin : CordovaPlugin() {
             }
             ACTION_LOG_CUSTOM_EVENT -> {
                 handleLogCustomEvent(args, callbackContext); true
+            }
+            ACTION_LOG_SIGNAL -> {
+                handleLogSignal(args, callbackContext); true
+            }
+            ACTION_LOG_EXCEPTION_EVENT -> {
+                handleLogExceptionEvent(args, callbackContext); true
+            }
+            ACTION_SET_CONFIG_ITEM -> {
+                handleSetConfigItem(args, callbackContext); true
+            }
+            ACTION_GET_CONFIG_ITEM -> {
+                handleGetConfigItem(args, callbackContext); true
+            }
+            ACTION_LOG_SCREEN_VIEW_CONTEXT_LOAD -> {
+                handleLogScreenViewContextLoad(args, callbackContext); true
+            }
+            ACTION_LOG_SCREEN_VIEW_CONTEXT_UNLOAD -> {
+                handleLogScreenViewContextUnload(args, callbackContext); true
+            }
+            ACTION_LOG_SCREEN_LAYOUT -> {
+                handleLogScreenLayout(args, callbackContext); true
+            }
+            ACTION_LOG_LOCATION -> {
+                handleLogLocation(callbackContext); true
+            }
+            ACTION_LOG_LOCATION_UPDATE -> {
+                handleLogLocationUpdate(args, callbackContext); true
+            }
+            ACTION_GET_SDK_VERSION -> {
+                callbackContext.sendPluginResult(
+                    PluginResult(PluginResult.Status.OK, Connect.getLibraryVersion())
+                ); true
             }
             else -> {
                 callbackContext.sendPluginResult(
@@ -191,11 +237,39 @@ class ConnectPlugin : CordovaPlugin() {
                 "Connect.init/enable must run on the main looper"
             }
             try {
-                // Guard against double-init: tryBundledConfigInit may have already
-                // completed on the main thread before removeCallbacks() could cancel it.
-                if (!Connect.isEnabled()) {
+                // Captured once, up front: whether the SDK was already fully set up
+                // before this call — e.g. tryBundledConfigInit won the race against
+                // this handleEnable call despite the removeCallbacks() above (see its
+                // own comment). Previously only Connect.init/enable were guarded by
+                // this check; push.enable/turnOnPush/requestNotificationPermission
+                // below ran unconditionally every time handleEnable was invoked. That
+                // let the auto-init path AND a racing handleEnable call both run the
+                // full push-init sequence, registering a second
+                // ActivityLifecycleCallbacks/BroadcastReceiver in the native SDK
+                // (com.acoustic...push.ConnectPush — registerActivityLifecycleCallbacks
+                // and registerReceiver are both additive, not idempotent) and
+                // requesting notification permission twice — producing duplicate
+                // "Create token registration event"/"New token received" logs and the
+                // "Attempted to send a second callback" Cordova bridge warning from a
+                // second requestNotificationPermission call. Skipping the whole
+                // sequence (not just init/enable) when already enabled fixes this at
+                // the source instead of just deduplicating the resulting logs.
+                val alreadyEnabled = Connect.isEnabled()
+                if (!alreadyEnabled) {
                     Connect.init(activity.application)
+                    val nativeConfig = readNativeConfig(activity.application)
+                    applyDisplayLoggingConfig(activity.application, nativeConfig)
+                    // Must run before Connect.enable(): LogLocationEnabled is read once
+                    // inside the SDK's own enable() body (see the function's own doc).
+                    applyLocationLoggingConfig(activity.application, nativeConfig)
+                    applyScreenCaptureConfig(activity.application, nativeConfig)
                     Connect.enable(appKey, postURL)
+                    applyKillSwitchConfig(activity.application, nativeConfig)
+                } else {
+                    // Push setup already ran via whichever path enabled the SDK
+                    // first — resolve success without repeating it.
+                    workWrapper.success(callbackContext)
+                    return@runOnUiThread
                 }
 
                 val iconRes = resolveIconRes(activity, options)
@@ -458,7 +532,7 @@ class ConnectPlugin : CordovaPlugin() {
                 if (ok) {
                     // Flush immediately so the server sees the identity signal without
                     // waiting for the SDK's next scheduled batch upload.
-                    Tealeaf.flushAll(false)
+                    flushTealeafImmediately()
                     workWrapper.success(callbackContext)
                 } else {
                     workWrapper.error(
@@ -521,7 +595,7 @@ class ConnectPlugin : CordovaPlugin() {
                 // resumeConnect, which calls Logger.a() internally, triggers
                 // addJavascriptInterface while the page is live, and causes a
                 // WebView reload → deviceready re-fires → infinite blinking loop.
-                Connect.logScreenview(activity, name, ScreenviewType.LOAD, null)
+                Connect.logScreenview(activity, name, ConnectScreenviewType.LOAD, null)
                 callbackContext.success()
             } catch (t: Throwable) {
                 Log.w(TAG, "setCurrentScreenName threw: ${t.message}")
@@ -559,6 +633,269 @@ class ConnectPlugin : CordovaPlugin() {
         }
     }
 
+    /**
+     * Sets a configuration item of a native SDK module.
+     * @param args[0] key     non-empty string
+     * @param args[1] value   boolean, string or finite number
+     * @param args[2] module  module name ("EOCore", "Tealeaf", "Connect"), non-empty string
+     */
+    internal fun handleSetConfigItem(args: JSONArray, callbackContext: CallbackContext) {
+        val key = args.optString(0, "").trim()
+        val module = args.optString(2, "").trim()
+        val value = toConfigString(if (args.length() > 1) args.get(1) else null)
+        if (key.isEmpty() || module.isEmpty() || value == null) {
+            callbackContext.error(
+                errorJson(
+                    CODE_INVALID_ARGS,
+                    "setConfigItem: key and moduleName must be non-empty strings and value a boolean, string or number"
+                )
+            )
+            return
+        }
+        try {
+            if (Connect.updateConfig(key, value, module)) {
+                callbackContext.success()
+            } else {
+                workWrapper.error(
+                    callbackContext, CODE_INTERNAL_ERROR,
+                    "setConfigItem returned false — SDK may not be initialised or module \"$module\" is not registered"
+                )
+            }
+        } catch (t: Throwable) {
+            workWrapper.error(callbackContext, CODE_INTERNAL_ERROR, t.message ?: "setConfigItem failed")
+        }
+    }
+
+    /**
+     * Reads a configuration item of a native SDK module as the raw string the SDK stores, or
+     * resolves with no value when the item is not set. The JS facade applies the type.
+     * @param args[0] key     non-empty string
+     * @param args[1] module  module name, non-empty string
+     */
+    internal fun handleGetConfigItem(args: JSONArray, callbackContext: CallbackContext) {
+        val key = args.optString(0, "").trim()
+        val module = args.optString(1, "").trim()
+        if (key.isEmpty() || module.isEmpty()) {
+            callbackContext.error(
+                errorJson(CODE_INVALID_ARGS, "getConfigItem: key and moduleName must be non-empty strings")
+            )
+            return
+        }
+        try {
+            val raw = Connect.getConfigItemString(key, module)
+            if (raw.isNullOrEmpty()) {
+                callbackContext.success()
+            } else {
+                callbackContext.success(raw)
+            }
+        } catch (t: Throwable) {
+            workWrapper.error(callbackContext, CODE_INTERNAL_ERROR, t.message ?: "getConfigItem failed")
+        }
+    }
+
+    /**
+     * Renders a config value the way the SDK's config files spell it: `true`/`false`, a whole
+     * number without a trailing ".0", other numbers as is. Returns null for anything that is
+     * not a boolean, string or finite number.
+     */
+    internal fun toConfigString(value: Any?): String? = when (value) {
+        is Boolean -> value.toString()
+        is String -> value
+        is Int, is Long -> value.toString()
+        is Number -> {
+            val d = value.toDouble()
+            when {
+                d.isNaN() || d.isInfinite() -> null
+                d == Math.floor(d) && Math.abs(d) < 1e15 -> d.toLong().toString()
+                else -> d.toString()
+            }
+        }
+        else -> null
+    }
+
+    /**
+     * Logs a signal. The payload may be arbitrary JSON.
+     * @param args[0] values  JSON object, required
+     * @param args[1] level   Int monitoring level (optional, default 3)
+     */
+    internal fun handleLogSignal(args: JSONArray, callbackContext: CallbackContext) {
+        val values = args.optJSONObject(0)
+        if (values == null) {
+            callbackContext.error(errorJson(CODE_INVALID_ARGS, "logSignal: values must be a JSON object"))
+            return
+        }
+        val level = args.optInt(1, 3)
+        val activity = cordova.activity ?: run {
+            callbackContext.error(errorJson(CODE_INTERNAL_ERROR, "logSignal: no foreground activity"))
+            return
+        }
+        val payload = toSignalPayload(values)
+        activity.runOnUiThread {
+            try {
+                if (Connect.logSignal(payload, level)) {
+                    callbackContext.success()
+                } else {
+                    workWrapper.error(callbackContext, CODE_INTERNAL_ERROR, "logSignal returned false")
+                }
+            } catch (t: Throwable) {
+                workWrapper.error(callbackContext, CODE_INTERNAL_ERROR, t.message ?: "logSignal failed")
+            }
+        }
+    }
+
+    /**
+     * Converts the JSON payload to the map the SDK's signal serialiser consumes.
+     * Nested objects and arrays stay as org.json values; JSON null stays
+     * [JSONObject.NULL]. Top-level numbers are kept, but SDK versions before
+     * 11.0.24-beta (seen on 11.0.21-beta) drop them when serialising.
+     */
+    internal fun toSignalPayload(values: JSONObject): HashMap<String?, Any?> {
+        val map = HashMap<String?, Any?>(values.length())
+        values.keys().forEach { key -> map[key] = values.get(key) }
+        return map
+    }
+
+    /**
+     * Logs an exception event.
+     * @param args[0] message    String, required
+     * @param args[1] stackInfo  String (optional)
+     * @param args[2] unhandled  Boolean (optional, default false)
+     */
+    internal fun handleLogExceptionEvent(args: JSONArray, callbackContext: CallbackContext) {
+        val message = args.optString(0, "").trim()
+        if (message.isBlank()) {
+            callbackContext.error(errorJson(CODE_INVALID_ARGS, "logExceptionEvent: message is required"))
+            return
+        }
+        val stackInfo = args.optString(1, "")
+        val unhandled = args.optBoolean(2, false)
+        val activity = cordova.activity ?: run {
+            callbackContext.error(errorJson(CODE_INTERNAL_ERROR, "logExceptionEvent: no foreground activity"))
+            return
+        }
+        activity.runOnUiThread {
+            try {
+                if (Connect.logExceptionEvent("Cordova Plugin", message, stackInfo, unhandled)) {
+                    callbackContext.success()
+                } else {
+                    workWrapper.error(callbackContext, CODE_INTERNAL_ERROR, "logExceptionEvent returned false")
+                }
+            } catch (t: Throwable) {
+                workWrapper.error(callbackContext, CODE_INTERNAL_ERROR, t.message ?: "logExceptionEvent failed")
+            }
+        }
+    }
+
+    /**
+     * Logs a screen-entered (LOAD) screen view.
+     * @param args[0] logicalPageName  String, required
+     * @param args[1] referrer         String or null (optional)
+     */
+    internal fun handleLogScreenViewContextLoad(args: JSONArray, callbackContext: CallbackContext) =
+        logScreenViewContext(args, callbackContext, ConnectScreenviewType.LOAD, "logScreenViewContextLoad")
+
+    /**
+     * Logs a screen-left (UNLOAD) screen view. Same arguments as the LOAD variant.
+     */
+    internal fun handleLogScreenViewContextUnload(args: JSONArray, callbackContext: CallbackContext) =
+        logScreenViewContext(args, callbackContext, ConnectScreenviewType.UNLOAD, "logScreenViewContextUnload")
+
+    /**
+     * Captures the layout of the foreground screen.
+     * @param args[0] name     String, required
+     * @param args[1] delayMs  Int >= 0 (optional; omitted = capture straight away)
+     */
+    internal fun handleLogScreenLayout(args: JSONArray, callbackContext: CallbackContext) {
+        val name = args.optString(0, "").trim()
+        if (name.isBlank()) {
+            callbackContext.error(errorJson(CODE_INVALID_ARGS, "logScreenLayout: name is required"))
+            return
+        }
+        val delayMs = if (args.isNull(1)) null else args.optInt(1, 0).coerceAtLeast(0)
+        val activity = cordova.activity ?: run {
+            callbackContext.error(errorJson(CODE_INTERNAL_ERROR, "logScreenLayout: no foreground activity"))
+            return
+        }
+        activity.runOnUiThread {
+            try {
+                val ok = if (delayMs == null) Connect.logScreenLayout(activity, name)
+                else Connect.logScreenLayout(activity, name, delayMs)
+                if (ok) callbackContext.success()
+                else workWrapper.error(callbackContext, CODE_INTERNAL_ERROR, "logScreenLayout returned false")
+            } catch (t: Throwable) {
+                workWrapper.error(callbackContext, CODE_INTERNAL_ERROR, t.message ?: "logScreenLayout failed")
+            }
+        }
+    }
+
+    /** Logs the device's current location. */
+    internal fun handleLogLocation(callbackContext: CallbackContext) {
+        val activity = cordova.activity ?: run { callbackContext.success(); return }
+        activity.runOnUiThread {
+            try {
+                if (Connect.logGeolocation(DEFAULT_EVENT_LEVEL)) callbackContext.success()
+                else workWrapper.error(callbackContext, CODE_INTERNAL_ERROR, "logLocation returned false")
+            } catch (t: Throwable) {
+                workWrapper.error(callbackContext, CODE_INTERNAL_ERROR, t.message ?: "logLocation failed")
+            }
+        }
+    }
+
+    /**
+     * Logs a location supplied by the app.
+     * @param args[0] latitude   Double
+     * @param args[1] longitude  Double
+     * @param args[2] level      Int monitoring level (optional, default 3)
+     */
+    internal fun handleLogLocationUpdate(args: JSONArray, callbackContext: CallbackContext) {
+        val latitude = args.optDouble(0, Double.NaN)
+        val longitude = args.optDouble(1, Double.NaN)
+        if (latitude.isNaN() || latitude !in -90.0..90.0 || longitude.isNaN() || longitude !in -180.0..180.0) {
+            callbackContext.error(errorJson(CODE_INVALID_ARGS, "logLocationUpdate: latitude/longitude out of range"))
+            return
+        }
+        val level = args.optInt(2, DEFAULT_EVENT_LEVEL)
+        val activity = cordova.activity ?: run { callbackContext.success(); return }
+        activity.runOnUiThread {
+            try {
+                if (Connect.logLocationUpdateEventWithLatitude(latitude, longitude, level)) callbackContext.success()
+                else workWrapper.error(callbackContext, CODE_INTERNAL_ERROR, "logLocationUpdate returned false")
+            } catch (t: Throwable) {
+                workWrapper.error(callbackContext, CODE_INTERNAL_ERROR, t.message ?: "logLocationUpdate failed")
+            }
+        }
+    }
+
+    private fun logScreenViewContext(
+        args: JSONArray,
+        callbackContext: CallbackContext,
+        type: ConnectScreenviewType,
+        label: String
+    ) {
+        val name = args.optString(0, "").trim()
+        if (name.isBlank()) {
+            callbackContext.error(errorJson(CODE_INVALID_ARGS, "$label: logicalPageName is required"))
+            return
+        }
+        // optString turns a JSON null into the string "null"; guard it explicitly.
+        val referrer = if (args.isNull(1)) null else args.optString(1, "").ifBlank { null }
+        val activity = cordova.activity ?: run {
+            callbackContext.error(errorJson(CODE_INTERNAL_ERROR, "$label: no foreground activity"))
+            return
+        }
+        activity.runOnUiThread {
+            try {
+                if (Connect.logScreenview(activity, name, type, referrer)) {
+                    callbackContext.success()
+                } else {
+                    workWrapper.error(callbackContext, CODE_INTERNAL_ERROR, "$label returned false")
+                }
+            } catch (t: Throwable) {
+                workWrapper.error(callbackContext, CODE_INTERNAL_ERROR, t.message ?: "$label failed")
+            }
+        }
+    }
+
     private fun handleManualModeStub(callbackContext: CallbackContext) {
         callbackContext.error(
             errorJson(CODE_PUSH_MODE_NOT_MANUAL, "Android does not support manual push mode")
@@ -570,6 +907,39 @@ class ConnectPlugin : CordovaPlugin() {
             put("code", code)
             put("message", message)
         }
+
+    /**
+     * Forces an immediate server post of queued events, bypassing the SDK's normal
+     * batch-upload timer.
+     *
+     * NOT the same as `Connect.flushQueues()`: that public method delegates to
+     * `EOCore.flushQueues()` -> `QueueService.flushQueues()`, which only calls
+     * `saveToCache(true)` — it persists the in-memory queue to disk cache but does
+     * NOT trigger a network post. The old direct call this replaces,
+     * `Tealeaf.flushAll(false)`, called `TLFCache.flush(false)` AND
+     * `requestManualServerPost(true)` — the second call is what actually posts
+     * immediately. Both verified by decompiling tealeaf/eocore's classes.jar.
+     *
+     * `Tealeaf` is a runtime-only dependency of `connect` (the single-artifact
+     * merge), so it's not on the compile classpath here
+     * and there's no public `Connect` API that exposes `requestManualServerPost`.
+     * Reflection is the only way to reach it without a compile-time dependency; if it
+     * fails (e.g. a future SDK release renames/removes the method), falls back to
+     * `Connect.flushQueues()` so the event still reaches disk cache and goes out on
+     * the SDK's next scheduled batch, rather than silently doing nothing.
+     */
+    private fun flushTealeafImmediately() {
+        try {
+            val tealeafClass = Class.forName("com.tl.uic.Tealeaf")
+            val flushAll = tealeafClass.getMethod("flushAll", java.lang.Boolean::class.java)
+            flushAll.invoke(null, java.lang.Boolean.FALSE)
+        } catch (t: Throwable) {
+            Log.w(TAG, "Tealeaf.flushAll reflection failed — falling back to " +
+                "Connect.flushQueues() (queues to disk cache, posts on the SDK's next " +
+                "scheduled batch instead of immediately): ${t.message}")
+            Connect.flushQueues()
+        }
+    }
 
     /**
      * Reads credentials saved by a previous successful `enable()` call and
@@ -591,10 +961,26 @@ class ConnectPlugin : CordovaPlugin() {
             if (Connect.isEnabled()) return@Runnable
             try {
                 Connect.init(activity.application)
+                val nativeConfig = readNativeConfig(activity.application)
+                applyDisplayLoggingConfig(activity.application, nativeConfig)
                 // No-arg enable() reads AppKey + PostMessageUrl from the assets/
                 // BasicConfig.properties bundled by the after_prepare hook — same
                 // path as the Android Java demo's ConnectWrapper initialisation.
+                // Forwards to Tealeaf.enable(null) internally, which never reaches the
+                // 100ms-delayed kill-switch handler (see applyKillSwitchConfig) — so
+                // ConnectBasicConfig.properties' KillSwitchEnabled value already sticks
+                // here without a re-apply. applyKillSwitchConfig is still called below
+                // as a safety net against a future SDK version changing that internal
+                // behavior — this was verified against checked-out SDK source, not the
+                // exact pinned Maven artifact.
+                //
+                // applyLocationLoggingConfig must run before Connect.enable() too — the
+                // 0-arg path still reaches Tealeaf's enable(String sessionId) body (via
+                // enable(null)) that reads LogLocationEnabled once.
+                applyLocationLoggingConfig(activity.application, nativeConfig)
+                applyScreenCaptureConfig(activity.application, nativeConfig)
                 Connect.enable()
+                applyKillSwitchConfig(activity.application, nativeConfig)
                 pushMode = PUSH_MODE_AUTOMATIC
                 val iconRes = resolveIconRes(activity, JSONObject())
                 Connect.push.enable(
@@ -627,6 +1013,222 @@ class ConnectPlugin : CordovaPlugin() {
         }
         autoInitRunnable = r
         mainHandler.post(r)
+    }
+
+    // Parsed contents of www/AcousticConnectNativeConfig.json (bundled into assets by
+    // Cordova, generated by before_prepare_connect_config.js) — the cross-platform
+    // native runtime config shared with ConnectPlugin.swift.
+    internal data class NativeConfig(
+        val useRelease: Boolean,
+        val killSwitchEnabled: Boolean,
+        val killSwitchUrl: String?,
+        // null = not configured by the app — leave the SDK's own default alone. Unlike
+        // killSwitchEnabled, this plugin does not decide a default for location logging.
+        val locationLoggingEnabled: Boolean? = null,
+        // null = not configured by the app — leave the SDK's own default (capture on) alone.
+        val screenCaptureEnabled: Boolean? = null
+    )
+
+    private fun readNativeConfig(context: Context): NativeConfig {
+        return try {
+            val json = context.assets.open("www/AcousticConnectNativeConfig.json")
+                .bufferedReader()
+                .use { it.readText() }
+            parseNativeConfig(json)
+        } catch (t: Throwable) {
+            NativeConfig(useRelease = false, killSwitchEnabled = false, killSwitchUrl = null)
+        }
+    }
+
+    // Pure parsing split out from readNativeConfig so it's testable without mocking
+    // android.content.res.AssetManager (final, not mockable without mockito-inline,
+    // which this module deliberately doesn't depend on).
+    internal fun parseNativeConfig(json: String): NativeConfig {
+        return try {
+            val obj = JSONObject(json)
+            NativeConfig(
+                useRelease = obj.optBoolean("useRelease", false),
+                killSwitchEnabled = obj.optBoolean("killSwitchEnabled", false),
+                killSwitchUrl = obj.optString("killSwitchUrl", "").ifBlank { null },
+                locationLoggingEnabled = if (obj.has("locationLoggingEnabled") && !obj.isNull("locationLoggingEnabled")) {
+                    obj.getBoolean("locationLoggingEnabled")
+                } else {
+                    null
+                },
+                screenCaptureEnabled = if (obj.has("screenCaptureEnabled") && !obj.isNull("screenCaptureEnabled")) {
+                    obj.getBoolean("screenCaptureEnabled")
+                } else {
+                    null
+                }
+            )
+        } catch (t: Throwable) {
+            NativeConfig(useRelease = false, killSwitchEnabled = false, killSwitchUrl = null)
+        }
+    }
+
+    /**
+     * Applies `useRelease` as the native SDK's `DisplayLogging` config — mirrors iOS's
+     * useRelease -> release/debug pod selection, which suppresses verbose native SDK
+     * logging outright in production builds.
+     *
+     * Deliberately NOT done via an app-level EOCoreBasicConfig.properties asset
+     * override: Android's asset merge replaces the *entire* file on a name
+     * collision, and the SDK's bundled EOCoreBasicConfig.properties carries other
+     * required keys (e.g. PostMessageTimeInterval) that a partial override would
+     * silently drop, crashing QueueService at enable() time.
+     *
+     * Must run after Connect.init() — that call chain is what enables EOCore and
+     * loads its config service.
+     *
+     * Targets the "EOCore" module by name via the 3-arg `Connect.updateConfig(key,
+     * value, module: String)` overload — Tealeaf/EOCore are runtime-only dependencies of
+     * Connect (the single-artifact merge), so their types (e.g. `EOCore.getInstance()`)
+     * are no longer on the compile classpath.
+     * `updateConfig`'s String overload resolves the module by name internally.
+     */
+    private fun applyDisplayLoggingConfig(context: Context, config: NativeConfig) {
+        try {
+            // See applyKillSwitchConfig — updateConfig's String-module overload
+            // returns false rather than throwing when the module isn't registered.
+            val applied = Connect.updateConfig(
+                "DisplayLogging", (!config.useRelease).toString(), "EOCore"
+            )
+            if (!applied) {
+                Log.w(TAG, "applyDisplayLoggingConfig: \"EOCore\" module update failed — skipping")
+            }
+        } catch (t: Throwable) {
+            Log.w(TAG, "applyDisplayLoggingConfig failed — leaving native SDK logging at its default: ${t.message}")
+        }
+    }
+
+    /**
+     * Applies `killSwitchEnabled`/`killSwitchUrl` as the native SDK's kill-switch config.
+     *
+     * The SDK's own bundled default is `KillSwitchEnabled=true`; ConnectBasicConfig.properties
+     * sets it `false` at asset-load time, but that is NOT the last word: the 2-arg
+     * `Tealeaf.enable(appKey, postMessageUrl)` that `handleEnable()` calls has an internal
+     * `Handler.postDelayed(..., 100)` that unconditionally sets `KillSwitchEnabled=true` and
+     * computes its own kill-switch URL, once, ~100ms after being called. So whatever value
+     * the app actually wants (on OR off) must be re-applied *after* that window to stick —
+     * this schedules the re-apply at [CONFIG_REAPPLY_DELAY_MS], comfortably past the
+     * SDK's own 100ms delay.
+     *
+     * Targets the "Tealeaf" module, not EOCore's — confirmed via `Tealeaf.java`'s own
+     * KillSwitchEnabled/KillSwitchUrl reads and writes, which all pass
+     * `TealeafEOLifecycleObject.getInstance()` as the module. Passed by name ("Tealeaf")
+     * to the 3-arg `Connect.updateConfig(key, value, module: String)` overload rather than
+     * resolved via `Connect.getLifecycleObject()` — Tealeaf/EOCore are runtime-only
+     * dependencies of Connect (the single-artifact merge), so `EOLifecycleObject`
+     * is no longer on the compile classpath either.
+     *
+     * Called from both `handleEnable()` (2-arg `Connect.enable(appKey, postURL)`) and
+     * `tryBundledConfigInit()` (0-arg `Connect.enable()`). Strictly required only for the
+     * 2-arg path — the 0-arg path forwards to `Tealeaf.enable(null)` internally, which never
+     * reaches the delayed handler, so the properties-file value already sticks there without
+     * a race. Called on both paths anyway as a defense-in-depth safety net: that "0-arg never
+     * races" behavior was verified against checked-out SDK source, not the exact pinned Maven
+     * artifact, and the call is cheap enough that keeping both paths symmetric is worth it.
+     *
+     * The scheduled runnable is tracked in [killSwitchRunnable] and cancelled in
+     * [onDestroy] — `mainHandler` is bound to the process-wide main Looper, not this
+     * plugin instance, so an uncancelled callback would otherwise still fire after the
+     * WebView/Activity that created this plugin instance is gone.
+     */
+    internal fun applyKillSwitchConfig(context: Context, config: NativeConfig) {
+        val r = Runnable {
+            killSwitchRunnable = null
+            try {
+                // updateConfig's String-module overload returns false (rather than
+                // throwing) when the named module isn't registered — e.g. the SDK was
+                // never initialized — so the failure must be checked explicitly; a bare
+                // try/catch around it would silently see success.
+                val applied = Connect.updateConfig(
+                    "KillSwitchEnabled", config.killSwitchEnabled.toString(), "Tealeaf"
+                )
+                if (!applied) {
+                    Log.w(TAG, "applyKillSwitchConfig: \"Tealeaf\" module update failed — skipping")
+                    return@Runnable
+                }
+                if (config.killSwitchEnabled && !config.killSwitchUrl.isNullOrBlank()) {
+                    Connect.updateConfig("KillSwitchUrl", config.killSwitchUrl, "Tealeaf")
+                }
+            } catch (t: Throwable) {
+                Log.w(TAG, "applyKillSwitchConfig failed — leaving native SDK kill switch at its default: ${t.message}")
+            }
+        }
+        killSwitchRunnable = r
+        mainHandler.postDelayed(r, CONFIG_REAPPLY_DELAY_MS)
+    }
+
+    /**
+     * Applies `locationLoggingEnabled` as the native SDK's `LogLocationEnabled` config —
+     * a no-op unless the app has explicitly opted in or out via `ConnectConfig.json`'s
+     * `LocationLoggingEnabled`.
+     *
+     * Must be called synchronously, BEFORE `Connect.enable(appKey, postURL)` — the
+     * opposite timing requirement from [applyKillSwitchConfig]. Confirmed via checked-out
+     * `Tealeaf.java` source: `TLF_LOG_LOCATION_ENABLED` is read exactly once, inside
+     * `enable(String sessionId)`, to decide whether to start the SDK's geolocation task —
+     * there is no delayed reset the way `KillSwitchEnabled` has, so setting it after
+     * `enable()` would be too late (the task would already have started or not, based on
+     * whatever the SDK's own default was). The "Tealeaf" module resolves immediately here
+     * too — registered synchronously inside `Connect.init()`, which this plugin always
+     * calls first — so no scheduling delay is needed for module availability either. Passed
+     * by name to `Connect.updateConfig(key, value, module: String)` rather than resolved via
+     * `Connect.getLifecycleObject()` — see [applyKillSwitchConfig] for why.
+     *
+     * Note: this only stops location data reaching the collector. It does NOT remove the
+     * `ACCESS_FINE_LOCATION`/`ACCESS_COARSE_LOCATION` permissions the Tealeaf AAR's own
+     * manifest declares (auto-merged into the host app's manifest regardless of this
+     * flag) — those still show up in the merged manifest either way.
+     */
+    internal fun applyLocationLoggingConfig(context: Context, config: NativeConfig) {
+        val locationLoggingEnabled = config.locationLoggingEnabled ?: return
+        try {
+            // See applyKillSwitchConfig — updateConfig's String-module overload
+            // returns false rather than throwing when the module isn't registered.
+            val applied = Connect.updateConfig(
+                "LogLocationEnabled", locationLoggingEnabled.toString(), "Tealeaf"
+            )
+            if (!applied) {
+                Log.w(TAG, "applyLocationLoggingConfig: \"Tealeaf\" module update failed — skipping")
+            }
+        } catch (t: Throwable) {
+            Log.w(TAG, "applyLocationLoggingConfig failed — leaving native SDK location logging at its default: ${t.message}")
+        }
+    }
+
+    /**
+     * Applies the app's screen-capture choice from `ConnectConfig.json`'s
+     * `ScreenCaptureEnabled` by turning the native SDK's `LogViewLayoutOnScreenTransition`
+     * off. Only an explicit `false` does anything: null (not configured) and `true` leave
+     * the SDK's own default (capture on); this plugin does not force a value.
+     *
+     * Targets the same "Tealeaf" module as [applyKillSwitchConfig] but applies
+     * synchronously, with no re-apply delay: the module is registered into EOCore's registry
+     * inside `Connect.init()` (which always runs before this), and the key is only ever read
+     * by `Tealeaf.java` at screen-transition time, never rewritten by `enable()`.
+     *
+     * Must run before `Connect.enable(...)`, like [applyLocationLoggingConfig].
+     *
+     * Not verified on a device: with the default config the Android SDK sent no layout
+     * message from the Cordova demo at all, so the effect of this key could not be
+     * observed. Note it does not by itself control screenshots, which are gated by the
+     * separate `AutoLayout.GlobalScreenSettings.ScreenShot` field.
+     */
+    internal fun applyScreenCaptureConfig(context: Context, config: NativeConfig) {
+        val screenCaptureEnabled = config.screenCaptureEnabled ?: return
+        if (screenCaptureEnabled) return
+        try {
+            // See applyKillSwitchConfig — updateConfig's String-module overload
+            // returns false rather than throwing when the module isn't registered.
+            val applied = Connect.updateConfig("LogViewLayoutOnScreenTransition", "false", "Tealeaf")
+            if (!applied) {
+                Log.w(TAG, "applyScreenCaptureConfig: \"Tealeaf\" module update failed — skipping")
+            }
+        } catch (t: Throwable) {
+            Log.w(TAG, "applyScreenCaptureConfig failed — leaving native SDK layout capture at its default: ${t.message}")
+        }
     }
 
     private fun logFcmAvailability() {
@@ -671,6 +1273,16 @@ class ConnectPlugin : CordovaPlugin() {
         internal const val ACTION_IS_SDK_ENABLED           = "isSdkEnabled"
         internal const val ACTION_SET_CURRENT_SCREEN_NAME  = "setCurrentScreenName"
         internal const val ACTION_LOG_CUSTOM_EVENT          = "logCustomEvent"
+        internal const val ACTION_LOG_SIGNAL                = "logSignal"
+        internal const val ACTION_LOG_EXCEPTION_EVENT       = "logExceptionEvent"
+        internal const val ACTION_SET_CONFIG_ITEM           = "setConfigItem"
+        internal const val ACTION_GET_CONFIG_ITEM           = "getConfigItem"
+        internal const val ACTION_LOG_SCREEN_VIEW_CONTEXT_LOAD   = "logScreenViewContextLoad"
+        internal const val ACTION_LOG_SCREEN_VIEW_CONTEXT_UNLOAD = "logScreenViewContextUnload"
+        internal const val ACTION_LOG_SCREEN_LAYOUT = "logScreenLayout"
+        internal const val ACTION_LOG_LOCATION = "logLocation"
+        internal const val ACTION_LOG_LOCATION_UPDATE = "logLocationUpdate"
+        internal const val ACTION_GET_SDK_VERSION           = "getSdkVersion"
 
         internal const val PUSH_MODE_AUTOMATIC = "automatic"
         // Android Connect SDK only supports automatic mode.
@@ -684,6 +1296,13 @@ class ConnectPlugin : CordovaPlugin() {
         internal const val CODE_INVALID_ARGS = "ACOUSTIC_INVALID_ARGS"
         internal const val CODE_INTERNAL_ERROR = "ACOUSTIC_INTERNAL_ERROR"
         internal const val CODE_PUSH_MODE_NOT_MANUAL = "ACOUSTIC_PUSH_MODE_NOT_MANUAL"
+
+        // Tealeaf.java's 2-arg enable(appKey, postMessageUrl) overload internally
+        // schedules a KillSwitchEnabled=true / KillSwitchUrl overwrite 100ms after
+        // being called (its own ENABLE_DELAY). This must run comfortably after that.
+        internal const val CONFIG_REAPPLY_DELAY_MS = 300L
+        /** Monitoring level used when the JS call does not pass one (matches logCustomEvent). */
+        internal const val DEFAULT_EVENT_LEVEL = 3
 
         private const val CONNECT_PUSH_FCM_PROBE_CLASS =
             "com.acoustic.connect.android.connectmod.push.services.fcm.FCMPushService"

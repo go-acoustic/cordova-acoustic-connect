@@ -40,6 +40,10 @@ function writeConnectBasicConfig(): void {
     fs.writeFileSync(path.join(tmpDir, 'ConnectBasicConfig.properties'), 'AppKey=k\n', 'utf8');
 }
 
+function writeConnectLayoutConfig(): void {
+    fs.writeFileSync(path.join(tmpDir, 'ConnectLayoutConfig.json'), '{"AutoLayout":{}}', 'utf8');
+}
+
 describe('platform guard', () => {
     it('does nothing when platforms excludes android', () => {
         writeGoogleServices();
@@ -100,5 +104,30 @@ describe('assets directory', () => {
         writeGoogleServices();
         hook(makeContext(tmpDir, ['android']));
         expect(fs.existsSync(path.join(assetsDir, 'ConnectBasicConfig.properties'))).toBe(false);
+    });
+});
+
+describe('ConnectLayoutConfig.json', () => {
+    it('copies ConnectLayoutConfig.json into assets when present', () => {
+        writeGoogleServices();
+        writeConnectLayoutConfig();
+        hook(makeContext(tmpDir, ['android']));
+        expect(fs.readFileSync(path.join(assetsDir, 'ConnectLayoutConfig.json'), 'utf8')).toBe(
+            '{"AutoLayout":{}}'
+        );
+    });
+
+    it('does not create ConnectLayoutConfig.json in assets when absent, so the SDK default applies', () => {
+        writeGoogleServices();
+        hook(makeContext(tmpDir, ['android']));
+        expect(fs.existsSync(path.join(assetsDir, 'ConnectLayoutConfig.json'))).toBe(false);
+    });
+
+    it('removes a stale ConnectLayoutConfig.json from assets when it is no longer configured', () => {
+        writeGoogleServices();
+        fs.mkdirSync(assetsDir, { recursive: true });
+        fs.writeFileSync(path.join(assetsDir, 'ConnectLayoutConfig.json'), '{"stale":true}', 'utf8');
+        hook(makeContext(tmpDir, ['android']));
+        expect(fs.existsSync(path.join(assetsDir, 'ConnectLayoutConfig.json'))).toBe(false);
     });
 });

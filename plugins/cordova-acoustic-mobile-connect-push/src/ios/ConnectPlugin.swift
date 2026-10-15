@@ -27,6 +27,20 @@ public class ConnectPlugin: CDVPlugin {
 
     private var pushMode: String = Constants.pushModeAutomatic
     private var bridgeLogLevel: String = Constants.logLevelDefault
+    private var killSwitchEnabled: Bool = false
+    private var killSwitchUrl: String?
+    // nil = not configured by the app — leave the SDK's own default alone. Unlike
+    // killSwitchEnabled, this plugin does not decide a default for location logging.
+    private var locationLoggingEnabled: Bool?
+    private var screenCaptureEnabled: Bool?
+    private var layoutConfigIos: [String: Any]?
+    private var pageLoadObserver: NSObjectProtocol?
+
+    /// Delay (seconds) between the page finishing loading and the layout capture, so the
+    /// WebView has rendered the first screen. 500ms is the capture delay used by default on the
+    /// other platforms and by the SDK's own `CaptureLayoutDelay`; the e2e runs on an iOS 26.5
+    /// simulator captured the layout with it on every run.
+    private static let layoutCaptureDelay: TimeInterval = 0.5
 
     // MARK: - Lifecycle
 
@@ -36,6 +50,40 @@ public class ConnectPlugin: CDVPlugin {
         // Apply runtime settings (debug env vars, etc.) from the bundled config
         // before any SDK call. Must run before enable() which is called later from JS.
         applyRuntimeConfig()
+        observePageLoadForLayoutCapture()
+    }
+
+    public override func dispose() {
+        if let pageLoadObserver {
+            NotificationCenter.default.removeObserver(pageLoadObserver)
+        }
+        super.dispose()
+    }
+
+    /// Captures the screen layout (type 10) once the WebView page has loaded.
+    ///
+    /// Connect iOS SDK 2.1.39 (debug) and 2.2.2 (release) no longer capture a layout for the
+    /// Cordova WebView screen on their own (verified on an iOS 26.5 simulator: debug 2.1.36 and
+    /// release 2.1.33 do, debug 2.1.39+ and release 2.2.2 do not), so the plugin requests it
+    /// explicitly, the same request the public `logScreenLayout` API makes. Skipped when the app opted
+    /// out with `ScreenCaptureEnabled: false`.
+    ///
+    /// The observer fires on every page load, not only the first: a page reload is a new screen
+    /// state, so a repeated capture on reload is intentional.
+    private func observePageLoadForLayoutCapture() {
+        pageLoadObserver = NotificationCenter.default.addObserver(
+            forName: NSNotification.Name.CDVPageDidLoad, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.screenCaptureEnabled != false,
+                      let controller = self.viewController else { return }
+                let ok = ConnectCustomEvent().logScreenLayout(
+                    with: controller, andDelay: Self.layoutCaptureDelay, andName: "Cordova")
+                if !ok {
+                    NSLog("[AcousticConnect] logScreenLayout was not accepted by the SDK")
+                }
+            }
+        }
     }
 
     // MARK: - Core actions (enable / disable / setLogLevel)
@@ -64,12 +112,52 @@ public class ConnectPlugin: CDVPlugin {
         pushMode = modeString
         let mode = mapPushMode(modeString)
         let pushConfig = ConnectPushConfig(mode: mode, appGroupIdentifier: appGroupId)
-        // Disable kill switch before enabling so the bundled plist's KillSwitchEnabled=true
-        ConnectSDK.shared.setConfigurableItem("KillSwitchEnabled", value: false)
-        ConnectSDK.shared.enable(appKey: appKey, postURL: postURL, push: pushConfig)
-        // Re-apply after enable() in case the SDK re-loaded bundle defaults internally.
-        ConnectSDK.shared.setConfigurableItem("KillSwitchEnabled", value: false)
-        waitForEnabled(command)
+
+        // Captured by value (not via self) so the JS Promise can still be resolved
+        // from the guard-else branch below even if self is deallocated before the
+        // Task runs — same reasoning as waitForEnabled()'s own capture-by-value.
+        let delegate = commandDelegate
+        let callbackId: String = command.callbackId ?? ""
+
+        // Dispatched to the next main-thread run-loop turn rather than called inline:
+        // Cordova's own thread watchdog flags any plugin action that blocks the calling
+        // (main) thread for too long, and ConnectSDK.shared.enable(...) — an
+        // @MainActor-isolated, non-trivial SDK init — routinely takes 13-23ms. The
+        // actual SDK call still runs on the main thread (required — ConnectSDK is
+        // @MainActor), just one run-loop turn later, which satisfies the watchdog
+        // without violating ConnectSDK's own threading requirement.
+        Task { @MainActor [weak self] in
+            guard let self else {
+                // Plugin was deallocated (e.g. WebView torn down) before this run-loop
+                // turn ran — reject the JS Promise instead of leaving it pending forever.
+                guard !callbackId.isEmpty else { return }
+                let payload: [String: Any] = [
+                    "code": Constants.codeInternalError,
+                    "message": "enable: plugin was deallocated before SDK init could run"
+                ]
+                let result = CDVPluginResult(status: .error, messageAs: payload as [AnyHashable: Any])
+                delegate?.send(result, callbackId: callbackId)
+                return
+            }
+            // Apply the configured kill-switch state before enabling, so the bundled
+            // plist's default (KillSwitchEnabled=true) doesn't take effect ahead of
+            // our value. No re-apply after enable(): that was a defensive guess (by
+            // analogy to a confirmed Android SDK behavior, not verified against this
+            // closed-source iOS binary) rather than a fix for an observed issue —
+            // dropped until there's evidence the iOS SDK actually needs it (e.g. a
+            // Connect dashboard Raw Data check showing the pre-enable value doesn't
+            // stick).
+            //
+            self.applyKillSwitchConfig()
+            self.applyLocationLoggingConfig()
+            ConnectSDK.shared.enable(appKey: appKey, postURL: postURL, push: pushConfig)
+            // Unlike the kill switch and location logging, screen-capture settings only
+            // take effect when applied AFTER enable(): applied earlier, the SDK reloads
+            // its bundled layout defaults during enable() and the setting is lost.
+            self.applyLayoutConfig()
+            self.applyScreenCaptureConfig()
+            self.waitForEnabled(command)
+        }
     }
 
     /// JS: `AcousticConnect.disable()`
@@ -98,6 +186,14 @@ public class ConnectPlugin: CDVPlugin {
     @objc(isSdkEnabled:)
     func isSdkEnabled(command: CDVInvokedUrlCommand) {
         let result = CDVPluginResult(status: .ok, messageAs: ConnectSDK.shared.isEnabled)
+        commandDelegate.send(result, callbackId: command.callbackId)
+    }
+
+    /// JS: `AcousticConnect.getSdkVersion()` — the native Connect SDK's own
+    /// library version, distinct from the Cordova plugin's version.
+    @objc(getSdkVersion:)
+    func getSdkVersion(command: CDVInvokedUrlCommand) {
+        let result = CDVPluginResult(status: .ok, messageAs: ConnectSDK.shared.frameworkVersion)
         commandDelegate.send(result, callbackId: command.callbackId)
     }
 
@@ -179,6 +275,198 @@ public class ConnectPlugin: CDVPlugin {
             sendSuccess(command)
         } else {
             sendError(command, code: Constants.codeInternalError, message: "logCustomEvent returned false")
+        }
+    }
+
+    // MARK: - Runtime config items
+
+    /// JS: `AcousticConnect.setConfigItem(key, value, moduleName)` — iOS has a single config
+    /// store, so `moduleName` is only validated.
+    @objc(setConfigItem:)
+    func setConfigItem(command: CDVInvokedUrlCommand) {
+        let key = (command.argument(at: 0) as? String ?? "").trimmingCharacters(in: .whitespaces)
+        let module = (command.argument(at: 2) as? String ?? "").trimmingCharacters(in: .whitespaces)
+        guard !key.isEmpty, !module.isEmpty, let value = configValue(from: command.argument(at: 1)) else {
+            sendError(command, code: Constants.codeInvalidArgs,
+                      message: "setConfigItem: key and moduleName must be non-empty strings and value a boolean, string or number")
+            return
+        }
+        if ConnectApplicationHelper.sharedInstance().setConfigurableItem(key, value: value) {
+            sendSuccess(command)
+        } else {
+            sendError(command, code: Constants.codeInternalError, message: "setConfigItem returned false")
+        }
+    }
+
+    /// JS: `AcousticConnect.getConfigItem(key, defaultValue, moduleName)` — resolves with the raw
+    /// item as text (or nothing when it is not set); the JS facade applies the type.
+    @objc(getConfigItem:)
+    func getConfigItem(command: CDVInvokedUrlCommand) {
+        let key = (command.argument(at: 0) as? String ?? "").trimmingCharacters(in: .whitespaces)
+        let module = (command.argument(at: 1) as? String ?? "").trimmingCharacters(in: .whitespaces)
+        guard !key.isEmpty, !module.isEmpty else {
+            sendError(command, code: Constants.codeInvalidArgs,
+                      message: "getConfigItem: key and moduleName must be non-empty strings")
+            return
+        }
+        let raw = ConnectApplicationHelper.sharedInstance().value(forConfigurableItem: key)
+        let text = configText(from: raw)
+        let result = text.map { CDVPluginResult(status: .ok, messageAs: $0) } ?? CDVPluginResult(status: .ok)
+        commandDelegate.send(result, callbackId: command.callbackId)
+    }
+
+    /// A JSON boolean reaches Swift as an NSNumber; tell it from a number by its Core Foundation type.
+    private func configValue(from argument: Any?) -> Any? {
+        if let number = argument as? NSNumber {
+            if CFGetTypeID(number) == CFBooleanGetTypeID() { return number.boolValue }
+            return number.doubleValue.isFinite ? number.doubleValue : nil
+        }
+        return argument as? String
+    }
+
+    private func configText(from raw: Any?) -> String? {
+        if let number = raw as? NSNumber {
+            if CFGetTypeID(number) == CFBooleanGetTypeID() { return number.boolValue ? "true" : "false" }
+            let d = number.doubleValue
+            return d == d.rounded() && abs(d) < 1e15 ? String(Int64(d)) : String(d)
+        }
+        return raw as? String
+    }
+
+    // MARK: - Signals and exceptions
+
+    /// JS: `AcousticConnect.logSignal(values, level?)` — `values` is arbitrary JSON.
+    @objc(logSignal:)
+    func logSignal(command: CDVInvokedUrlCommand) {
+        guard let values = command.argument(at: 0) as? [String: Any] else {
+            sendError(command, code: Constants.codeInvalidArgs,
+                      message: "logSignal: values must be a JSON object")
+            return
+        }
+        let levelInt = command.argument(at: 1) as? Int ?? 3
+        let ok = ConnectCustomEvent().logSignal(values, level: mapMonitoringLevel(levelInt))
+        if ok {
+            sendSuccess(command)
+        } else {
+            sendError(command, code: Constants.codeInternalError, message: "logSignal returned false")
+        }
+    }
+
+    /// JS: `AcousticConnect.logExceptionEvent(message, stackInfo?, unhandled?)`
+    @objc(logExceptionEvent:)
+    func logExceptionEvent(command: CDVInvokedUrlCommand) {
+        let message = (command.argument(at: 0) as? String ?? "").trimmingCharacters(in: .whitespaces)
+        guard !message.isEmpty else {
+            sendError(command, code: Constants.codeInvalidArgs,
+                      message: "logExceptionEvent: message is required")
+            return
+        }
+        let stackInfo = command.argument(at: 1) as? String ?? ""
+        let unhandled = command.argument(at: 2) as? Bool ?? false
+        // The SDK reads the message from the NSException; with nil it dropped the message and
+        // the stack and logged only the unhandled flag. The stack is passed as additional data.
+        let exception = NSException(name: NSExceptionName("Cordova Plugin"), reason: message, userInfo: nil)
+        let ok = ConnectCustomEvent().logNSExceptionEvent(exception, dataDictionary: ["stacktrace": stackInfo], isUnhandled: unhandled)
+        if ok {
+            sendSuccess(command)
+        } else {
+            sendError(command, code: Constants.codeInternalError, message: "logExceptionEvent returned false")
+        }
+    }
+
+    // MARK: - Screen views
+
+    /// JS: `AcousticConnect.logScreenViewContextLoad(logicalPageName, referrer?)`
+    @objc(logScreenViewContextLoad:)
+    func logScreenViewContextLoad(command: CDVInvokedUrlCommand) {
+        logScreenView(command, type: ConnectScreenViewType.load, label: "logScreenViewContextLoad")
+    }
+
+    /// JS: `AcousticConnect.logScreenViewContextUnload(logicalPageName, referrer?)`
+    @objc(logScreenViewContextUnload:)
+    func logScreenViewContextUnload(command: CDVInvokedUrlCommand) {
+        logScreenView(command, type: ConnectScreenViewType.unload, label: "logScreenViewContextUnload")
+    }
+
+    private func logScreenView(_ command: CDVInvokedUrlCommand,
+                               type: ConnectScreenViewType,
+                               label: String) {
+        let pageName = (command.argument(at: 0) as? String ?? "").trimmingCharacters(in: .whitespaces)
+        guard !pageName.isEmpty else {
+            sendError(command, code: Constants.codeInvalidArgs,
+                      message: "\(label): logicalPageName is required")
+            return
+        }
+        let rawReferrer = command.argument(at: 1) as? String
+        let referrer = (rawReferrer?.isEmpty ?? true) ? nil : rawReferrer
+        let ok = ConnectCustomEvent().logScreenViewContext(
+            pageName,
+            withClass: "Cordova_\(pageName)",
+            applicationContext: type,
+            referrer: referrer
+        )
+        if ok {
+            sendSuccess(command)
+        } else {
+            sendError(command, code: Constants.codeInternalError, message: "\(label) returned false")
+        }
+    }
+
+    // MARK: - Screen layout and location
+
+    /// JS: `AcousticConnect.logScreenLayout(name, delayMs?)`
+    @objc(logScreenLayout:)
+    func logScreenLayout(command: CDVInvokedUrlCommand) {
+        let name = (command.argument(at: 0) as? String ?? "").trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty else {
+            sendError(command, code: Constants.codeInvalidArgs, message: "logScreenLayout: name is required")
+            return
+        }
+        guard let controller = viewController else {
+            sendError(command, code: Constants.codeInternalError, message: "logScreenLayout: no view controller")
+            return
+        }
+        // The delay crosses the bridge in milliseconds; the SDK's `andDelay:` takes seconds.
+        // With no delay the SDK captures synchronously, which is fine: plugin calls arrive on main.
+        let delayMs = (command.argument(at: 1) as? NSNumber)?.doubleValue ?? 0
+        let ok: Bool
+        if delayMs > 0 {
+            ok = ConnectCustomEvent().logScreenLayout(with: controller, andDelay: delayMs / 1000.0, andName: name)
+        } else {
+            ok = ConnectCustomEvent().logScreenLayout(with: controller, andName: name)
+        }
+        if ok {
+            sendSuccess(command)
+        } else {
+            sendError(command, code: Constants.codeInternalError, message: "logScreenLayout returned false")
+        }
+    }
+
+    /// JS: `AcousticConnect.logLocation()`
+    @objc(logLocation:)
+    func logLocation(command: CDVInvokedUrlCommand) {
+        if ConnectCustomEvent().logLocation(nil) {
+            sendSuccess(command)
+        } else {
+            sendError(command, code: Constants.codeInternalError, message: "logLocation returned false")
+        }
+    }
+
+    /// JS: `AcousticConnect.logLocationUpdate(latitude, longitude, level?)`
+    @objc(logLocationUpdate:)
+    func logLocationUpdate(command: CDVInvokedUrlCommand) {
+        guard let latitude = (command.argument(at: 0) as? NSNumber)?.doubleValue, (-90.0...90.0).contains(latitude),
+              let longitude = (command.argument(at: 1) as? NSNumber)?.doubleValue, (-180.0...180.0).contains(longitude)
+        else {
+            sendError(command, code: Constants.codeInvalidArgs,
+                      message: "logLocationUpdate: latitude/longitude out of range")
+            return
+        }
+        let level = mapMonitoringLevel((command.argument(at: 2) as? NSNumber)?.intValue ?? 3)
+        if ConnectCustomEvent().logLocationUpdate(withLatitude: latitude, longitude: longitude, level: level) {
+            sendSuccess(command)
+        } else {
+            sendError(command, code: Constants.codeInternalError, message: "logLocationUpdate returned false")
         }
     }
 
@@ -269,6 +557,18 @@ public class ConnectPlugin: CDVPlugin {
     /// Currently applies:
     ///   useRelease=false → setenv CONNECT_DEBUG / TLF_DEBUG / EODebug = "1"
     ///     Enables verbose SDK logging when building against AcousticConnectDebug.
+    ///   killSwitchEnabled / killSwitchUrl → stored for applyKillSwitchConfig() to apply
+    ///     around enable(). Default false/nil — the SDK's own bundled plist default is
+    ///     `true`, so apps must opt in explicitly via ConnectConfig.json.
+    ///   locationLoggingEnabled → stored for applyLocationLoggingConfig() to apply once,
+    ///     before enable(). nil (not configured) means the SDK's own bundled default is
+    ///     left untouched — unlike killSwitchEnabled, this plugin does not force a
+    ///     default either way for location data collection.
+    ///   screenCaptureEnabled → stored for applyScreenCaptureConfig() to apply once,
+    ///     right after enable(). nil (not configured) leaves the SDK default (capture on).
+    ///   layoutConfigIos → the resolved AutoLayout / AppendMapIds rules, stored for
+    ///     applyLayoutConfig() to apply right after enable(). nil leaves the SDK's bundled
+    ///     layout config untouched.
     private func applyRuntimeConfig() {
         guard let url = Bundle.main.url(forResource: "AcousticConnectNativeConfig",
                                          withExtension: "json",
@@ -293,6 +593,116 @@ public class ConnectPlugin: CDVPlugin {
             NSLog("[AcousticConnect] useRelease=false — enabled verbose native SDK logging (CONNECT_DEBUG/TLF_DEBUG/EODebug)")
         }
         #endif
+
+        killSwitchEnabled = config["killSwitchEnabled"] as? Bool ?? false
+        killSwitchUrl = config["killSwitchUrl"] as? String
+        // config["locationLoggingEnabled"] is JSON `null` when not configured, which
+        // JSONSerialization surfaces as NSNull, not Swift nil — `as? Bool` correctly
+        // yields nil for both "absent" and "explicit null" cases.
+        locationLoggingEnabled = config["locationLoggingEnabled"] as? Bool
+        // Same JSON-null handling as locationLoggingEnabled above.
+        screenCaptureEnabled = config["screenCaptureEnabled"] as? Bool
+        // JSON null (not configured) surfaces as NSNull, which `as? [String: Any]` maps to nil.
+        layoutConfigIos = config["layoutConfigIos"] as? [String: Any]
+    }
+
+    /// Applies the configured kill-switch state to the SDK. Called once, before
+    /// `ConnectSDK.shared.enable(...)` in `enable()`, to override the bundled
+    /// plist's default (`KillSwitchEnabled=true`) ahead of it.
+    private func applyKillSwitchConfig() {
+        ConnectSDK.shared.setConfigurableItem("KillSwitchEnabled", value: killSwitchEnabled)
+        if killSwitchEnabled, let url = killSwitchUrl, !url.isEmpty {
+            ConnectSDK.shared.setKillSwitchURL(url)
+        }
+    }
+
+    /// Applies the configured location-logging state to the SDK, once, before
+    /// `ConnectSDK.shared.enable(...)` — a no-op unless the app has explicitly opted
+    /// in or out via `ConnectConfig.json`'s `LocationLoggingEnabled`.
+    ///
+    /// Unlike `applyKillSwitchConfig()`, this is NOT re-applied after `enable()`:
+    /// `LogLocationEnabled` gates whether the SDK starts its location task, checked
+    /// once as part of `enable()` itself (see the Android-side equivalent,
+    /// `TLF_LOG_LOCATION_ENABLED`, read once inside `Tealeaf.java`'s `enable(String)`)
+    /// — there's no evidence of a delayed reset the way `KillSwitchEnabled` has, so a
+    /// single pre-enable apply is sufficient.
+    ///
+    /// Note: this only stops location data reaching the collector. It does NOT remove
+    /// `CoreLocation` linkage from the compiled `AcousticConnect` xcframework, so on its
+    /// own it does not resolve Apple's ITMS-90683 App Store warning (missing
+    /// `NSLocationWhenInUseUsageDescription`) — that needs either the Info.plist key
+    /// declared, or an SDK-side build variant that doesn't link CoreLocation at all.
+    private func applyLocationLoggingConfig() {
+        guard let locationLoggingEnabled else { return }
+        ConnectSDK.shared.setConfigurableItem("LogLocationEnabled", value: locationLoggingEnabled)
+    }
+
+    /// Applies the layout rules resolved from `ConnectConfig.json`'s `layoutConfig` and
+    /// `layoutConfigIos` (shared baseline with the iOS block deep-merged over it, done at
+    /// prepare time). Each section the app supplied (`AutoLayout`, `AppendMapIds`) is
+    /// deep-merged over the one the SDK has in effect: nested dictionaries merge, arrays and
+    /// scalars from the app replace the SDK's. A section the app did not supply is left
+    /// alone. nil (nothing configured) is a no-op.
+    ///
+    /// Merging rather than replacing means a partial block (for example only
+    /// `GlobalScreenSettings.CaptureLayoutOn`) cannot discard the SDK's other rules; a
+    /// replacing partial block was observed to also stop screen views (verified on a simulator).
+    ///
+    /// Must run after `enable()`: applied earlier, the SDK reloads its bundled layout
+    /// config during enable() and the override is lost (verified on a simulator).
+    private func applyLayoutConfig() {
+        guard let layoutConfigIos else { return }
+        let helper = ConnectApplicationHelper.sharedInstance()
+        for key in ["AutoLayout", "AppendMapIds"] {
+            guard let override = layoutConfigIos[key] as? [String: Any] else { continue }
+            let effective = helper.value(forConfigurableItem: key) as? [String: Any] ?? [:]
+            if !helper.setConfigurableItem(key, value: deepMerging(effective, override)) {
+                NSLog("[AcousticConnect] applyLayoutConfig: setConfigurableItem(\(key)) was rejected — SDK default kept")
+            }
+        }
+    }
+
+    /// Recursively merges `override` over `base` into a new dictionary: dictionaries present
+    /// on both sides merge key by key; anything else from `override` (arrays, scalars, a
+    /// dictionary where `base` has none) replaces the base value.
+    private func deepMerging(_ base: [String: Any], _ override: [String: Any]) -> [String: Any] {
+        var result = base
+        for (key, value) in override {
+            if let overrideDict = value as? [String: Any], let baseDict = base[key] as? [String: Any] {
+                result[key] = deepMerging(baseDict, overrideDict)
+            } else {
+                result[key] = value
+            }
+        }
+        return result
+    }
+
+    /// Applies the app's screen-capture choice from `ConnectConfig.json`'s
+    /// `ScreenCaptureEnabled`. Only an explicit `false` does anything: nil (not
+    /// configured) and `true` leave the SDK's own default (layout and screenshot
+    /// captured on every screen); this plugin does not force a value.
+    ///
+    /// Opting out sets `GlobalScreenSettings.CaptureLayoutOn = 0` on the SDK's effective
+    /// `AutoLayout` block. Verified on an iOS 26 simulator against the debug pod: the
+    /// layout message (type 10) and its screenshot stop, while screen views keep flowing.
+    /// The effective block is read back and only that one key changed, so the SDK's
+    /// masking and per-screen rules are preserved.
+    ///
+    /// Not used on purpose: `DisableAutoInstrumentation` also drops automatic screen
+    /// views, and neither `GetImageDataOnScreenLayout=false` nor
+    /// `GlobalScreenSettings.ScreenShot=false` had any effect on the first captured
+    /// screen. Must run after `enable()` — applied before it, the setting is lost.
+    private func applyScreenCaptureConfig() {
+        guard let screenCaptureEnabled else { return }
+        guard !screenCaptureEnabled else { return }
+        let helper = ConnectApplicationHelper.sharedInstance()
+        var autoLayout = helper.value(forConfigurableItem: "AutoLayout") as? [String: Any] ?? [:]
+        var globalSettings = autoLayout["GlobalScreenSettings"] as? [String: Any] ?? [:]
+        globalSettings["CaptureLayoutOn"] = 0
+        autoLayout["GlobalScreenSettings"] = globalSettings
+        if !helper.setConfigurableItem("AutoLayout", value: autoLayout) {
+            NSLog("[AcousticConnect] applyScreenCaptureConfig: setConfigurableItem(AutoLayout) was rejected — screen capture left at the SDK default")
+        }
     }
 
     // MARK: - Helpers

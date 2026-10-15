@@ -1,0 +1,62 @@
+Acoustic Connect for Capacitor
+
+First beta of the Capacitor plugin (`capacitor-acoustic-connect`). Requires
+Capacitor 8 and Node 22 or newer.
+
+New Features
+
+- Analytics API: `enable`, `disable`, `setLogLevel`, `logIdentity`,
+  `getSdkVersion`, `isSdkEnabled`, `flushQueues`, `setCurrentScreenName`,
+  `logCustomEvent`, `logClickEvent`, `logTextChangeEvent`, `logSignal`,
+  `logExceptionEvent`, `logScreenViewContextLoad`, `logScreenViewContextUnload`,
+  `logScreenLayout`, `setConfigItem` and `getConfigItem`, with TypeScript types. Text passed to
+  `logTextChangeEvent` is masked by default
+- Configuration in the `AcousticConnect` block of `capacitor.config`: with
+  `appKey` and `postMessageUrl` set, the SDK starts when the app launches, so
+  the first screen is captured (`autoEnable: false` starts it only from
+  `enable()`)
+- Config options: `useRelease`, `androidVersion`/`iosVersion` to pin a Connect
+  SDK version, `killSwitchEnabled`/`killSwitchUrl`, `locationLoggingEnabled`,
+  `screenCaptureEnabled`, and `layoutConfig`, `layoutConfigIos` and
+  `layoutConfigAndroid` for screen-capture rules
+- Opt-in push (`pushEnabled`, off by default): Android uses the Connect FCM push
+  artifact and Firebase Messaging, iOS runs the SDK with push. Without it
+  Android builds with the analytics-only artifact and needs no Firebase
+- `AcousticConnect.push` API: `requestPermission`, `getPermissionState`, and, for
+  iOS manual push mode (`iosPushMode: 'manual'`), `didRegisterWithToken`,
+  `didFailToRegister`, `didReceiveNotification` and `didReceiveResponse`
+- iOS rich push: `npx acoustic-connect setup-ios-push` adds the Notification
+  Service and Content extensions to the Xcode project of a Swift Package Manager
+  app. The extensions take the host app's version, as the App Store requires
+- `npx acoustic-connect doctor` checks the app's config, Android and iOS
+  projects and reports what would go wrong at build time or on the device
+- iOS links the Connect SDK through Swift Package Manager or CocoaPods
+- Sample apps: DemoCapacitor and an Angular + Ionic app, with end-to-end checks
+  of what the plugin sends
+
+Known Issues
+
+- A notification arriving and being tapped has not been checked with a real push
+  on a real device. Registration is checked on the Android emulator and the iOS
+  simulator
+- Rich push has not been received on a real device (the iOS simulator does not
+  show rich media), and the extensions of an app that uses CocoaPods have to be
+  added by hand: `setup-ios-push` covers Swift Package Manager apps only
+- The manual push calls (`didRegisterWithToken` and the others) are checked with
+  a fake SDK, not against a real push
+- `iosVersion` applies only to apps that use CocoaPods; with Swift Package
+  Manager the plugin's `Package.swift` takes the newest 2.x from 2.1.51
+- Native masking rules do not reach the page: the SDK sees the WebView as one
+  control. Use `screenCaptureEnabled: false` to keep page content out of
+  captures
+- With Swift Package Manager the app needs a Run Script build phase that copies
+  `ConnectResources.bundle` into the app root; without it the SDK sends only part
+  of its data (see the README)
+
+Our environment for this release:
+
+- Xcode 26.5
+- MacOS 26.5
+- Capacitor 8, Node 22
+- iOS 15.1 or newer (Connect iOS SDK 2.1.51 or newer, floating)
+- Android minSdk 26, SDK 36 (Connect Android SDK 11.1.17)
