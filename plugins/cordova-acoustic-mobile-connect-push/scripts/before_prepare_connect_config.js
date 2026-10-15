@@ -199,14 +199,15 @@ module.exports = function (context) {
     }
     const killSwitchEnabled = connect.KillSwitchEnabled === true;
 
-    if (connect.LocationLoggingEnabled !== undefined && typeof connect.LocationLoggingEnabled !== 'boolean') {
+    if (connect.LocationLoggingEnabled !== undefined && connect.LocationLoggingEnabled !== null &&
+            typeof connect.LocationLoggingEnabled !== 'boolean') {
         throw new Error('ConnectConfig.json: Connect.LocationLoggingEnabled must be a boolean (got ' + typeof connect.LocationLoggingEnabled + ')');
     }
     // Tri-state, unlike killSwitchEnabled/useRelease: null means "not configured,
     // leave the native SDK's own default alone" — this plugin does not decide
     // whether location data collection is on or off unless the app explicitly
     // opts in either direction.
-    const locationLoggingEnabled = connect.LocationLoggingEnabled === undefined
+    const locationLoggingEnabled = (connect.LocationLoggingEnabled === undefined || connect.LocationLoggingEnabled === null)
         ? null
         : connect.LocationLoggingEnabled;
 

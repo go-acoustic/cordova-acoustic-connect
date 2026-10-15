@@ -112,8 +112,6 @@ The stage is new, so it is deliberately cautious:
 - Builds queue for the simulator (`lock(resource: 'ios-simulator-e2e')`) instead of sharing it.
 - Every run logs `E2E Verification took <n>s`, so the duration and the pass rate can be read from the build history.
 
-The `E2E Verification` stage of the `Jenkinsfile` runs after `Test` and before any publish stage, on the `aws_mac` agent: it clones the sink over SSH, picks an iOS simulator with `node ../../e2e/core/pick-simulator.js` (a booted iPhone first, otherwise the newest iOS runtime), runs `node e2e/run.js --platform ios` with the `default` phase, archives `e2e/evidence/**` and shuts the simulator down. A runner exit code `1` (FAIL) fails the build; `2` (INCONCLUSIVE, no evidence) marks it unstable. Turn the stage off for one build with the `RUN_E2E` parameter. Only iOS runs in CI; Android and the other capture phases are run by hand. A second step of the same stage runs the Capacitor example app's e2e (`applications/DemoCapacitor/e2e`) the same way, with this checkout's plugin installed into the app.
-
 **What it changes on your machine**
 
 - The app on the emulator or simulator is replaced by the e2e build (it points at the sink). Install the normal build again afterwards.

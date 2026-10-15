@@ -279,6 +279,12 @@ describe('AcousticConnectNativeConfig.json generation (locationLoggingEnabled, b
         expect(readNativeConfig(tmpDir).locationLoggingEnabled).toBeNull();
     });
 
+    it('treats an explicit null like an omitted field (the README says so, as for ScreenCaptureEnabled)', () => {
+        writeConfig(tmpDir, { Connect: { ...VALID_CONFIG.Connect, LocationLoggingEnabled: null } });
+        hook(makeContext(tmpDir));
+        expect(readNativeConfig(tmpDir).locationLoggingEnabled).toBeNull();
+    });
+
     it('writes locationLoggingEnabled=false when explicitly opted out', () => {
         writeConfig(tmpDir, { Connect: { ...VALID_CONFIG.Connect, LocationLoggingEnabled: false } });
         hook(makeContext(tmpDir));
@@ -522,5 +528,23 @@ describe('layout config (layoutConfig / layoutConfigIos / layoutConfigAndroid)',
         hook(makeContext(tmpDir));
         expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('replaces the Android SDK'));
         warn.mockRestore();
+    });
+});
+
+describe('the example ConnectConfig.json of the Demo', () => {
+    // A developer copies it (Jenkins does too), so every setting in it must be one the hook accepts.
+    const EXAMPLE = path.join(__dirname, '..', '..', '..', 'applications', 'Demo', 'ConnectConfig.example.json');
+
+    it('is accepted by the hook and leaves the optional settings it does not list unset', () => {
+        // This test reads a file outside the plugin (the Demo app next to it in the repository), so say plainly what is missing.
+        if (!fs.existsSync(EXAMPLE)) {
+            throw new Error('the Demo example config was not found at ' + EXAMPLE + ': this test needs the whole repository (applications/Demo), not the plugin folder alone');
+        }
+        fs.copyFileSync(EXAMPLE, path.join(tmpDir, 'ConnectConfig.json'));
+        hook(makeContext(tmpDir));
+        const native = readNativeConfig(tmpDir);
+        expect(native.locationLoggingEnabled).toBeNull();
+        expect(native.layoutConfigIos).toBeNull();
+        expect(native.layoutConfigAndroid).toBeNull();
     });
 });

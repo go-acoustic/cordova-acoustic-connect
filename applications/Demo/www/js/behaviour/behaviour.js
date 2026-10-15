@@ -60,7 +60,6 @@
 
     function featureBody(id, c) {
         var line = el('p', 'result-line');
-        var A = function () { return api(); };
         if (id === 'taps') {
             var count = el('p', 'card-text', 'Taps: 0');
             c.appendChild(count);
@@ -133,7 +132,6 @@
                 });
             }, true));
         }
-        void A;
         c.appendChild(line);
     }
 
