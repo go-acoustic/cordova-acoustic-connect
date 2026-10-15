@@ -12,6 +12,8 @@
     <allow-intent href="https://*/*" />
     <preference name="android-minSdkVersion" value="26" />
 
+    <!-- the shared e2e scenario (../../e2e/core/scenario.js) into www/js/e2e, where index.html loads it -->
+    <hook type="before_prepare" src="hooks/before_prepare_e2e_scenario.js" />
     <!-- e2e only: acts while `node e2e/prepare.js prepare` is active, for every platform -->
     <hook type="after_prepare" src="hooks/after_prepare_e2e.js" />
 

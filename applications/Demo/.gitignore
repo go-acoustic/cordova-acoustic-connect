@@ -42,3 +42,6 @@ node_modules/
 
 # e2e run output: raw collector captures and results (can hold app data)
 /e2e/evidence/
+
+# generated before every prepare from the shared e2e scenario (hooks/before_prepare_e2e_scenario.js)
+/www/js/e2e/scenario.js

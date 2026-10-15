@@ -4,7 +4,7 @@ import { AcousticConnect } from 'capacitor-acoustic-connect-beta';
  * Runs the wire-verification scenario inside the app when it is built for it (`E2E_BUILD`, set by `npm run e2e:android`
  * and `npm run e2e:ios`), then reports the outcome the way the runner reads it: one `E2E_DONE ...` console line and a
  * hidden `<div id="e2eDone" data-status="...">`. The scenario is the Cordova Demo's, shared with DemoCapacitor
- * (applications/Demo/www/js/e2e/scenario.js), so the calls and the wire checks (DemoCapacitor/e2e/suite.js) are one list.
+ * (e2e/core/scenario.js), so the calls and the wire checks (DemoCapacitor/e2e/suite.js) are one list.
  * A normal build does not contain this file.
  */
 
@@ -40,11 +40,11 @@ export async function startE2e(): Promise<void> {
     // The scenario lives in the Cordova demo, so this import breaks if the repository layout changes: say so on the line the
     // runner reads. The file is a UMD: the bundler may expose it as the module's default or leave it on window.
     // @ts-ignore: a plain JavaScript file with no types
-    const loaded = await import('../../../Demo/www/js/e2e/scenario.js');
+    const loaded = await import('../../../../e2e/core/scenario.js');
     scenario = (loaded.default ?? (window as unknown as { E2EScenario?: Scenario }).E2EScenario) as Scenario | undefined;
     if (!scenario) throw new Error('the module does not expose E2EScenario');
   } catch (error) {
-    console.log('E2E_ERROR the scenario (applications/Demo/www/js/e2e/scenario.js) could not be loaded: ' + (error as Error).message);
+    console.log('E2E_ERROR the scenario (e2e/core/scenario.js) could not be loaded: ' + (error as Error).message);
     finish(null, { ok: false, scenarioLoadFailed: true, failed: 0, unavailable: 0, results: [] });
     return;
   }

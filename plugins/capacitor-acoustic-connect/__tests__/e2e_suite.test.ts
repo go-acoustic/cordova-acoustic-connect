@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-var-requires */
-const cordova = require('../../../applications/Demo/e2e/suite.js');
 const { buildSuite, PHASES } = require('../../../applications/DemoCapacitor/e2e/suite.js');
+const scenario = require('../../../e2e/core/scenario.js');
+const cordova = require('../../../e2e/core/suite.js');
 
 type Row = {
   name: string;
@@ -13,7 +14,6 @@ type Row = {
   na?: string;
 };
 
-const scenario = require('../../../applications/Demo/www/js/e2e/scenario.js');
 // steps for APIs only the Cordova plugin has (OPTIONAL_STEP_IDS) are left out of the Capacitor suite
 const forCapacitor = (rows: Row[]) =>
   rows.filter((r) => !scenario.OPTIONAL_STEP_IDS.some((id: string) => r.name.startsWith(id + ':')));

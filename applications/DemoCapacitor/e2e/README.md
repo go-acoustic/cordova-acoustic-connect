@@ -1,6 +1,6 @@
 # Wire verification
 
-Runs the release-verification scenario (the same one the Cordova demo runs, so the calls and the checks
+Runs the release-verification scenario (the shared one in [`../../../e2e/core`](../../../e2e/README.md), which the Cordova demo runs too, so the calls and the checks
 are one list) in the DemoCapacitor app, collects what the SDK posts in a local collector sink, and asserts on it
 with the release-verification engine. Exit code: 0 PASS, 1 FAIL, 2 INCONCLUSIVE; the report is written to
 `e2e/evidence/<run>/results-<platform>.md` (git-ignored).

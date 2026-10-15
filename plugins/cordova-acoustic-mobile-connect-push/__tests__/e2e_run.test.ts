@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 2026 Acoustic, L.P. All rights reserved.
  *
- * Unit tests for the e2e runner (applications/Demo/e2e/{commands,report,run}.js).
+ * Unit tests for the e2e runner (e2e/core/{commands,report,wait}.js and applications/Demo/e2e/run.js).
  *
  * The runner drives a real build, a device and a collector sink, so every side effect goes
  * through an injected dependency. These tests use fakes: they pin the order of the steps,
@@ -11,10 +11,11 @@
 import { join } from 'path';
 
 const E2E = join(__dirname, '..', '..', '..', 'applications', 'Demo', 'e2e');
+const CORE = join(__dirname, '..', '..', '..', 'e2e', 'core');
 
 /* eslint-disable @typescript-eslint/no-var-requires */
-const commands = require(join(E2E, 'commands.js'));
-const report = require(join(E2E, 'report.js'));
+const commands = require(join(CORE, 'commands.js'));
+const report = require(join(CORE, 'report.js'));
 const runner = require(join(E2E, 'run.js'));
 /* eslint-enable @typescript-eslint/no-var-requires */
 

@@ -4,15 +4,15 @@
  * Copyright (C) 2026 Acoustic, L.P. All rights reserved.
  *
  * The wire expectations for the Capacitor plugin: the Cordova e2e scenario
- * (applications/Demo/www/js/e2e/scenario.js), which the example app also runs, so the calls and
+ * (e2e/core/scenario.js), which the example app also runs, so the calls and
  * the checks stay one list. Two rows differ for this plugin:
  *   - the exception is named after the plugin ("Capacitor Plugin");
  *   - the layout row is not applicable when layout capture is off (see LAYOUT_OFF_REASON);
  *   - the push registration row (type 22) is not applicable when push is off or Android has no Firebase config.
  */
 
-const cordova = require('../../Demo/e2e/suite.js');
-const scenario = require('../../Demo/www/js/e2e/scenario.js');
+const cordova = require('../../../e2e/core/suite.js');
+const scenario = require('../../../e2e/core/scenario.js');
 
 const PLATFORMS = ['android', 'ios'];
 

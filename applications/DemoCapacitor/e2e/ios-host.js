@@ -53,9 +53,9 @@ function prepareIosHost(dir) {
     fs.copyFileSync(path.join(exampleRoot, 'capacitor.config.json'), path.join(dir, 'capacitor.config.json'));
 
     // the scenario is imported by a path relative to the example app; the host sits elsewhere
-    const scenario = path.resolve(exampleRoot, '..', 'Demo', 'www', 'js', 'e2e', 'scenario.js');
+    const scenario = path.resolve(exampleRoot, '..', '..', 'e2e', 'core', 'scenario.js');
     patchFile(path.join(dir, 'src', 'js', 'e2e.js'), function (text) {
-        return text.replace(/'\.\.\/\.\.\/\.\.\/Demo\/www\/js\/e2e\/scenario\.js'/, JSON.stringify(scenario));
+        return text.replace(/'\.\.\/\.\.\/\.\.\/\.\.\/e2e\/core\/scenario\.js'/, JSON.stringify(scenario));
     });
 
     run('npm', ['install'], dir);

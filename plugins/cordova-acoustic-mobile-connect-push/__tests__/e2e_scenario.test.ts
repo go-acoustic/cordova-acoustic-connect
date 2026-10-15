@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 2026 Acoustic, L.P. All rights reserved.
  *
- * Unit tests for the Demo app's e2e scenario (applications/Demo/www/js/e2e/scenario.js).
+ * Unit tests for the Demo app's e2e scenario (e2e/core/scenario.js).
  *
  * The scenario is the single source of truth for the release-verification e2e run:
  * it lists the plugin calls to make AND the wire messages each one must produce, so
@@ -13,7 +13,7 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import * as vm from 'vm';
 
-const SCENARIO_PATH = join(__dirname, '..', '..', '..', 'applications', 'Demo', 'www', 'js', 'e2e', 'scenario.js');
+const SCENARIO_PATH = join(__dirname, '..', '..', '..', 'e2e', 'core', 'scenario.js');
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const scenario = require(SCENARIO_PATH);

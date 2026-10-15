@@ -8,7 +8,7 @@
  * (.claude/skills/release-verification/scripts/assert-messages.mjs, `suite --file`)
  * from the e2e scenario's wire expectations, so the checks cannot drift from the calls.
  *
- *   node e2e/suite.js --platform android|ios [--phase default] [--out suite.json]
+ *   node e2e/core/suite.js --platform android|ios [--phase default] [--out suite.json]
  *
  * The scenario's expectations are platform-neutral. Two things differ per platform and
  * are decided here:
@@ -20,7 +20,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const scenario = require('../www/js/e2e/scenario.js');
+const scenario = require('./scenario.js');
 
 const PLATFORMS = ['android', 'ios'];
 

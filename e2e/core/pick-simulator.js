@@ -6,7 +6,7 @@
  *
  * Prints the udid of the iOS simulator the e2e run should use, for the CI stage:
  *
- *   UDID=$(node e2e/pick-simulator.js)
+ *   UDID=$(node e2e/core/pick-simulator.js)
  *
  * Only the udid goes to stdout; a problem goes to stderr with exit code 2.
  */

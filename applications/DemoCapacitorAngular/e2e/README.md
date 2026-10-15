@@ -1,7 +1,7 @@
 # Wire verification (e2e) of DemoCapacitorAngular
 
 This app has no runner of its own. It uses the one of [`../../DemoCapacitor/e2e`](../../DemoCapacitor/e2e/README.md) (`run.js --app .`), which runs the
-Cordova demo's scenario and the same checks, against a local collector sink, on an Android device or emulator or an iOS simulator.
+shared scenario ([`../../../e2e/core`](../../../e2e/README.md)) and the same checks, against a local collector sink, on an Android device or emulator or an iOS simulator.
 
 ```bash
 npm run e2e:android -- --device emulator-5554          # builds with ng build --define E2E_BUILD=true, runs, asserts

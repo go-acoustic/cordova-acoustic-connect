@@ -27,11 +27,12 @@ const path = require('path');
 const { spawn } = require('child_process');
 const { pathToFileURL } = require('url');
 const prepareModule = require('./prepare.js');
-const suite = require('./suite.js');
-const commands = require('./commands.js');
-const report = require('./report.js');
+const core = path.join(__dirname, '..', '..', '..', 'e2e', 'core');
+const suite = require(path.join(core, 'suite.js'));
+const commands = require(path.join(core, 'commands.js'));
+const report = require(path.join(core, 'report.js'));
+const { waitForDone, waitForSink } = require(path.join(core, 'wait.js'));
 
-const POLL_SEC = 5;
 const BUILD_TIMEOUT_MS = 20 * 60 * 1000;
 const DEFAULT_SINK_REPO = path.join(process.env.HOME || '', 'AndroidStudioProjects', 'server_tests', 'ac-sdk-mobile-interceptor');
 
@@ -93,35 +94,6 @@ function tail(text, lines) {
     return String(text || '').trim().split('\n').slice(-lines).join(' | ');
 }
 
-// Polls the app log until it says it is done, or the time is up. Where the log cannot be
-// read (an iOS WKWebView console usually is not in the system log) the whole time is
-// simply waited, which is the fixed wait the scenario needs anyway.
-async function waitForDone(readLogs, totalSec, deps) {
-    let elapsed = 0;
-    for (;;) {
-        const logs = await readLogs();
-        const done = commands.parseDoneLine(logs);
-        if (done || elapsed >= totalSec) return { done: done, logs: logs };
-        await deps.sleep(POLL_SEC * 1000);
-        elapsed += POLL_SEC;
-    }
-}
-
-// The SDK posts in batches, so one read can miss late ones: wait until the count has not
-// changed for two reads in a row (two flush cycles), or give up and say so.
-async function waitForSink(sink, maxSec, deps) {
-    let last = -1;
-    let stable = 0;
-    let elapsed = 0;
-    for (;;) {
-        const messages = await sink.messages();
-        if (messages.length === last) stable += 1; else { stable = 0; last = messages.length; }
-        if (stable >= 2) return { messages: messages, settled: true };
-        if (elapsed >= maxSec) return { messages: messages, settled: false };
-        await deps.sleep(POLL_SEC * 1000);
-        elapsed += POLL_SEC;
-    }
-}
 
 async function runStep(deps, label, command, options) {
     const result = await deps.exec(command[0], command[1], options);

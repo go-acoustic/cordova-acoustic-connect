@@ -14,7 +14,7 @@
  * 10.0.2.2:9877), builds the example app with the scenario switched on (VITE_E2E=1), installs and
  * launches it, waits for the app's E2E_DONE line, sends the app through the background so the SDK
  * posts its queue, waits for the sink to settle, and runs the release-verification assertion engine
- * on what arrived. The scenario and the checks are the Cordova ones (e2e/suite.js).
+ * on what arrived. The scenario and the checks are the shared ones (e2e/core).
  *
  * The app's capacitor.config.json is swapped for the run (the SDK pointed at the sink) and put back afterwards, see
  * e2e/config.js; `node e2e/run.js restore` puts it back after a run that was killed.
@@ -49,10 +49,10 @@ function webBuildCommand(root, e2e) {
     }
     return { command: 'npx', args: ['vite', 'build'], env: e2e ? { VITE_E2E: '1' } : {} };
 }
-const demoE2e = path.join(repoRoot, 'applications', 'Demo', 'e2e');
-const commands = require(path.join(demoE2e, 'commands.js'));
-const report = require(path.join(demoE2e, 'report.js'));
-const cordovaRun = require(path.join(demoE2e, 'run.js'));
+const core = path.join(repoRoot, 'e2e', 'core');
+const commands = require(path.join(core, 'commands.js'));
+const report = require(path.join(core, 'report.js'));
+const waits = require(path.join(core, 'wait.js'));
 const suite = require('./suite.js');
 const appConfig = require('./config.js');
 const iosHost = require('./ios-host.js');
@@ -323,7 +323,7 @@ async function runPrepared(opts) {
         await sink.reset();
 
         await step('launch', target.cmd.launch[0], target.cmd.launch[1]);
-        const waited = await cordovaRun.waitForDone(target.readLogs, opts.runWaitSec, { sleep: sleep });
+        const waited = await waits.waitForDone(target.readLogs, opts.runWaitSec, { sleep: sleep });
         done = waited.done;
 
         // the SDK posts its queue when the app goes to the background
@@ -334,7 +334,7 @@ async function runPrepared(opts) {
         await exec(target.cmd.home[0], target.cmd.home[1]);
         await sleep(opts.settleSec * 1000);
 
-        const collected = await cordovaRun.waitForSink(sink, opts.stableWaitSec, { sleep: sleep });
+        const collected = await waits.waitForSink(sink, opts.stableWaitSec, { sleep: sleep });
         messages = collected.messages;
         if (!collected.settled) notes.push('the message count did not settle within ' + opts.stableWaitSec + 's, so late batches may be missing');
 

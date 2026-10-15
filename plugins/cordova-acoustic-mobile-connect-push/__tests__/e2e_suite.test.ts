@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 2026 Acoustic, L.P. All rights reserved.
  *
- * Unit tests for the suite generator (applications/Demo/e2e/suite.js): the e2e scenario's
+ * Unit tests for the suite generator (e2e/core/suite.js): the e2e scenario's
  * wire expectations turned into a manifest for the release-verification assertion engine,
  * one per platform and capture phase.
  *
@@ -18,8 +18,8 @@ const DEMO = join(__dirname, '..', '..', '..', 'applications', 'Demo');
 const ENGINE = join(__dirname, '..', '..', '..', '.claude', 'skills', 'release-verification', 'scripts', 'assert-messages.mjs');
 
 /* eslint-disable @typescript-eslint/no-var-requires */
-const suite = require(join(DEMO, 'e2e', 'suite.js'));
-const scenario = require(join(DEMO, 'www', 'js', 'e2e', 'scenario.js'));
+const suite = require(join(DEMO, '..', '..', 'e2e', 'core', 'suite.js'));
+const scenario = require(join(DEMO, '..', '..', 'e2e', 'core', 'scenario.js'));
 /* eslint-enable @typescript-eslint/no-var-requires */
 
 type Row = Record<string, any>;

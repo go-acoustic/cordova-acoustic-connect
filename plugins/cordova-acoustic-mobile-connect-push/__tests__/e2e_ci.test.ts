@@ -2,7 +2,7 @@
  * Copyright (C) 2026 Acoustic, L.P. All rights reserved.
  *
  * Tests for running the e2e verification in Jenkins: the iOS simulator picker the CI
- * stage uses (applications/Demo/e2e/commands.js + pick-simulator.js) and the shape of the
+ * stage uses (e2e/core/commands.js + pick-simulator.js) and the shape of the
  * 'E2E Verification' stage in the Jenkinsfile.
  */
 
@@ -10,7 +10,7 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 
 const ROOT = join(__dirname, '..', '..', '..');
-const E2E = join(ROOT, 'applications', 'Demo', 'e2e');
+const E2E = join(ROOT, 'e2e', 'core');
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const commands = require(join(E2E, 'commands.js'));
@@ -154,7 +154,7 @@ describe('Jenkinsfile: E2E Verification stage', () => {
     });
 
     it('runs the runner on an iOS simulator picked by the helper, with a time limit', () => {
-        expect(stage).toContain('e2e/pick-simulator.js');
+        expect(stage).toContain('e2e/core/pick-simulator.js');
         expect(stage).toContain('e2e/run.js --platform ios');
         expect(stage).toContain('--device');
         expect(stage).toMatch(/timeout\(time: \d+, unit: 'MINUTES'\)/);
@@ -219,3 +219,91 @@ describe('Jenkinsfile: build throttling', () => {
     });
 });
 
+
+describe('Jenkinsfile: Capacitor E2E Verification', () => {
+    const jenkins: string = readFileSync(join(ROOT, 'Jenkinsfile'), 'utf8');
+    const stageStart = jenkins.indexOf("stage('E2E Verification')");
+    const stageBlock = jenkins.slice(stageStart, jenkins.indexOf("stage('Publish Feature')"));
+    const fnStart = jenkins.indexOf('def runCapacitorE2eVerification()');
+    const fnBlock = fnStart === -1 ? '' : jenkins.slice(fnStart, jenkins.indexOf('def runCapacitorPluginTests()'));
+
+    it('finds the function, so the checks below do not pass on an empty text', () => {
+        expect(fnStart).toBeGreaterThan(-1);
+        expect(fnBlock.length).toBeGreaterThan(500);
+    });
+
+    it('runs in the E2E Verification stage, gated on the Capacitor build and the same decision as the Cordova one', () => {
+        expect(stageBlock).toContain('runCapacitorE2eVerification()');
+        expect(stageBlock).toMatch(/genBuild && runCapacitor && shouldRunE2e\(\)/);
+        // not blocking while it is new, with the same constant
+        const call = stageBlock.slice(0, stageBlock.indexOf('runCapacitorE2eVerification()'));
+        expect(call.lastIndexOf("catchError(buildResult: e2eBuildResult, stageResult: 'FAILURE')")).toBeGreaterThan(call.lastIndexOf('runE2eVerification()'));
+    });
+
+    it('runs the Capacitor runner on an iOS simulator picked by the shared helper', () => {
+        expect(fnBlock).toContain('e2e/core/pick-simulator.js');
+        expect(fnBlock).toContain('node e2e/run.js --platform ios');
+        expect(fnBlock).toContain('--sink-repo');
+        expect(jenkins).toMatch(/@Field def capacitorDemoDir\s*=\s*"applications\/DemoCapacitor"/);
+        expect(fnBlock).toContain('${capacitorDemoDir}');
+        expect(fnBlock).toMatch(/timeout\(time: \d+, unit: 'MINUTES'\)/);
+    });
+
+    it('tests this checkout\'s plugin, installed as a copy so the app and the plugin share one @capacitor/core', () => {
+        expect(fnBlock).toContain('npm run build');
+        expect(fnBlock).toContain("npm install --no-save --install-links 'file:../../${capacitorDir}'");
+        // built first, installed second, run last
+        expect(fnBlock.indexOf('npm run build')).toBeLessThan(fnBlock.indexOf('--install-links'));
+        expect(fnBlock.indexOf('--install-links')).toBeLessThan(fnBlock.indexOf('node e2e/run.js'));
+    });
+
+    it('uses Node 22 (nvm), which the Capacitor toolchain needs', () => {
+        expect(fnBlock).toContain('${useNode22}');
+    });
+
+    it('maps the runner exit codes like the Cordova stage: 1 is an error, 2 only marks the build unstable', () => {
+        expect(fnBlock).toContain('returnStatus: true');
+        expect(fnBlock).toMatch(/== 1[\s\S]*error\(/);
+        expect(fnBlock).toMatch(/== 2[\s\S]*unstable\(/);
+    });
+
+    it('shares the simulator lock, shuts the simulator down while holding it, and keeps the evidence', () => {
+        expect(fnBlock).toContain('lock(resource: e2eLock)');
+        expect(fnBlock.indexOf('lock(resource: e2eLock)')).toBeLessThan(fnBlock.indexOf('simctl shutdown'));
+        expect(fnBlock).toContain('archiveArtifacts');
+        expect(fnBlock).toContain('${capacitorDemoDir}/e2e/evidence/**');
+        expect(fnBlock.indexOf('took')).toBeGreaterThan(fnBlock.indexOf('finally'));
+    });
+
+    it('keeps the Capacitor evidence out of git', () => {
+        expect(readFileSync(join(ROOT, 'applications', 'DemoCapacitor', '.gitignore'), 'utf8')).toMatch(/e2e\/evidence/);
+    });
+});
+
+describe('Jenkinsfile: an aborted build does not publish', () => {
+    const jenkins: string = readFileSync(join(ROOT, 'Jenkinsfile'), 'utf8');
+    const stageBlock = (name: string) => {
+        const start = jenkins.indexOf(`stage('${name}')`);
+        return start === -1 ? '' : jenkins.slice(start, jenkins.indexOf('steps {', start));
+    };
+
+    it.each([
+        ['Publish Beta', "branch 'develop'"],
+        ['Publish Release', "branch 'main'"],
+    ])('%s needs its branch and a build that is not ABORTED', (name, branch) => {
+        const block = stageBlock(name);
+        expect(block.length).toBeGreaterThan(20);
+        expect(block).toContain(branch);
+        expect(block).toContain("expression { currentBuild.currentResult != 'ABORTED' }");
+        expect(block).toMatch(/allOf\s*\{/);
+    });
+
+    it('still publishes an UNSTABLE build (the e2e and Capacitor test steps are non-blocking on purpose)', () => {
+        expect(jenkins).not.toMatch(/currentResult\s*(==|!=)\s*'UNSTABLE'/);
+    });
+
+    it('keeps the e2e steps inside catchError, which is why the guard is needed', () => {
+        const e2e = jenkins.slice(jenkins.indexOf("stage('E2E Verification')"), jenkins.indexOf("stage('Publish Feature')"));
+        expect(e2e).toContain('catchError(buildResult: e2eBuildResult');
+    });
+});

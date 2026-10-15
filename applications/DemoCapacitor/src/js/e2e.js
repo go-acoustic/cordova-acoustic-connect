@@ -5,7 +5,7 @@
  * runner can read without touching the UI: one greppable `E2E_DONE ...` console line (logcat / os_log) and a hidden
  * `<div id="e2eDone" data-status="...">` marker. The same as the Cordova Demo's e2e.js.
  *
- * The scenario is the Cordova Demo's (applications/Demo/www/js/e2e/scenario.js), so the calls and the wire checks in
+ * The scenario is the shared one (e2e/core/scenario.js), so the calls and the wire checks in
  * e2e/suite.js come from one list. It is not part of a normal build: index.js imports this file only for VITE_E2E.
  */
 
@@ -37,11 +37,11 @@ async function start() {
         // The scenario lives in the sibling Cordova demo, so this import breaks if the repository layout changes.
         // Say so on the log line the runner reads, instead of leaving the run waiting for a result.
         // The file is a UMD: the bundler may expose it as the module's default or leave it on window.
-        const loaded = await import('../../../Demo/www/js/e2e/scenario.js');
+        const loaded = await import('../../../../e2e/core/scenario.js');
         scenario = loaded.default ?? window.E2EScenario;
         if (!scenario) throw new Error('the module does not expose E2EScenario');
     } catch (error) {
-        console.log('E2E_ERROR the scenario (applications/Demo/www/js/e2e/scenario.js) could not be loaded: ' + error.message);
+        console.log('E2E_ERROR the scenario (e2e/core/scenario.js) could not be loaded: ' + error.message);
         finish(null, { ok: false, noPlugin: true, failed: 0, unavailable: 0, results: [] });
         return;
     }

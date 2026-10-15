@@ -93,7 +93,7 @@ node e2e/run.js --platform android --device <serial> --plugin npm           # te
 1. Starts the sink on a free port and prepares the build (`e2e/prepare.js`): points `ConnectConfig.json` at the sink, switches the in-app scenario on in `www/js/e2e-config.js`, and lets the build talk to plain http (Android cleartext, iOS App Transport Security) through `hooks/after_prepare_e2e.js`.
 2. Switches the app to the plugin under test (`--plugin local`: the source in this repository, linked; `npm`: the published package), builds, installs, and launches it.
 3. Waits for the app to finish the scenario, then sends it through the background twice so the SDK posts its queue, and waits until the sink stops receiving.
-4. Builds the checks from the same scenario (`e2e/suite.js`) and runs the assertion engine on what arrived.
+4. Builds the checks from the same scenario (`e2e/core/suite.js`, the shared core: see [`../../e2e/README.md`](../../e2e/README.md)) and runs the assertion engine on what arrived.
 5. Writes `e2e/evidence/<timestamp>-<platform>-<phase>/`: `results-<platform>.md` (verdict, environment, one row per check, what was reverted), `messages.json`, `suite.json`, and the sink's raw `captures/`. This directory is gitignored because captures can hold app data.
 6. Always puts the Demo back: `ConnectConfig.json`, `e2e-config.js` and the patched platform file are restored byte for byte, and the sink and the app are stopped.
 
@@ -103,7 +103,7 @@ Extra `ConnectConfig.json` settings for one run go in `--connect-config '<json>'
 
 **In Jenkins**
 
-The `E2E Verification` stage of the `Jenkinsfile` runs after `Test` and before any publish stage, on the `aws_mac` agent: it clones the sink over SSH, picks an iOS simulator with `node e2e/pick-simulator.js` (a booted iPhone first, otherwise the newest iOS runtime), runs `node e2e/run.js --platform ios` with the `default` phase, archives `e2e/evidence/**` and shuts the simulator down. Only iOS runs in CI; Android and the other capture phases are run by hand.
+The `E2E Verification` stage of the `Jenkinsfile` runs after `Test` and before any publish stage, on the `aws_mac` agent: it clones the sink over SSH, picks an iOS simulator with `node ../../e2e/core/pick-simulator.js` (a booted iPhone first, otherwise the newest iOS runtime), runs `node e2e/run.js --platform ios` with the `default` phase, archives `e2e/evidence/**` and shuts the simulator down. Only iOS runs in CI; Android and the other capture phases are run by hand. A second step of the same stage runs the Capacitor example app's e2e (`applications/DemoCapacitor/e2e`) the same way, with this checkout's plugin installed into the app.
 
 The stage is new, so it is deliberately cautious:
 
@@ -112,7 +112,7 @@ The stage is new, so it is deliberately cautious:
 - Builds queue for the simulator (`lock(resource: 'ios-simulator-e2e')`) instead of sharing it.
 - Every run logs `E2E Verification took <n>s`, so the duration and the pass rate can be read from the build history.
 
-The `E2E Verification` stage of the `Jenkinsfile` runs after `Test` and before any publish stage, on the `aws_mac` agent: it clones the sink over SSH, picks an iOS simulator with `node e2e/pick-simulator.js` (a booted iPhone first, otherwise the newest iOS runtime), runs `node e2e/run.js --platform ios` with the `default` phase, archives `e2e/evidence/**` and shuts the simulator down. A runner exit code `1` (FAIL) fails the build; `2` (INCONCLUSIVE, no evidence) marks it unstable. Turn the stage off for one build with the `RUN_E2E` parameter. Only iOS runs in CI; Android and the other capture phases are run by hand.
+The `E2E Verification` stage of the `Jenkinsfile` runs after `Test` and before any publish stage, on the `aws_mac` agent: it clones the sink over SSH, picks an iOS simulator with `node ../../e2e/core/pick-simulator.js` (a booted iPhone first, otherwise the newest iOS runtime), runs `node e2e/run.js --platform ios` with the `default` phase, archives `e2e/evidence/**` and shuts the simulator down. A runner exit code `1` (FAIL) fails the build; `2` (INCONCLUSIVE, no evidence) marks it unstable. Turn the stage off for one build with the `RUN_E2E` parameter. Only iOS runs in CI; Android and the other capture phases are run by hand. A second step of the same stage runs the Capacitor example app's e2e (`applications/DemoCapacitor/e2e`) the same way, with this checkout's plugin installed into the app.
 
 **What it changes on your machine**
 
@@ -122,7 +122,7 @@ The `E2E Verification` stage of the `Jenkinsfile` runs after `Test` and before a
 
 **How the checks are chosen**
 
-The scenario (`www/js/e2e/scenario.js`) lists each call together with the wire message it must produce, so the calls and the checks cannot drift apart. The two platforms differ and the checks follow that: iOS nests custom-event and signal payloads (`data.value`, `signal.data.value`) and keeps JSON types, Android is flat and delivers custom-event values as strings; iOS sends a layout (type 10) and the Android SDK sends none, so that row is reported N/A with its reason instead of being dropped. An N/A row always carries a reason.
+The scenario (`e2e/core/scenario.js` at the repository root, copied into `www/js/e2e/` before every `cordova prepare` by `hooks/before_prepare_e2e_scenario.js`; the copy is git-ignored) lists each call together with the wire message it must produce, so the calls and the checks cannot drift apart. The two platforms differ and the checks follow that: iOS nests custom-event and signal payloads (`data.value`, `signal.data.value`) and keeps JSON types, Android is flat and delivers custom-event values as strings; iOS sends a layout (type 10) and the Android SDK sends none, so that row is reported N/A with its reason instead of being dropped. An N/A row always carries a reason.
 
 The capture phases are separate runs because they need different `ConnectConfig.json` settings: `default`, and on iOS `screen-capture-off` (`ScreenCaptureEnabled: false`) and `layout-config-off` (`layoutConfigIos` with `CaptureLayoutOn: 0`). Both must send no layout while the screen views the app logs itself stay. On Android the layout row is asserted too (the pinned SDK, 11.1.10-beta, sends it); the capture phases are not run there yet.
 
