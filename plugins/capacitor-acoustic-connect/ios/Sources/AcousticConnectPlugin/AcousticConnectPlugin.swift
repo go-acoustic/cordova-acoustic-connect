@@ -29,6 +29,7 @@ public class AcousticConnectPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "logExceptionEvent", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "logScreenViewContextLoad", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "logScreenViewContextUnload", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "logScreenLayout", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setConfigItem", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getConfigItem", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "pushDidReceiveNotification", returnType: CAPPluginReturnPromise),
@@ -55,7 +56,7 @@ public class AcousticConnectPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         #endif
         // The SDK is main-actor isolated and Capacitor loads plugins on the main thread.
-        let started = MainActor.assumeIsolated { AcousticConnect(sdk: ConnectSdkImpl(), config: config) }
+        let started = MainActor.assumeIsolated { AcousticConnect(sdk: ConnectSdkImpl(viewController: { [weak self] in self?.bridge?.viewController }), config: config) }
         connect = started
         // Started right here, not in a Task: the SDK has to be up before the first screen appears.
         let reply = LogReply()
@@ -125,6 +126,10 @@ public class AcousticConnectPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func logScreenViewContextUnload(_ call: CAPPluginCall) {
         withBridge(call) { connect, options, reply in connect.logScreenViewContextUnload(options, reply: reply) }
+    }
+
+    @objc func logScreenLayout(_ call: CAPPluginCall) {
+        withBridge(call) { connect, options, reply in connect.logScreenLayout(options, reply: reply) }
     }
 
     @objc func setConfigItem(_ call: CAPPluginCall) {

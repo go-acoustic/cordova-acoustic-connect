@@ -77,6 +77,12 @@ class FakeSdk : ConnectSdk {
         lastScreen = listOf(name, type, referrer)
         return accepts
     }
+    var lastLayout: List<Any?>? = null
+    override fun logScreenLayout(name: String, delayMs: Int?): Boolean {
+        record("logScreenLayout")
+        lastLayout = listOf(name, delayMs)
+        return accepts
+    }
     override fun logCustomEvent(name: String, values: Map<String, String>, level: Int): Boolean {
         record("logCustomEvent")
         lastCustom = Triple(name, values, level)
@@ -413,6 +419,29 @@ class AcousticConnectTest {
         sdk.accepts = true
         sdk.throwOnCall = IllegalStateException("boom")
         reply { connect.logScreenViewContextLoad(obj("""{"logicalPageName":"a"}"""), it) }.assertRejected("ACOUSTIC_INTERNAL_ERROR", "boom")
+    }
+
+    @Test fun logScreenLayout_passesTheNameAndTheDelay() {
+        reply { connect.logScreenLayout(obj("""{"name":" Home ","delayMs":300}"""), it) }
+        assertEquals(listOf("Home", 300), sdk.lastLayout)
+        reply { connect.logScreenLayout(obj("""{"name":"Home"}"""), it) }
+        assertEquals(listOf("Home", null), sdk.lastLayout)
+        reply { connect.logScreenLayout(obj("""{"name":"Home","delayMs":null}"""), it) }
+        assertEquals(listOf("Home", null), sdk.lastLayout)
+    }
+
+    @Test fun logScreenLayout_rejectsBlankNameNegativeDelayNoActivityDeclineAndThrow() {
+        reply { connect.logScreenLayout(obj("""{"name":" "}"""), it) }.assertRejected("ACOUSTIC_INVALID_ARGS", "logScreenLayout: name is required")
+        reply { connect.logScreenLayout(obj("""{"name":"Home","delayMs":-1}"""), it) }.assertRejected("ACOUSTIC_INVALID_ARGS", "delayMs")
+        assertNull(sdk.lastLayout)
+        uiAvailable = false
+        reply { connect.logScreenLayout(obj("""{"name":"Home"}"""), it) }.assertRejected("ACOUSTIC_INTERNAL_ERROR", "no foreground activity")
+        uiAvailable = true
+        sdk.accepts = false
+        reply { connect.logScreenLayout(obj("""{"name":"Home"}"""), it) }.assertRejected("ACOUSTIC_INTERNAL_ERROR", "logScreenLayout returned false")
+        sdk.accepts = true
+        sdk.throwOnCall = IllegalStateException("boom")
+        reply { connect.logScreenLayout(obj("""{"name":"Home"}"""), it) }.assertRejected("ACOUSTIC_INTERNAL_ERROR", "boom")
     }
 
     // config items

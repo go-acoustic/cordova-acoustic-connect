@@ -192,6 +192,14 @@ export function createAcousticConnect(native: AcousticConnectPlugin): AcousticCo
     logScreenViewContextLoad: screenViewContext('logScreenViewContextLoad'),
     logScreenViewContextUnload: screenViewContext('logScreenViewContextUnload'),
 
+    logScreenLayout(name, delayMs) {
+      if (!isNonEmptyString(name)) return invalid('logScreenLayout: name must be a non-empty string');
+      if (delayMs !== undefined && !isNonNegativeInteger(delayMs)) {
+        return invalid('logScreenLayout: delayMs must be a non-negative integer');
+      }
+      return native.logScreenLayout(delayMs === undefined ? { name } : { name, delayMs });
+    },
+
     setConfigItem(key, value, moduleName) {
       if (!isNonEmptyString(key)) return invalid('setConfigItem: key must be a non-empty string');
       if (!isFlatValue(value)) return invalid('setConfigItem: value must be a boolean, a string or a finite number');

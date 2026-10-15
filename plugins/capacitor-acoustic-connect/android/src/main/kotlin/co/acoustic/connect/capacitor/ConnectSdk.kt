@@ -64,6 +64,9 @@ interface ConnectSdk {
     /** Posts the queued events now; `flushQueues` only writes them to the cache. */
     fun flushImmediately()
     fun logScreenview(name: String, type: ScreenViewType, referrer: String?): Boolean
+
+    /** Captures the layout of the screen on display; `delayMs` null captures now. */
+    fun logScreenLayout(name: String, delayMs: Int?): Boolean
     fun logCustomEvent(name: String, values: Map<String, String>, level: Int): Boolean
     fun logSignal(values: Map<String, Any?>, level: Int): Boolean
     fun logException(message: String, stackInfo: String, unhandled: Boolean): Boolean
@@ -191,6 +194,11 @@ internal class ConnectSdkImpl(
             if (type == ScreenViewType.LOAD) ConnectScreenviewType.LOAD else ConnectScreenviewType.UNLOAD,
             referrer,
         )
+
+    override fun logScreenLayout(name: String, delayMs: Int?): Boolean {
+        val host = activity()
+        return if (delayMs == null) Connect.logScreenLayout(host, name) else Connect.logScreenLayout(host, name, delayMs)
+    }
 
     // The SDK takes `HashMap<String?, String?>` (HashMap is invariant, so a `HashMap<String, String>` does not compile). The
     // keys and values copied in are never null; only the declared type is wider.

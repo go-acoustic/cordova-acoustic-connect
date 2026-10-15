@@ -159,6 +159,7 @@ runs them anyway, which suits a CI gate. A failed check makes the exit code 1; a
 * [`logExceptionEvent(...)`](#logexceptionevent)
 * [`logScreenViewContextLoad(...)`](#logscreenviewcontextload)
 * [`logScreenViewContextUnload(...)`](#logscreenviewcontextunload)
+* [`logScreenLayout(...)`](#logscreenlayout)
 * [`setConfigItem(...)`](#setconfigitem)
 * [`getConfigItem(...)`](#getconfigitem)
 * [`getConfigItem(...)`](#getconfigitem)
@@ -367,6 +368,22 @@ logScreenViewContextUnload(logicalPageName: string, referrer?: string | null | u
 | --------------------- | --------------------------- |
 | **`logicalPageName`** | <code>string</code>         |
 | **`referrer`**        | <code>string \| null</code> |
+
+--------------------
+
+
+### logScreenLayout(...)
+
+```typescript
+logScreenLayout(name: string, delayMs?: number | undefined) => Promise<void>
+```
+
+Asks the native SDK to capture the layout of the screen on display, under `name`.
+
+| Param         | Type                | Description                                                                        |
+| ------------- | ------------------- | ---------------------------------------------------------------------------------- |
+| **`name`**    | <code>string</code> | Screen name, e.g. `'Login'`. Rejects with `ACOUSTIC_INVALID_ARGS` when empty.      |
+| **`delayMs`** | <code>number</code> | Milliseconds to wait before capturing (a non-negative integer); omitted means now. |
 
 --------------------
 

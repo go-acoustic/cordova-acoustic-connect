@@ -75,6 +75,12 @@ final class FakeSdk: ConnectSdk {
         lastScreenView = (pageName, className, kind, referrer)
         return accepts
     }
+    var lastLayout: (name: String, delayMs: Int?)?
+    func logScreenLayout(name: String, delayMs: Int?) -> Bool {
+        calls.append("logScreenLayout")
+        lastLayout = (name, delayMs)
+        return accepts
+    }
     func setConfigItem(key: String, value: Any) -> Bool {
         calls.append("setConfigItem(\(key))")
         configSets.append((key, value))
@@ -387,6 +393,26 @@ final class AcousticConnectBridgeTests: XCTestCase {
         assertRejected(reply { bridge.logScreenViewContextUnload(["logicalPageName": "a"], reply: $0) }, "ACOUSTIC_INTERNAL_ERROR", "logScreenViewContextUnload returned false")
     }
 
+    func testLogScreenLayout_passesTheNameAndTheDelay() {
+        _ = reply { bridge.logScreenLayout(["name": " Home ", "delayMs": 300], reply: $0) }
+        XCTAssertEqual(sdk.lastLayout?.name, "Home")
+        XCTAssertEqual(sdk.lastLayout?.delayMs, 300)
+        _ = reply { bridge.logScreenLayout(["name": "Home"], reply: $0) }
+        XCTAssertNil(sdk.lastLayout?.delayMs)
+        _ = reply { bridge.logScreenLayout(["name": "Home", "delayMs": NSNull()], reply: $0) }
+        XCTAssertNil(sdk.lastLayout?.delayMs)
+    }
+
+    func testLogScreenLayout_rejectsBlankNameBadDelayAndDecline() {
+        assertRejected(reply { bridge.logScreenLayout(["name": " "], reply: $0) }, "ACOUSTIC_INVALID_ARGS", "name is required")
+        assertRejected(reply { bridge.logScreenLayout(["name": "Home", "delayMs": -1], reply: $0) }, "ACOUSTIC_INVALID_ARGS", "delayMs")
+        assertRejected(reply { bridge.logScreenLayout(["name": "Home", "delayMs": 1.5], reply: $0) }, "ACOUSTIC_INVALID_ARGS", "delayMs")
+        assertRejected(reply { bridge.logScreenLayout(["name": "Home", "delayMs": "5"], reply: $0) }, "ACOUSTIC_INVALID_ARGS", "delayMs")
+        XCTAssertNil(sdk.lastLayout)
+        sdk.accepts = false
+        assertRejected(reply { bridge.logScreenLayout(["name": "Home"], reply: $0) }, "ACOUSTIC_INTERNAL_ERROR", "logScreenLayout returned false")
+    }
+
     // MARK: config items
 
     func testSetConfigItem_keepsBooleansStringsAndNumbersApart() {
@@ -591,6 +617,7 @@ private final class StuckSdk: ConnectSdk {
     func logSignal(_ values: [String: Any], level: MonitoringLevel) -> Bool { false }
     func logException(name: String, reason: String, stackInfo: String, unhandled: Bool) -> Bool { false }
     func logScreenView(pageName: String, className: String, kind: ScreenViewKind, referrer: String?) -> Bool { false }
+    func logScreenLayout(name: String, delayMs: Int?) -> Bool { false }
     func setConfigItem(key: String, value: Any) -> Bool { false }
     func configItem(key: String) -> Any? { nil }
     func setKillSwitch(enabled: Bool, url: String?) {}

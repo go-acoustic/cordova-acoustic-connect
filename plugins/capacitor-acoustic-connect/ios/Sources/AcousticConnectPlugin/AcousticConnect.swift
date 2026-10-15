@@ -243,6 +243,20 @@ final class AcousticConnect {
         finish(sdk.logScreenView(pageName: page, className: "Capacitor_\(page)", kind: kind, referrer: referrer.isEmpty ? nil : referrer), label, reply)
     }
 
+    /// Captures the layout of the screen on display, as the Cordova plugin's `logScreenLayout` does.
+    func logScreenLayout(_ options: [String: Any], reply: Reply) {
+        let name = text(options, "name")
+        if name.isEmpty { return reply.reject(code: Constants.codeInvalidArgs, message: "logScreenLayout: name is required") }
+        var delayMs: Int?
+        if let raw = options["delayMs"], !(raw is NSNull) {
+            guard let number = raw as? NSNumber, number.doubleValue >= 0, number.doubleValue == number.doubleValue.rounded() else {
+                return reply.reject(code: Constants.codeInvalidArgs, message: "logScreenLayout: delayMs must be a non-negative integer")
+            }
+            delayMs = number.intValue
+        }
+        finish(sdk.logScreenLayout(name: name, delayMs: delayMs), "logScreenLayout", reply)
+    }
+
     // MARK: Config items
 
     /// iOS has a single config store, so `moduleName` is only validated.

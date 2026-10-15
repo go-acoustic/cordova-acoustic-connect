@@ -9,7 +9,7 @@ New Features
   `getSdkVersion`, `isSdkEnabled`, `flushQueues`, `setCurrentScreenName`,
   `logCustomEvent`, `logClickEvent`, `logTextChangeEvent`, `logSignal`,
   `logExceptionEvent`, `logScreenViewContextLoad`, `logScreenViewContextUnload`,
-  `setConfigItem` and `getConfigItem`, with TypeScript types. Text passed to
+  `logScreenLayout`, `setConfigItem` and `getConfigItem`, with TypeScript types. Text passed to
   `logTextChangeEvent` is masked by default
 - Configuration in the `AcousticConnect` block of `capacitor.config`: with
   `appKey` and `postMessageUrl` set, the SDK starts when the app launches, so

@@ -25,6 +25,7 @@ function makeNative(over: Partial<Mocked> = {}): Mocked {
     logExceptionEvent: ok(),
     logScreenViewContextLoad: ok(),
     logScreenViewContextUnload: ok(),
+    logScreenLayout: ok(),
     setConfigItem: ok(),
     getSdkVersion: jest.fn().mockResolvedValue({ value: '11.0.21-beta' }),
     isSdkEnabled: jest.fn().mockResolvedValue({ value: true }),
@@ -375,6 +376,31 @@ describe('logExceptionEvent', () => {
     await expect(api.logExceptionEvent(' ')).rejects.toMatchObject(INVALID);
     await expect(api.logExceptionEvent('m', 5 as never)).rejects.toMatchObject(INVALID);
     await expect(api.logExceptionEvent('m', '', 'no' as never)).rejects.toMatchObject(INVALID);
+  });
+});
+
+describe('logScreenLayout', () => {
+  it('sends the name alone, or the name and the delay', async () => {
+    const native = makeNative();
+    const api = createAcousticConnect(native);
+    await api.logScreenLayout('Home');
+    expect(native.logScreenLayout).toHaveBeenLastCalledWith({ name: 'Home' });
+    await api.logScreenLayout('Home', 300);
+    expect(native.logScreenLayout).toHaveBeenLastCalledWith({ name: 'Home', delayMs: 300 });
+    await api.logScreenLayout('Home', 0);
+    expect(native.logScreenLayout).toHaveBeenLastCalledWith({ name: 'Home', delayMs: 0 });
+  });
+
+  it.each([[''], ['  '], [undefined], [null], [3]])('rejects the name %j', async (name) => {
+    const native = makeNative();
+    await expect(createAcousticConnect(native).logScreenLayout(name as never)).rejects.toMatchObject(INVALID);
+    expect(native.logScreenLayout).not.toHaveBeenCalled();
+  });
+
+  it.each([[-1], [1.5], ['10'], [Number.NaN], [null]])('rejects the delay %j', async (delay) => {
+    const native = makeNative();
+    await expect(createAcousticConnect(native).logScreenLayout('Home', delay as never)).rejects.toMatchObject(INVALID);
+    expect(native.logScreenLayout).not.toHaveBeenCalled();
   });
 });
 

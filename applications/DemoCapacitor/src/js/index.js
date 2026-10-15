@@ -226,7 +226,7 @@ function sendIdentitySignal(signalType, additionalParameters) {
 
 const BEHAVIOUR_BUTTONS = [
     'btn_log_custom_event', 'btn_log_signal', 'btn_log_click', 'btn_log_text_change',
-    'btn_screen_load', 'btn_screen_unload', 'btn_log_exception', 'btn_flush',
+    'btn_screen_load', 'btn_screen_unload', 'btn_screen_layout', 'btn_log_exception', 'btn_flush',
 ];
 
 function setBehaviourEnabled(enabled) {
@@ -269,6 +269,7 @@ function initBehaviourTab(platform) {
     });
     on('btn_screen_load', () => runBehaviour('Screen load', () => A.logScreenViewContextLoad('demo_screen', 'behaviour')));
     on('btn_screen_unload', () => runBehaviour('Screen unload', () => A.logScreenViewContextUnload('demo_screen', 'behaviour')));
+    on('btn_screen_layout', () => runBehaviour('Screen layout', () => A.logScreenLayout('demo_screen')));
     on('btn_log_exception', () => runBehaviour('Exception', () => A.logExceptionEvent(
         'Demo handled exception', 'Error: demo\n    at demo (index.js)', false)));
     on('btn_flush', () => runBehaviour('Flush', () => A.flushQueues()));

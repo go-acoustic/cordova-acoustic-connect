@@ -173,7 +173,7 @@
     ];
 
     // Steps marked `optional` call an API that not every plugin has (the Cordova plugin has
-    // them all; the Capacitor plugin has none yet). Where the plugin lacks the method the step
+    // them all; the Capacitor plugin has logScreenLayout only). Where the plugin lacks the method the step
     // is reported as 'skipped', which is not a failure, and the suite leaves its checks out.
     var OPTIONAL_STEP_IDS = STEPS.filter(function (step) { return step.optional; })
         .map(function (step) { return step.id; });

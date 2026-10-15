@@ -66,6 +66,7 @@ export interface AcousticConnectPlugin {
   logExceptionEvent(options: { message: string; stackInfo: string; unhandled: boolean }): Promise<void>;
   logScreenViewContextLoad(options: { logicalPageName: string; referrer: string | null }): Promise<void>;
   logScreenViewContextUnload(options: { logicalPageName: string; referrer: string | null }): Promise<void>;
+  logScreenLayout(options: { name: string; delayMs?: number }): Promise<void>;
   setConfigItem(options: { key: string; value: FlatValue; moduleName: string }): Promise<void>;
   /** Resolves the raw item; the API applies the type of the default. Nothing when it is not set. */
   getConfigItem(options: { key: string; moduleName: string }): Promise<{ value?: FlatValue | null }>;
@@ -181,6 +182,13 @@ export interface AcousticConnectApi {
   logExceptionEvent(message: string, stackInfo?: string, unhandled?: boolean): Promise<void>;
   logScreenViewContextLoad(logicalPageName: string, referrer?: string | null): Promise<void>;
   logScreenViewContextUnload(logicalPageName: string, referrer?: string | null): Promise<void>;
+  /**
+   * Asks the native SDK to capture the layout of the screen on display, under `name`.
+   *
+   * @param name Screen name, e.g. `'Login'`. Rejects with `ACOUSTIC_INVALID_ARGS` when empty.
+   * @param delayMs Milliseconds to wait before capturing (a non-negative integer); omitted means now.
+   */
+  logScreenLayout(name: string, delayMs?: number): Promise<void>;
   setConfigItem(key: string, value: FlatValue, moduleName: string): Promise<void>;
   getConfigItem(key: string, defaultValue: boolean, moduleName: string): Promise<boolean>;
   getConfigItem(key: string, defaultValue: string, moduleName: string): Promise<string>;

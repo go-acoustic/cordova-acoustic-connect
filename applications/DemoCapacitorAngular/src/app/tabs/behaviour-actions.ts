@@ -29,6 +29,7 @@ import { errorMessage } from '../behaviour-core';
       <h2 class="card-title">Screen View</h2>
       <button class="action" id="btn_screen_load" [disabled]="!enabled()" (click)="act('screenLoad')">Log Screen Load</button>
       <button class="action secondary" id="btn_screen_unload" [disabled]="!enabled()" (click)="act('screenUnload')">Log Screen Unload</button>
+      <button class="action secondary" id="btn_screen_layout" [disabled]="!enabled()" (click)="act('screenLayout')">Log Screen Layout</button>
     </section>
 
     <section class="card">
@@ -59,6 +60,7 @@ export class BehaviourActions {
     textChange: ['Text change', () => this.acoustic.textChange('txt_demo', { text: this.text })],
     screenLoad: ['Screen load', () => this.acoustic.screenLoad('demo_screen', 'behaviour')],
     screenUnload: ['Screen unload', () => this.acoustic.screenUnload('demo_screen', 'behaviour')],
+    screenLayout: ['Screen layout', () => this.acoustic.screenLayout('demo_screen')],
     exception: ['Exception', () => this.acoustic.exception('Demo handled exception', 'Error: demo\n    at demo (behaviour-actions.ts)', false)],
     flush: ['Flush', () => this.acoustic.flushQueues()]
   };

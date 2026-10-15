@@ -47,6 +47,9 @@ protocol ConnectSdk: AnyObject {
     func logSignal(_ values: [String: Any], level: MonitoringLevel) -> Bool
     func logException(name: String, reason: String, stackInfo: String, unhandled: Bool) -> Bool
     func logScreenView(pageName: String, className: String, kind: ScreenViewKind, referrer: String?) -> Bool
+
+    /// Captures the layout of the screen on display; `delayMs` nil or 0 captures now. `false` when there is no screen to capture.
+    func logScreenLayout(name: String, delayMs: Int?) -> Bool
     func setConfigItem(key: String, value: Any) -> Bool
     func configItem(key: String) -> Any?
     func setKillSwitch(enabled: Bool, url: String?)

@@ -9,6 +9,7 @@
  */
 
 import Foundation
+import UIKit
 
 // The Connect SDK is linked by the app (CocoaPods `AcousticConnect` / `AcousticConnectDebug`), so the
 // plugin only compiles this adapter when the module is there.
@@ -18,6 +19,13 @@ import Connect
 /// The SDK itself.
 @MainActor
 final class ConnectSdkImpl: ConnectSdk {
+    /// The view controller whose screen a layout capture describes: the web view's (the Capacitor bridge's).
+    private let viewController: @MainActor () -> UIViewController?
+
+    init(viewController: @escaping @MainActor () -> UIViewController? = { nil }) {
+        self.viewController = viewController
+    }
+
     var isEnabled: Bool { ConnectSDK.shared.isEnabled }
     var frameworkVersion: String { ConnectSDK.shared.frameworkVersion }
 
@@ -72,6 +80,16 @@ final class ConnectSdkImpl: ConnectSdk {
             applicationContext: kind == .load ? ConnectScreenViewType.load : ConnectScreenViewType.unload,
             referrer: referrer
         )
+    }
+
+    func logScreenLayout(name: String, delayMs: Int?) -> Bool {
+        guard let controller = viewController() else { return false }
+        // The delay crosses the bridge in milliseconds; the SDK's `andDelay:` takes seconds. Without a delay the SDK captures
+        // synchronously, which is fine: plugin calls run on the main actor.
+        if let delayMs, delayMs > 0 {
+            return ConnectCustomEvent().logScreenLayout(with: controller, andDelay: Double(delayMs) / 1000.0, andName: name)
+        }
+        return ConnectCustomEvent().logScreenLayout(with: controller, andName: name)
     }
 
     func setConfigItem(key: String, value: Any) -> Bool {

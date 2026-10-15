@@ -58,6 +58,7 @@ export class AcousticService {
   setCurrentScreenName = (name: string) => AcousticConnect.setCurrentScreenName(name);
   screenLoad = (name: string, referrer: string | null) => AcousticConnect.logScreenViewContextLoad(name, referrer);
   screenUnload = (name: string, referrer: string | null) => AcousticConnect.logScreenViewContextUnload(name, referrer);
+  screenLayout = (name: string, delayMs?: number) => AcousticConnect.logScreenLayout(name, delayMs);
 
   // Events
   customEvent = (name: string, values: Record<string, FlatValue>, level?: number) => AcousticConnect.logCustomEvent(name, values, level);

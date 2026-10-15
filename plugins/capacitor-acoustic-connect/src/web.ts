@@ -38,6 +38,9 @@ export class AcousticConnectWeb extends WebPlugin implements AcousticConnectPlug
   async logScreenViewContextUnload(): Promise<void> {
     // Nothing to record without the native SDK.
   }
+  async logScreenLayout(): Promise<void> {
+    // Nothing to record without the native SDK.
+  }
   async setConfigItem(): Promise<void> {
     // Nothing to record without the native SDK.
   }

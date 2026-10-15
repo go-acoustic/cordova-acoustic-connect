@@ -284,6 +284,17 @@ class AcousticConnect(
         onUi(reply, "$label: no foreground activity") { sdkCall(reply, label) { sdk.logScreenview(name, type, referrer) } }
     }
 
+    /** Captures the layout of the screen on display, as the Cordova plugin's `logScreenLayout` does. */
+    fun logScreenLayout(data: JSONObject, reply: Reply) {
+        val name = text(data, "name").trim()
+        if (name.isBlank()) return reply.reject(CODE_INVALID_ARGS, "logScreenLayout: name is required")
+        val delayMs: Int? = if (!data.has("delayMs") || data.isNull("delayMs")) null else data.optInt("delayMs", -1)
+        if (delayMs != null && delayMs < 0) {
+            return reply.reject(CODE_INVALID_ARGS, "logScreenLayout: delayMs must be a non-negative integer")
+        }
+        onUi(reply, "logScreenLayout: no foreground activity") { sdkCall(reply, "logScreenLayout") { sdk.logScreenLayout(name, delayMs) } }
+    }
+
     fun setConfigItem(data: JSONObject, reply: Reply) {
         val key = text(data, "key").trim()
         val module = text(data, "moduleName").trim()

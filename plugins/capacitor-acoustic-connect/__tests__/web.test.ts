@@ -19,6 +19,7 @@ const DOES_NOTHING: [string, unknown][] = [
   ['logExceptionEvent', { message: 'm', stackInfo: '', unhandled: false }],
   ['logScreenViewContextLoad', { logicalPageName: 'a', referrer: null }],
   ['logScreenViewContextUnload', { logicalPageName: 'a', referrer: null }],
+  ['logScreenLayout', { name: 'a' }],
   ['setConfigItem', { key: 'K', value: true, moduleName: 'M' }],
   // an unguarded await in a login flow must not break in a browser, so the identity signal is recorded like the others
   [
