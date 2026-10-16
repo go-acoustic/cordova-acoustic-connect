@@ -6,10 +6,15 @@
  * 'E2E Verification' stage in the Jenkinsfile.
  */
 
-import { readFileSync } from 'fs';
+import { readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
 
 const ROOT = join(__dirname, '..', '..', '..');
+/** The pipeline is the Jenkinsfile and the modules it loads (ci/*.groovy); the tests read them as one text. */
+const pipelineSource = (): string =>
+    ['Jenkinsfile', ...readdirSync(join(ROOT, 'ci')).sort().map((f: string) => `ci/${f}`)]
+        .map((f) => readFileSync(join(ROOT, f), 'utf8'))
+        .join('\n');
 const E2E = join(ROOT, 'e2e', 'core');
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -73,9 +78,67 @@ describe('pickIosSimulator', () => {
     it('fails on output that is not JSON', () => {
         expect(() => commands.pickIosSimulator('not json')).toThrow('simctl');
     });
+
+    // Build #152: the agent got an iOS 27.0 runtime, the picker moved the e2e to it from 26.5, and the push registration (type 22) was gone.
+    describe('with a wanted iOS version', () => {
+        const json = JSON.stringify({ devices: {
+            'com.apple.CoreSimulator.SimRuntime.iOS-26-5': [sim('OLD', 'iPhone 17')],
+            'com.apple.CoreSimulator.SimRuntime.iOS-27-0': [sim('NEW', 'iPhone 17')],
+        } });
+
+        it('stays on the wanted runtime although a newer one is there', () => {
+            expect(commands.pickIosSimulator(json)).toBe('NEW');
+            expect(commands.pickIosSimulator(json, '26.5')).toBe('OLD');
+        });
+
+        it('takes the wanted version as the start of the runtime version: 26 is every 26.x, 26.5 is not 26.50', () => {
+            const many = JSON.stringify({ devices: {
+                'com.apple.CoreSimulator.SimRuntime.iOS-26-2': [sim('TWO', 'iPhone 17')],
+                'com.apple.CoreSimulator.SimRuntime.iOS-26-5': [sim('FIVE', 'iPhone 17')],
+                'com.apple.CoreSimulator.SimRuntime.iOS-26-50': [sim('FIFTY', 'iPhone 17')],
+                'com.apple.CoreSimulator.SimRuntime.iOS-27-0': [sim('NEW', 'iPhone 17')],
+            } });
+            expect(commands.pickIosSimulator(many, '26')).toBe('FIFTY');
+            expect(commands.pickIosSimulator(many, '26.5')).toBe('FIVE');
+        });
+
+        it('still prefers a booted simulator, among the wanted ones only', () => {
+            const booted = JSON.stringify({ devices: {
+                'com.apple.CoreSimulator.SimRuntime.iOS-26-5': [sim('A', 'iPhone 17'), sim('B', 'iPhone 17 Pro', { state: 'Booted' })],
+                'com.apple.CoreSimulator.SimRuntime.iOS-27-0': [sim('C', 'iPhone 17', { state: 'Booted' })],
+            } });
+            expect(commands.pickIosSimulator(booted, '26.5')).toBe('B');
+        });
+
+        it('fails, naming the runtimes there are, when none has the wanted version', () => {
+            expect(() => commands.pickIosSimulator(json, '25.4')).toThrow('no available iPhone simulator on iOS 25.4 (iOS runtimes with an iPhone: 26.5, 27.0)');
+        });
+
+        it('treats an empty value as none, and refuses something that is not a version', () => {
+            expect(commands.pickIosSimulator(json, '')).toBe('NEW');
+            expect(commands.pickIosSimulator(json, undefined)).toBe('NEW');
+            expect(() => commands.pickIosSimulator(json, 'latest')).toThrow('not a version');
+            expect(() => commands.pickIosSimulator(json, '26.x')).toThrow('not a version');
+        });
+    });
 });
 
 describe('pick-simulator.js', () => {
+    it('passes the iOS version it was given to the choice', async () => {
+        const out: string[] = [];
+        const code = await picker.main({
+            exec: async () => ({ stdout: JSON.stringify({ devices: {
+                'com.apple.CoreSimulator.SimRuntime.iOS-26-5': [sim('OLD', 'iPhone 17')],
+                'com.apple.CoreSimulator.SimRuntime.iOS-27-0': [sim('NEW', 'iPhone 17')],
+            } }) }),
+            iosVersion: '26.5',
+            write: (s: string) => out.push(s),
+            writeError: () => undefined,
+        });
+        expect(code).toBe(0);
+        expect(out.join('')).toBe('OLD\n');
+    });
+
     it('prints only the udid so a shell can capture it', async () => {
         const out: string[] = [];
         const code = await picker.main({
@@ -104,7 +167,7 @@ describe('pick-simulator.js', () => {
 });
 
 describe('Jenkinsfile: E2E Verification stage', () => {
-    const jenkins: string = readFileSync(join(ROOT, 'Jenkinsfile'), 'utf8');
+    const jenkins: string = pipelineSource();
     const stageStart = jenkins.indexOf("stage('E2E Verification')");
     const stageBlock = stageStart === -1 ? '' : jenkins.slice(stageStart, jenkins.indexOf("stage('Publish Feature')"));
     const fnStart = jenkins.indexOf('def runE2eVerification()');
@@ -168,16 +231,18 @@ describe('Jenkinsfile: E2E Verification stage', () => {
 
     it('does not block the build while the stage is new: a failure turns it unstable, and one constant makes it blocking', () => {
         expect(jenkins).toMatch(/@Field def e2eBuildResult\s*=\s*'UNSTABLE'/);
-        expect(stageBlock).toMatch(/catchError\(buildResult: e2eBuildResult, stageResult: 'FAILURE'\)/);
+        expect(stageBlock).toMatch(/catchError\(buildResult: common\.e2eBuildResult, stageResult: 'FAILURE'\)/);
         // the call to the runner sits inside that catchError
         expect(stageBlock.indexOf('catchError')).toBeLessThan(stageBlock.indexOf('runE2eVerification()'));
     });
 
     it('serialises the simulator between builds with a lock, as the React Native pipeline does for its emulator', () => {
         expect(jenkins).toMatch(/@Field def e2eLock\s*=\s*'[\w-]+'/);
-        expect(fnBlock).toContain('lock(resource: e2eLock)');
+        expect(fnBlock).toContain('lock(resource: c.e2eLock)');
         // the shutdown in finally happens while the lock is still held
-        expect(fnBlock.indexOf('lock(resource: e2eLock)')).toBeLessThan(fnBlock.indexOf('simctl shutdown'));
+        const lockAt = fnBlock.indexOf('lock(resource: c.e2eLock)');
+        expect(lockAt).toBeGreaterThanOrEqual(0);
+        expect(lockAt).toBeLessThan(fnBlock.indexOf('simctl shutdown'));
     });
 
     it('logs how long the stage took, so "how long does it take" has an answer from the builds', () => {
@@ -189,7 +254,7 @@ describe('Jenkinsfile: E2E Verification stage', () => {
 
     it('keeps the evidence and shuts the simulator down however the run ends', () => {
         expect(stage).toContain('archiveArtifacts');
-        expect(stage).toContain('${demoDir}/e2e/evidence/**');
+        expect(stage).toContain('${c.demoDir}/e2e/evidence/**');
         expect(stage).toContain('finally');
         expect(stage).toContain('simctl shutdown');
     });
@@ -203,7 +268,7 @@ describe('Jenkinsfile: E2E Verification stage', () => {
 });
 
 describe('Jenkinsfile: build throttling', () => {
-    const jenkins: string = readFileSync(join(ROOT, 'Jenkinsfile'), 'utf8');
+    const jenkins: string = pipelineSource();
     const options = jenkins.slice(jenkins.indexOf('options {'), jenkins.indexOf('parameters {'));
 
     it('throttles concurrent builds by the global categories, like the React Native repo', () => {
@@ -221,7 +286,7 @@ describe('Jenkinsfile: build throttling', () => {
 
 
 describe('Jenkinsfile: Capacitor E2E Verification', () => {
-    const jenkins: string = readFileSync(join(ROOT, 'Jenkinsfile'), 'utf8');
+    const jenkins: string = pipelineSource();
     const stageStart = jenkins.indexOf("stage('E2E Verification')");
     const stageBlock = jenkins.slice(stageStart, jenkins.indexOf("stage('Publish Feature')"));
     // the one run of the runner and the verification around it
@@ -236,10 +301,10 @@ describe('Jenkinsfile: Capacitor E2E Verification', () => {
 
     it('runs in the E2E Verification stage, gated on the Capacitor build and the same decision as the Cordova one', () => {
         expect(stageBlock).toContain('runCapacitorE2eVerification()');
-        expect(stageBlock).toMatch(/genBuild && runCapacitor && shouldRunE2e\(\)/);
+        expect(stageBlock).toMatch(/common\.genBuild && common\.runCapacitor && common\.shouldRunE2e\(\)/);
         // not blocking while it is new, with the same constant
         const call = stageBlock.slice(0, stageBlock.indexOf('runCapacitorE2eVerification()'));
-        expect(call.lastIndexOf("catchError(buildResult: e2eBuildResult, stageResult: 'FAILURE')")).toBeGreaterThan(call.lastIndexOf('runE2eVerification()'));
+        expect(call.lastIndexOf("catchError(buildResult: common.e2eBuildResult, stageResult: 'FAILURE')")).toBeGreaterThan(call.lastIndexOf('runE2eVerification()'));
     });
 
     it('runs the Capacitor runner on an iOS simulator picked by the shared helper', () => {
@@ -247,13 +312,13 @@ describe('Jenkinsfile: Capacitor E2E Verification', () => {
         expect(fnBlock).toContain('node e2e/run.js --platform ios');
         expect(fnBlock).toContain('--sink-repo');
         expect(jenkins).toMatch(/@Field def capacitorDemoDir\s*=\s*"applications\/DemoCapacitor"/);
-        expect(fnBlock).toContain('${capacitorDemoDir}');
+        expect(fnBlock).toContain('${c.capacitorDemoDir}');
         expect(fnBlock).toMatch(/timeout\(time: \d+, unit: 'MINUTES'\)/);
     });
 
     it('tests this checkout\'s plugin, installed as a copy so the app and the plugin share one @capacitor/core', () => {
         expect(fnBlock).toContain('npm run build');
-        expect(fnBlock).toContain("npm install --no-save --install-links 'file:../../${capacitorDir}'");
+        expect(fnBlock).toContain("npm install --no-save --install-links 'file:../../${c.capacitorDir}'");
         // built first, installed second, run last
         expect(verification.indexOf('npm run build')).toBeLessThan(verification.indexOf('--install-links'));
         expect(verification.indexOf('--install-links')).toBeLessThan(verification.indexOf('runCapacitorE2eOnce(udid)'));
@@ -275,7 +340,7 @@ describe('Jenkinsfile: Capacitor E2E Verification', () => {
     });
 
     it('uses Node 22 (nvm), which the Capacitor toolchain needs', () => {
-        expect(fnBlock).toContain('${useNode22}');
+        expect(fnBlock).toContain('${c.useNode22}');
     });
 
     it('maps the runner exit codes like the Cordova stage: 1 is an error, 2 only marks the build unstable', () => {
@@ -285,10 +350,12 @@ describe('Jenkinsfile: Capacitor E2E Verification', () => {
     });
 
     it('shares the simulator lock, shuts the simulator down while holding it, and keeps the evidence', () => {
-        expect(fnBlock).toContain('lock(resource: e2eLock)');
-        expect(fnBlock.indexOf('lock(resource: e2eLock)')).toBeLessThan(fnBlock.indexOf('simctl shutdown'));
+        expect(fnBlock).toContain('lock(resource: c.e2eLock)');
+        const lockAt = fnBlock.indexOf('lock(resource: c.e2eLock)');
+        expect(lockAt).toBeGreaterThanOrEqual(0);
+        expect(lockAt).toBeLessThan(fnBlock.indexOf('simctl shutdown'));
         expect(fnBlock).toContain('archiveArtifacts');
-        expect(fnBlock).toContain('${capacitorDemoDir}/e2e/evidence/**');
+        expect(fnBlock).toContain('${c.capacitorDemoDir}/e2e/evidence/**');
         expect(fnBlock.indexOf('took')).toBeGreaterThan(fnBlock.indexOf('finally'));
     });
 
@@ -298,7 +365,7 @@ describe('Jenkinsfile: Capacitor E2E Verification', () => {
 });
 
 describe('Jenkinsfile: an aborted build does not publish', () => {
-    const jenkins: string = readFileSync(join(ROOT, 'Jenkinsfile'), 'utf8');
+    const jenkins: string = pipelineSource();
     const stageBlock = (name: string) => {
         const start = jenkins.indexOf(`stage('${name}')`);
         return start === -1 ? '' : jenkins.slice(start, jenkins.indexOf('steps {', start));
@@ -321,6 +388,20 @@ describe('Jenkinsfile: an aborted build does not publish', () => {
 
     it('keeps the e2e steps inside catchError, which is why the guard is needed', () => {
         const e2e = jenkins.slice(jenkins.indexOf("stage('E2E Verification')"), jenkins.indexOf("stage('Publish Feature')"));
-        expect(e2e).toContain('catchError(buildResult: e2eBuildResult');
+        expect(e2e).toContain('catchError(buildResult: common.e2eBuildResult');
+    });
+});
+
+describe('Jenkinsfile: the iOS runtime of the e2e simulator', () => {
+    const jenkins: string = pipelineSource();
+
+    it('is a constant of the pipeline, not whatever the newest runtime on the agent is', () => {
+        expect(jenkins).toMatch(/@Field def e2eIosVersion = '\d+(\.\d+)*'/);
+    });
+
+    it('is handed to pick-simulator.js by both e2e stages', () => {
+        const calls = jenkins.split('\n').filter((line: string) => line.includes('e2e/core/pick-simulator.js'));
+        expect(calls).toHaveLength(2);
+        for (const line of calls) expect(line).toContain("E2E_IOS_VERSION='${c.e2eIosVersion}'");
     });
 });

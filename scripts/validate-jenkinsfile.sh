@@ -14,17 +14,24 @@
 # SDK variant is driven by ConnectConfig.json.Connect.useRelease — there is
 # no --variable ACOUSTIC_SDK_VARIANT= flag to validate.
 #
-# Usage:  bash scripts/validate-jenkinsfile.sh [Jenkinsfile]
+# Usage:  bash scripts/validate-jenkinsfile.sh [file ...]   (default: the Jenkinsfile and the modules it loads, ci/*.groovy)
 # Exit:   0 = pass, 1 = failures found
 
 set -euo pipefail
 
-JENKINSFILE="${1:-Jenkinsfile}"
-
-if [[ ! -f "$JENKINSFILE" ]]; then
-  echo "ERROR: $JENKINSFILE not found" >&2
-  exit 1
+if [[ $# -gt 0 ]]; then
+  FILES=("$@")
+else
+  FILES=(Jenkinsfile)
+  for f in ci/*.groovy; do [[ -f "$f" ]] && FILES+=("$f"); done
 fi
+
+for f in "${FILES[@]}"; do
+  if [[ ! -f "$f" ]]; then
+    echo "ERROR: $f not found" >&2
+    exit 1
+  fi
+done
 
 fail=0
 
@@ -76,21 +83,23 @@ for i, m in enumerate(pattern.finditer(text)):
         print(f"{start_line}|{add_idx}|{int(has_prior_remove)}|{add_line}")
 PYEOF
 
-echo "Checking $JENKINSFILE …"
-echo ""
+for JENKINSFILE in "${FILES[@]}"; do
+  echo "Checking $JENKINSFILE …"
+  echo ""
 
-while IFS='|' read -r block_start cmd_offset has_remove cmd; do
-  approx_line=$(( block_start + cmd_offset ))
+  while IFS='|' read -r block_start cmd_offset has_remove cmd; do
+    approx_line=$(( block_start + cmd_offset ))
 
-  if [[ "$has_remove" == "0" ]]; then
-    echo "FAIL line ~${approx_line}: 'cordova plugin add' has no preceding 'cordova plugin remove' in same sh block"
-    echo "     → $cmd"
-    fail=1
-  else
-    echo "  OK line ~${approx_line}: 'cordova plugin remove' precedes 'cordova plugin add'"
-  fi
+    if [[ "$has_remove" == "0" ]]; then
+      echo "FAIL $JENKINSFILE line ~${approx_line}: 'cordova plugin add' has no preceding 'cordova plugin remove' in same sh block"
+      echo "     → $cmd"
+      fail=1
+    else
+      echo "  OK $JENKINSFILE line ~${approx_line}: 'cordova plugin remove' precedes 'cordova plugin add'"
+    fi
 
-done < <(python3 "$EXTRACTOR" "$JENKINSFILE")
+  done < <(python3 "$EXTRACTOR" "$JENKINSFILE")
+done
 
 echo ""
 if [[ $fail -eq 0 ]]; then
