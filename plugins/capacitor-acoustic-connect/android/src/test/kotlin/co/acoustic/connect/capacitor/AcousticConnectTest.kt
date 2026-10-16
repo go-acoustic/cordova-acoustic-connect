@@ -83,6 +83,17 @@ class FakeSdk : ConnectSdk {
         lastLayout = listOf(name, delayMs)
         return accepts
     }
+    var lastLocation: List<Any?>? = null
+    override fun logLocation(level: Int): Boolean {
+        record("logLocation")
+        lastLocation = listOf(level)
+        return accepts
+    }
+    override fun logLocationUpdate(latitude: Double, longitude: Double, level: Int): Boolean {
+        record("logLocationUpdate")
+        lastLocation = listOf(latitude, longitude, level)
+        return accepts
+    }
     override fun logCustomEvent(name: String, values: Map<String, String>, level: Int): Boolean {
         record("logCustomEvent")
         lastCustom = Triple(name, values, level)
@@ -442,6 +453,38 @@ class AcousticConnectTest {
         sdk.accepts = true
         sdk.throwOnCall = IllegalStateException("boom")
         reply { connect.logScreenLayout(obj("""{"name":"Home"}"""), it) }.assertRejected("ACOUSTIC_INTERNAL_ERROR", "boom")
+    }
+
+    @Test fun logLocation_asksTheSdkAtTheDefaultLevelAndRejectsNoActivityDeclineAndThrow() {
+        reply { connect.logLocation(it) }
+        assertEquals(listOf<Any?>(3), sdk.lastLocation)
+        uiAvailable = false
+        reply { connect.logLocation(it) }.assertRejected("ACOUSTIC_INTERNAL_ERROR", "no foreground activity")
+        uiAvailable = true
+        sdk.accepts = false
+        reply { connect.logLocation(it) }.assertRejected("ACOUSTIC_INTERNAL_ERROR", "logLocation returned false")
+        sdk.accepts = true
+        sdk.throwOnCall = IllegalStateException("boom")
+        reply { connect.logLocation(it) }.assertRejected("ACOUSTIC_INTERNAL_ERROR", "boom")
+    }
+
+    @Test fun logLocationUpdate_passesThePositionAndTheLevel() {
+        reply { connect.logLocationUpdate(obj("""{"latitude":52.5,"longitude":-13.4,"level":2}"""), it) }
+        assertEquals(listOf<Any?>(52.5, -13.4, 2), sdk.lastLocation)
+        reply { connect.logLocationUpdate(obj("""{"latitude":1,"longitude":2}"""), it) }
+        assertEquals(listOf<Any?>(1.0, 2.0, 3), sdk.lastLocation)
+    }
+
+    @Test fun logLocationUpdate_rejectsAPositionOutOfRangeOrMissingDeclineAndThrow() {
+        reply { connect.logLocationUpdate(obj("""{"latitude":91,"longitude":0}"""), it) }.assertRejected("ACOUSTIC_INVALID_ARGS", "out of range")
+        reply { connect.logLocationUpdate(obj("""{"latitude":0,"longitude":-181}"""), it) }.assertRejected("ACOUSTIC_INVALID_ARGS", "out of range")
+        reply { connect.logLocationUpdate(obj("""{"latitude":0}"""), it) }.assertRejected("ACOUSTIC_INVALID_ARGS", "out of range")
+        assertNull(sdk.lastLocation)
+        sdk.accepts = false
+        reply { connect.logLocationUpdate(obj("""{"latitude":1,"longitude":2}"""), it) }.assertRejected("ACOUSTIC_INTERNAL_ERROR", "logLocationUpdate returned false")
+        sdk.accepts = true
+        sdk.throwOnCall = IllegalStateException("boom")
+        reply { connect.logLocationUpdate(obj("""{"latitude":1,"longitude":2}"""), it) }.assertRejected("ACOUSTIC_INTERNAL_ERROR", "boom")
     }
 
     // config items

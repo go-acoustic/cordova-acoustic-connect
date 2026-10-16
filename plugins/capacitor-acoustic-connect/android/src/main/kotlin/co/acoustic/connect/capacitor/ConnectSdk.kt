@@ -67,6 +67,10 @@ interface ConnectSdk {
 
     /** Captures the layout of the screen on display; `delayMs` null captures now. */
     fun logScreenLayout(name: String, delayMs: Int?): Boolean
+
+    /** Logs the device's current location, as the SDK reads it. */
+    fun logLocation(level: Int): Boolean
+    fun logLocationUpdate(latitude: Double, longitude: Double, level: Int): Boolean
     fun logCustomEvent(name: String, values: Map<String, String>, level: Int): Boolean
     fun logSignal(values: Map<String, Any?>, level: Int): Boolean
     fun logException(message: String, stackInfo: String, unhandled: Boolean): Boolean
@@ -199,6 +203,11 @@ internal class ConnectSdkImpl(
         val host = activity()
         return if (delayMs == null) Connect.logScreenLayout(host, name) else Connect.logScreenLayout(host, name, delayMs)
     }
+
+    override fun logLocation(level: Int): Boolean = Connect.logGeolocation(level)
+
+    override fun logLocationUpdate(latitude: Double, longitude: Double, level: Int): Boolean =
+        Connect.logLocationUpdateEventWithLatitude(latitude, longitude, level)
 
     // The SDK takes `HashMap<String?, String?>` (HashMap is invariant, so a `HashMap<String, String>` does not compile). The
     // keys and values copied in are never null; only the declared type is wider.

@@ -43,7 +43,16 @@ function main(argv) {
         report.written.forEach(function (file) { process.stdout.write(verb + ' ios/App/' + file + '\n'); });
         report.kept.forEach(function (file) { process.stdout.write('kept  ios/App/' + file + ' (already there)\n'); });
         if (options.team) process.stdout.write((options.dryRun ? 'would set' : 'set') + ' team ' + options.team + ' on the app and the extensions\n');
-        if (!options.dryRun) process.stdout.write('Added the ConnectNSE and ConnectNCE targets to the Xcode project (Connect-SP ' + report.sdkVersion + ').\n');
+        const podVerb = options.dryRun ? 'would add' : 'added';
+        report.podfileTargets.forEach(function (name) { process.stdout.write(podVerb + " target '" + name + "' with the AcousticConnect pod to ios/App/Podfile\n"); });
+        if (!options.dryRun) {
+            if (report.usesPods) {
+                process.stdout.write('Added the ConnectNSE and ConnectNCE targets to the Xcode project, linked to the Connect SDK by the AcousticConnect pod.\n');
+                process.stdout.write('Now run `pod install` in ios/App (or `npx cap sync ios`).\n');
+            } else {
+                process.stdout.write('Added the ConnectNSE and ConnectNCE targets to the Xcode project (Connect-SP ' + report.sdkVersion + ').\n');
+            }
+        }
         return 0;
     } catch (error) {
         process.stderr.write('ERROR: ' + error.message + '\n');

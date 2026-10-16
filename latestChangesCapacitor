@@ -1,7 +1,6 @@
 Acoustic Connect for Capacitor
 
-First beta of the Capacitor plugin (`capacitor-acoustic-connect-beta`). Requires
-Capacitor 8 and Node 22 or newer.
+Acoustic Connect plugin for Capacitor. Requires Capacitor 8 and Node 22 or newer.
 
 New Features
 
@@ -9,8 +8,13 @@ New Features
   `getSdkVersion`, `isSdkEnabled`, `flushQueues`, `setCurrentScreenName`,
   `logCustomEvent`, `logClickEvent`, `logTextChangeEvent`, `logSignal`,
   `logExceptionEvent`, `logScreenViewContextLoad`, `logScreenViewContextUnload`,
-  `logScreenLayout`, `setConfigItem` and `getConfigItem`, with TypeScript types. Text passed to
-  `logTextChangeEvent` is masked by default
+  `logScreenLayout`, `logLocation`, `logLocationUpdate`, `setConfigItem` and
+  `getConfigItem`, with TypeScript types. Text passed to `logTextChangeEvent` is
+  masked by default
+- Dialog events: `logDialogShowEvent`, `logDialogDismissEvent`,
+  `logDialogButtonClickEvent` and `logDialogCustomEvent`. They are sent as custom
+  events (`DialogShowEvent`, `DialogDismissEvent`, `DialogButtonClickEvent`,
+  `DialogCustomEvent`), the same event names and keys as the Cordova plugin
 - Configuration in the `AcousticConnect` block of `capacitor.config`: with
   `appKey` and `postMessageUrl` set, the SDK starts when the app launches, so
   the first screen is captured (`autoEnable: false` starts it only from
@@ -31,6 +35,11 @@ New Features
 - `npx acoustic-connect doctor` checks the app's config, Android and iOS
   projects and reports what would go wrong at build time or on the device
 - iOS links the Connect SDK through Swift Package Manager or CocoaPods
+- On iOS a `logSignal` payload is at the root of `signal` (Connect iOS SDK 2.1.26 and
+  newer), as on Android
+- `npx acoustic-connect setup-ios-push` adds the rich-push extensions to Swift
+  Package Manager and CocoaPods apps (with CocoaPods it adds the pod to the
+  Podfile: run `pod install` after it)
 - Sample apps: DemoCapacitor and an Angular + Ionic app, with end-to-end checks
   of what the plugin sends
 
@@ -40,8 +49,7 @@ Known Issues
   on a real device. Registration is checked on the Android emulator and the iOS
   simulator
 - Rich push has not been received on a real device (the iOS simulator does not
-  show rich media), and the extensions of an app that uses CocoaPods have to be
-  added by hand: `setup-ios-push` covers Swift Package Manager apps only
+  show rich media)
 - The manual push calls (`didRegisterWithToken` and the others) are checked with
   a fake SDK, not against a real push
 - `iosVersion` applies only to apps that use CocoaPods; with Swift Package

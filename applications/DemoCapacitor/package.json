@@ -17,7 +17,7 @@
   },
   "dependencies": {
     "@capacitor/core": "^8.0.0",
-    "capacitor-acoustic-connect-beta": "1.0.2",
+    "capacitor-acoustic-connect-beta": "1.0.8",
     "@capacitor/ios": "^8.0.0",
     "@capacitor/android": "^8.0.0"
   },

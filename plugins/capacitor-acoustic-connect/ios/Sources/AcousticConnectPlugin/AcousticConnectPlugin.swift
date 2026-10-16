@@ -30,6 +30,8 @@ public class AcousticConnectPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "logScreenViewContextLoad", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "logScreenViewContextUnload", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "logScreenLayout", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "logLocation", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "logLocationUpdate", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setConfigItem", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getConfigItem", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "pushDidReceiveNotification", returnType: CAPPluginReturnPromise),
@@ -130,6 +132,14 @@ public class AcousticConnectPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func logScreenLayout(_ call: CAPPluginCall) {
         withBridge(call) { connect, options, reply in connect.logScreenLayout(options, reply: reply) }
+    }
+
+    @objc func logLocation(_ call: CAPPluginCall) {
+        withBridge(call) { connect, _, reply in connect.logLocation(reply: reply) }
+    }
+
+    @objc func logLocationUpdate(_ call: CAPPluginCall) {
+        withBridge(call) { connect, options, reply in connect.logLocationUpdate(options, reply: reply) }
     }
 
     @objc func setConfigItem(_ call: CAPPluginCall) {

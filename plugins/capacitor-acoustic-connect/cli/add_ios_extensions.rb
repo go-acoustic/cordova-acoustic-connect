@@ -13,6 +13,8 @@
 #   ACOUSTIC_APP_GROUP        the App Group the extensions and the app share
 #   ACOUSTIC_SDK_VERSION      the Connect-SP version the plugin requires at least
 #   ACOUSTIC_DEVELOPMENT_TEAM optional
+#   ACOUSTIC_LINK_SDK         'spm' (default): the extensions get the Connect SDK as a Swift package of the project;
+#                             'pods': the app uses CocoaPods, the Podfile gives them the AcousticConnect pod, and the project gets no package
 
 require 'xcodeproj'
 
@@ -27,6 +29,9 @@ PROJECT_PATH = env!('ACOUSTIC_PROJECT_PATH')
 APP_GROUP    = env!('ACOUSTIC_APP_GROUP')
 SDK_VERSION  = env!('ACOUSTIC_SDK_VERSION')
 TEAM         = ENV['ACOUSTIC_DEVELOPMENT_TEAM'].to_s.strip
+LINK_SDK     = ENV['ACOUSTIC_LINK_SDK'].to_s.strip.empty? ? 'spm' : ENV['ACOUSTIC_LINK_SDK'].to_s.strip
+raise "ACOUSTIC_LINK_SDK must be spm or pods, not #{LINK_SDK}" unless %w[spm pods].include?(LINK_SDK)
+USE_SPM      = LINK_SDK == 'spm'
 SDK_URL      = 'https://github.com/go-acoustic/Connect-SP.git'
 EXTENSIONS   = {
   'ConnectNSE' => 'NotificationService.swift',
@@ -47,13 +52,16 @@ app_bundle_id = setting(app, 'Debug', 'PRODUCT_BUNDLE_IDENTIFIER').to_s
 raise 'the app has no PRODUCT_BUNDLE_IDENTIFIER' if app_bundle_id.empty?
 
 # --- the Connect SDK, as a Swift package of the project, for the extensions -----------------------------------------------------------
-package = project.root_object.package_references.find { |r| r.respond_to?(:repositoryURL) && r.repositoryURL.to_s =~ /Connect-SP/ }
-unless package
-  package = project.new(Xcodeproj::Project::Object::XCRemoteSwiftPackageReference)
-  package.repositoryURL = SDK_URL
-  project.root_object.package_references << package
+# With CocoaPods the SDK reaches the extensions through the Podfile instead, and linking the package too would put it there twice.
+if USE_SPM
+  package = project.root_object.package_references.find { |r| r.respond_to?(:repositoryURL) && r.repositoryURL.to_s =~ /Connect-SP/ }
+  unless package
+    package = project.new(Xcodeproj::Project::Object::XCRemoteSwiftPackageReference)
+    package.repositoryURL = SDK_URL
+    project.root_object.package_references << package
+  end
+  package.requirement = { 'kind' => 'upToNextMajorVersion', 'minimumVersion' => SDK_VERSION }
 end
-package.requirement = { 'kind' => 'upToNextMajorVersion', 'minimumVersion' => SDK_VERSION }
 
 # --- the app: entitlements and background mode ---------------------------------------------------------------------------------------
 # One group of files per extension, next to the project: the folder named like the extension.
@@ -135,7 +143,7 @@ EXTENSIONS.each do |name, source|
     end
   end
 
-  unless ext.package_product_dependencies.any? { |d| d.product_name == 'Connect' }
+  if USE_SPM && ext.package_product_dependencies.none? { |d| d.product_name == 'Connect' }
     dependency = project.new(Xcodeproj::Project::Object::XCSwiftPackageProductDependency)
     dependency.product_name = 'Connect'
     dependency.package = package
@@ -160,4 +168,4 @@ unless TEAM.empty?
 end
 
 project.save
-puts "ConnectNSE and ConnectNCE are in #{File.basename(PROJECT_PATH)} (Connect-SP #{SDK_VERSION})"
+puts "ConnectNSE and ConnectNCE are in #{File.basename(PROJECT_PATH)} (#{USE_SPM ? "Connect-SP #{SDK_VERSION}" : 'AcousticConnect pod'})"

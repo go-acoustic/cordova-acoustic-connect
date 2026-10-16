@@ -90,6 +90,25 @@ export function createAcousticConnect(native: AcousticConnectPlugin): AcousticCo
       return native[method]({ logicalPageName, referrer: isNonEmptyString(referrer) ? referrer : null });
     };
 
+  /**
+   * A dialog event is a custom event, as in the Cordova plugin: the same event names and keys on both platforms, with the
+   * `dialogId`, the `eventType` and a millisecond `timestamp` next to the fields of the event.
+   */
+  const dialogEvent = (
+    label: string,
+    eventName: string,
+    eventType: string,
+    dialogId: string,
+    fields: Record<string, FlatValue>,
+    requiredStrings: string[],
+  ): Promise<void> => {
+    if (!isNonEmptyString(dialogId)) return invalid(`${label}: dialogId must be a non-empty string`);
+    for (const key of requiredStrings) {
+      if (!isNonEmptyString(fields[key])) return invalid(`${label}: ${key} must be a non-empty string`);
+    }
+    return api.logCustomEvent(eventName, { ...fields, dialogId, eventType, timestamp: String(Date.now()) });
+  };
+
   const api: AcousticConnectApi = {
     enable(appKey, postURL, pushMode, options) {
       if (!isNonEmptyString(appKey)) return invalid('enable: appKey must be a non-empty string');
@@ -198,6 +217,60 @@ export function createAcousticConnect(native: AcousticConnectPlugin): AcousticCo
         return invalid('logScreenLayout: delayMs must be a non-negative integer');
       }
       return native.logScreenLayout(delayMs === undefined ? { name } : { name, delayMs });
+    },
+
+    logLocation: () => native.logLocation(),
+
+    logLocationUpdate(latitude, longitude, level) {
+      if (typeof latitude !== 'number' || !isFinite(latitude) || latitude < -90 || latitude > 90) {
+        return invalid('logLocationUpdate: latitude must be a number between -90 and 90');
+      }
+      if (typeof longitude !== 'number' || !isFinite(longitude) || longitude < -180 || longitude > 180) {
+        return invalid('logLocationUpdate: longitude must be a number between -180 and 180');
+      }
+      const lvl = level === undefined ? DEFAULT_EVENT_LEVEL : level;
+      if (!isNonNegativeInteger(lvl)) return invalid('logLocationUpdate: level must be a non-negative integer');
+      return native.logLocationUpdate({ latitude, longitude, level: lvl });
+    },
+
+    logDialogShowEvent: (dialogId, dialogTitle, dialogType) =>
+      dialogEvent('logDialogShowEvent', 'DialogShowEvent', 'dialog_show', dialogId, { dialogTitle, dialogType }, [
+        'dialogTitle',
+        'dialogType',
+      ]),
+
+    logDialogDismissEvent: (dialogId, dismissReason) =>
+      dialogEvent('logDialogDismissEvent', 'DialogDismissEvent', 'dialog_dismiss', dialogId, { dismissReason }, [
+        'dismissReason',
+      ]),
+
+    logDialogButtonClickEvent(dialogId, buttonText, buttonIndex) {
+      if (!isNonNegativeInteger(buttonIndex)) {
+        return invalid('logDialogButtonClickEvent: buttonIndex must be a non-negative integer');
+      }
+      return dialogEvent(
+        'logDialogButtonClickEvent',
+        'DialogButtonClickEvent',
+        'dialog_button_click',
+        dialogId,
+        { buttonText, buttonIndex: String(buttonIndex) },
+        ['buttonText'],
+      );
+    },
+
+    logDialogCustomEvent(dialogId, eventName, values) {
+      const extra = values === undefined ? {} : values;
+      if (!isFlatMap(extra)) {
+        return invalid('logDialogCustomEvent: values must be a flat object of string, number or boolean values');
+      }
+      return dialogEvent(
+        'logDialogCustomEvent',
+        'DialogCustomEvent',
+        'dialog_custom_event',
+        dialogId,
+        { ...extra, customEventName: eventName },
+        ['customEventName'],
+      );
     },
 
     setConfigItem(key, value, moduleName) {

@@ -295,6 +295,24 @@ class AcousticConnect(
         onUi(reply, "logScreenLayout: no foreground activity") { sdkCall(reply, "logScreenLayout") { sdk.logScreenLayout(name, delayMs) } }
     }
 
+    /** Logs the device's current location, as the Cordova plugin's `logLocation` does. */
+    fun logLocation(reply: Reply) {
+        onUi(reply, "logLocation: no foreground activity") { sdkCall(reply, "logLocation") { sdk.logLocation(DEFAULT_EVENT_LEVEL) } }
+    }
+
+    /** Logs a location the app has, as the Cordova plugin's `logLocationUpdate` does. */
+    fun logLocationUpdate(data: JSONObject, reply: Reply) {
+        val latitude = data.optDouble("latitude", Double.NaN)
+        val longitude = data.optDouble("longitude", Double.NaN)
+        if (latitude.isNaN() || latitude !in -90.0..90.0 || longitude.isNaN() || longitude !in -180.0..180.0) {
+            return reply.reject(CODE_INVALID_ARGS, "logLocationUpdate: latitude/longitude out of range")
+        }
+        val level = data.optInt("level", DEFAULT_EVENT_LEVEL)
+        onUi(reply, "logLocationUpdate: no foreground activity") {
+            sdkCall(reply, "logLocationUpdate") { sdk.logLocationUpdate(latitude, longitude, level) }
+        }
+    }
+
     fun setConfigItem(data: JSONObject, reply: Reply) {
         val key = text(data, "key").trim()
         val module = text(data, "moduleName").trim()

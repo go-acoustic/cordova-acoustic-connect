@@ -81,6 +81,16 @@ final class FakeSdk: ConnectSdk {
         lastLayout = (name, delayMs)
         return accepts
     }
+    var lastLocation: (latitude: Double, longitude: Double, level: MonitoringLevel)?
+    func logLocation() -> Bool {
+        calls.append("logLocation")
+        return accepts
+    }
+    func logLocationUpdate(latitude: Double, longitude: Double, level: MonitoringLevel) -> Bool {
+        calls.append("logLocationUpdate")
+        lastLocation = (latitude, longitude, level)
+        return accepts
+    }
     func setConfigItem(key: String, value: Any) -> Bool {
         calls.append("setConfigItem(\(key))")
         configSets.append((key, value))
@@ -413,6 +423,29 @@ final class AcousticConnectBridgeTests: XCTestCase {
         assertRejected(reply { bridge.logScreenLayout(["name": "Home"], reply: $0) }, "ACOUSTIC_INTERNAL_ERROR", "logScreenLayout returned false")
     }
 
+    func testLogLocation_asksTheSdkAndRejectsWhenItDeclines() {
+        _ = reply { bridge.logLocation(reply: $0) }
+        XCTAssertTrue(sdk.calls.contains("logLocation"))
+        sdk.accepts = false
+        assertRejected(reply { bridge.logLocation(reply: $0) }, "ACOUSTIC_INTERNAL_ERROR", "logLocation returned false")
+    }
+
+    func testLogLocationUpdate_passesThePositionAndTheLevel() {
+        _ = reply { bridge.logLocationUpdate(["latitude": 52.5, "longitude": -13.4, "level": 2], reply: $0) }
+        XCTAssertEqual(sdk.lastLocation?.latitude, 52.5)
+        XCTAssertEqual(sdk.lastLocation?.longitude, -13.4)
+        XCTAssertNotNil(sdk.lastLocation?.level)
+    }
+
+    func testLogLocationUpdate_rejectsAPositionOutOfRangeOrMissingAndDecline() {
+        assertRejected(reply { bridge.logLocationUpdate(["latitude": 91, "longitude": 0], reply: $0) }, "ACOUSTIC_INVALID_ARGS", "out of range")
+        assertRejected(reply { bridge.logLocationUpdate(["latitude": 0, "longitude": -181], reply: $0) }, "ACOUSTIC_INVALID_ARGS", "out of range")
+        assertRejected(reply { bridge.logLocationUpdate(["latitude": 0], reply: $0) }, "ACOUSTIC_INVALID_ARGS", "out of range")
+        XCTAssertNil(sdk.lastLocation)
+        sdk.accepts = false
+        assertRejected(reply { bridge.logLocationUpdate(["latitude": 1, "longitude": 2], reply: $0) }, "ACOUSTIC_INTERNAL_ERROR", "logLocationUpdate returned false")
+    }
+
     // MARK: config items
 
     func testSetConfigItem_keepsBooleansStringsAndNumbersApart() {
@@ -618,6 +651,8 @@ private final class StuckSdk: ConnectSdk {
     func logException(name: String, reason: String, stackInfo: String, unhandled: Bool) -> Bool { false }
     func logScreenView(pageName: String, className: String, kind: ScreenViewKind, referrer: String?) -> Bool { false }
     func logScreenLayout(name: String, delayMs: Int?) -> Bool { false }
+    func logLocation() -> Bool { false }
+    func logLocationUpdate(latitude: Double, longitude: Double, level: MonitoringLevel) -> Bool { false }
     func setConfigItem(key: String, value: Any) -> Bool { false }
     func configItem(key: String) -> Any? { nil }
     func setKillSwitch(enabled: Bool, url: String?) {}
