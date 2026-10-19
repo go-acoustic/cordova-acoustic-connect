@@ -14,7 +14,7 @@
 # SDK variant is driven by ConnectConfig.json.Connect.useRelease — there is
 # no --variable ACOUSTIC_SDK_VARIANT= flag to validate.
 #
-# Usage:  bash scripts/validate-jenkinsfile.sh [file ...]   (default: the Jenkinsfile and the modules it loads, ci/*.groovy)
+# Usage:  bash scripts/validate-jenkinsfile.sh [file ...]   (default: every Jenkinsfile* and the modules they load, ci/*.groovy)
 # Exit:   0 = pass, 1 = failures found
 
 set -euo pipefail
@@ -22,8 +22,8 @@ set -euo pipefail
 if [[ $# -gt 0 ]]; then
   FILES=("$@")
 else
-  FILES=(Jenkinsfile)
-  for f in ci/*.groovy; do [[ -f "$f" ]] && FILES+=("$f"); done
+  FILES=()
+  for f in Jenkinsfile Jenkinsfile-* ci/*.groovy; do [[ -f "$f" ]] && FILES+=("$f"); done
 fi
 
 for f in "${FILES[@]}"; do
