@@ -3,16 +3,22 @@
  *
  * Tests for running the e2e verification in Jenkins: the iOS simulator picker the CI
  * stage uses (e2e/core/commands.js + pick-simulator.js) and the shape of the
- * 'E2E Verification' stage in the Jenkinsfile.
+ * 'E2E Verification' stage in the Jenkinsfiles.
  */
 
 import { readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
 
 const ROOT = join(__dirname, '..', '..', '..');
-/** The pipeline is the Jenkinsfile and the modules it loads (ci/*.groovy); the tests read them as one text. */
-const pipelineSource = (): string =>
-    ['Jenkinsfile', ...readdirSync(join(ROOT, 'ci')).sort().map((f: string) => `ci/${f}`)]
+/**
+ * The pipeline of one job is its Jenkinsfile and the modules the Jenkinsfiles load (ci/*.groovy); the tests read them as one text. Without
+ * a job, both Jenkinsfiles are in it (Cordova's first).
+ */
+const pipelineSource = (job?: 'cordova' | 'capacitor'): string =>
+    [
+        ...(job ? [`Jenkinsfile-${job}`] : ['Jenkinsfile-cordova', 'Jenkinsfile-capacitor']),
+        ...readdirSync(join(ROOT, 'ci')).sort().map((f: string) => `ci/${f}`)
+    ]
         .map((f) => readFileSync(join(ROOT, f), 'utf8'))
         .join('\n');
 const E2E = join(ROOT, 'e2e', 'core');
@@ -167,7 +173,7 @@ describe('pick-simulator.js', () => {
 });
 
 describe('Jenkinsfile: E2E Verification stage', () => {
-    const jenkins: string = pipelineSource();
+    const jenkins: string = pipelineSource('cordova');
     const stageStart = jenkins.indexOf("stage('E2E Verification')");
     const stageBlock = stageStart === -1 ? '' : jenkins.slice(stageStart, jenkins.indexOf("stage('Publish Feature')"));
     const fnStart = jenkins.indexOf('def runE2eVerification()');
@@ -268,7 +274,7 @@ describe('Jenkinsfile: E2E Verification stage', () => {
 });
 
 describe('Jenkinsfile: build throttling', () => {
-    const jenkins: string = pipelineSource();
+    const jenkins: string = pipelineSource('cordova');
     const options = jenkins.slice(jenkins.indexOf('options {'), jenkins.indexOf('parameters {'));
 
     it('throttles concurrent builds by the global categories, like the React Native repo', () => {
@@ -286,12 +292,12 @@ describe('Jenkinsfile: build throttling', () => {
 
 
 describe('Jenkinsfile: Capacitor E2E Verification', () => {
-    const jenkins: string = pipelineSource();
+    const jenkins: string = pipelineSource('capacitor');
     const stageStart = jenkins.indexOf("stage('E2E Verification')");
     const stageBlock = jenkins.slice(stageStart, jenkins.indexOf("stage('Publish Feature')"));
     // the one run of the runner and the verification around it
     const fnStart = jenkins.indexOf('def runCapacitorE2eOnce(');
-    const fnBlock = fnStart === -1 ? '' : jenkins.slice(fnStart, jenkins.indexOf('def runCapacitorPluginTests()'));
+    const fnBlock = fnStart === -1 ? '' : jenkins.slice(fnStart, jenkins.indexOf('def setupCapacitor()'));
     const verification = fnBlock.slice(fnBlock.indexOf('def runCapacitorE2eVerification()'));
 
     it('finds the function, so the checks below do not pass on an empty text', () => {
@@ -364,8 +370,8 @@ describe('Jenkinsfile: Capacitor E2E Verification', () => {
     });
 });
 
-describe('Jenkinsfile: an aborted build does not publish', () => {
-    const jenkins: string = pipelineSource();
+describe.each([['cordova'], ['capacitor']] as ['cordova' | 'capacitor'][])('Jenkinsfile-%s: an aborted build does not publish', (job) => {
+    const jenkins: string = pipelineSource(job);
     const stageBlock = (name: string) => {
         const start = jenkins.indexOf(`stage('${name}')`);
         return start === -1 ? '' : jenkins.slice(start, jenkins.indexOf('steps {', start));
