@@ -16,6 +16,8 @@
 #   ACOUSTIC_DEPLOYMENT_TARGET iOS deployment target            (default 15.1)
 #   ACOUSTIC_SWIFT_VERSION     Swift version                    (default 5.0)
 #   ACOUSTIC_SDK_VARIANT       AcousticConnect|AcousticConnectDebug (default AcousticConnectDebug)
+#   ACOUSTIC_PUSH_ENABLED      "0" when Connect.PushEnabled is false: no ConnectNSE/ConnectNCE targets and no
+#                              embed phase are added, the plugin is still wired into the App target (default "1")
 #
 # Requires the xcodeproj gem (ships with CocoaPods).
 
@@ -34,6 +36,8 @@ APP_BUNDLE_ID      = env!('ACOUSTIC_APP_BUNDLE_ID')
 DEPLOYMENT_TARGET  = ENV.fetch('ACOUSTIC_DEPLOYMENT_TARGET', '15.1')
 SWIFT_VERSION      = ENV.fetch('ACOUSTIC_SWIFT_VERSION', '5.0')
 SDK_VARIANT        = ENV.fetch('ACOUSTIC_SDK_VARIANT', 'AcousticConnectDebug')
+# Push has always been on in this plugin: only an explicit "0" turns the extensions off.
+PUSH_ENABLED       = ENV.fetch('ACOUSTIC_PUSH_ENABLED', '1') != '0'
 # Host app's <widget version="..."> from config.xml — must match the App target's own
 # MARKETING_VERSION/CURRENT_PROJECT_VERSION (cordova-ios sets both to this same value),
 # since Apple requires an extension's CFBundleVersion to match its containing app's.
@@ -190,10 +194,44 @@ end
 # ---------------------------------------------------------------------------
 
 embed_phase = app_target.copy_files_build_phases.find { |p| p.symbol_dst_subfolder_spec == :plug_ins }
-unless embed_phase
-  embed_phase = app_target.new_copy_files_build_phase('Embed Foundation Extensions')
-  embed_phase.symbol_dst_subfolder_spec = :plug_ins
-  puts 'App: created Embed Foundation Extensions phase.'
+if PUSH_ENABLED
+  unless embed_phase
+    embed_phase = app_target.new_copy_files_build_phase('Embed Foundation Extensions')
+    embed_phase.symbol_dst_subfolder_spec = :plug_ins
+    puts 'App: created Embed Foundation Extensions phase.'
+  end
+else
+  puts 'Push is off (ACOUSTIC_PUSH_ENABLED=0): no ConnectNSE/ConnectNCE targets and no embed phase.'
+
+  # A project that had push on still has the extensions: take them out (the target, its product, its dependency and embed entry on App, its
+  # group of files). Left in, they fail the build: their xcframeworks script phase names a file list that the Pods no longer have.
+  EXTENSIONS.each do |ext|
+    target = project.targets.find { |t| t.name == ext[:name] }
+    next unless target
+
+    app_target.dependencies.select { |d| d.target.equal?(target) || d.name == ext[:name] }.each(&:remove_from_project)
+    app_target.copy_files_build_phases.each do |phase|
+      phase.files.select { |bf| bf.file_ref && bf.file_ref.display_name.to_s.include?(ext[:name]) }.each do |bf|
+        phase.remove_build_file(bf)
+      end
+    end
+    # Not everything a target owns goes with it: its product (the .appex), its source files and its build configurations stay in the
+    # project as objects nothing refers to, which Xcode shows and the file still names.
+    source_refs = target.source_build_phase.files.map(&:file_ref).compact
+    product_ref = target.product_reference
+    configuration_list = target.build_configuration_list
+    target.remove_from_project
+    source_refs.each(&:remove_from_project)
+    product_ref&.remove_from_project
+    if configuration_list
+      configuration_list.build_configurations.dup.each(&:remove_from_project)
+      configuration_list.remove_from_project
+    end
+    project.main_group.find_subpath(ext[:name], false)&.remove_from_project
+    puts "#{ext[:name]}: removed (push is off)."
+  end
+  # the embed phase this plugin created has nothing left to embed
+  app_target.copy_files_build_phases.select { |p| p.symbol_dst_subfolder_spec == :plug_ins && p.files.empty? }.each(&:remove_from_project)
 end
 
 # ---------------------------------------------------------------------------
@@ -246,7 +284,7 @@ end
 # 3. Extension targets
 # ---------------------------------------------------------------------------
 
-EXTENSIONS.each do |ext|
+(PUSH_ENABLED ? EXTENSIONS : []).each do |ext|
   # ── Create target (skip if already present) ──────────────────────────────
 
   target = project.targets.find { |t| t.name == ext[:name] }

@@ -105,6 +105,22 @@ async function runStep(deps, label, command, options) {
     return result;
 }
 
+/**
+ * Whether the run expects a push registration: Connect.PushEnabled of the effective config, the overrides of the run (the phase and
+ * --connect-config) over the app's ConnectConfig.json, else its example. On unless it is false, as in the plugin.
+ */
+function pushExpectedFor(root, overrides, deps) {
+    if (overrides && overrides.PushEnabled === false) return false;
+    if (overrides && overrides.PushEnabled === true) return true;
+    for (const name of ['ConnectConfig.json', 'ConnectConfig.example.json']) {
+        try {
+            const config = JSON.parse(deps.readFile(path.join(root, name)));
+            return (config.Connect || config).PushEnabled !== false;
+        } catch (_) { /* try the next */ }
+    }
+    return true;
+}
+
 async function runE2E(opts, deps) {
     const platform = opts.platform;
     const phase = opts.phase;
@@ -112,7 +128,8 @@ async function runE2E(opts, deps) {
     const outDir = opts.outDir;
 
     // Everything that can be rejected is rejected before anything is touched.
-    const manifest = suite.buildSuite({ platform: platform, phase: phase });
+    const overrides = prepareModule.deepMerge(suite.PHASES[phase].connectConfig, opts.connectConfig || {});
+    const manifest = suite.buildSuite({ platform: platform, phase: phase, pushExpected: pushExpectedFor(root, overrides, deps) });
     if (!deps.exists(opts.sinkRepo)) {
         throw new Error('collector sink checkout not found at ' + opts.sinkRepo + ' (set --sink-repo)');
     }
@@ -154,7 +171,7 @@ async function runE2E(opts, deps) {
         }
         deps.prepare({
             root: root, platform: platform, sink: sinkUrl, deviceHost: opts.deviceHost,
-            connectOverrides: prepareModule.deepMerge(suite.PHASES[phase].connectConfig, opts.connectConfig || {})
+            connectOverrides: overrides
         });
         prepared = true;
 

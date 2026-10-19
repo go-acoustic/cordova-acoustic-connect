@@ -215,6 +215,37 @@ describe('default suite', () => {
     });
 });
 
+describe('push off (Connect.PushEnabled false)', () => {
+    it.each([['android'], ['ios']])('%s: the push registration (type 22) is not expected, and the row says why', (platform) => {
+        const rows: Row[] = suite.buildSuite({ platform, pushExpected: false });
+        const row = rows.find((r) => r.name === 'baseline: type 22 present')!;
+        expect(row).toBeTruthy();
+        expect(row.check).toBeUndefined();
+        expect(row.na).toMatch(/PushEnabled is false/);
+        // nothing else changes: the same rows, one of them not applicable
+        const withPush: Row[] = suite.buildSuite({ platform });
+        expect(rows.map((r) => r.name)).toEqual(withPush.map((r) => r.name));
+        expect(rows.filter((r) => r.na).length).toBe(withPush.filter((r) => r.na).length + 1);
+    });
+
+    it('is the default with push on or the argument absent: type 22 is checked', () => {
+        for (const args of [{ platform: 'ios' }, { platform: 'ios', pushExpected: true }]) {
+            const row = suite.buildSuite(args).find((r: Row) => r.name === 'baseline: type 22 present')!;
+            expect(row).toMatchObject({ check: 'type-present', type: 22 });
+        }
+    });
+
+    it('passes the real engine on the captures of a run without a registration, and fails it with push on', () => {
+        const messages = ideal('ios', { layout: true }).filter((m) => m.type !== 22);
+        const off = evaluate(suite.buildSuite({ platform: 'ios', pushExpected: false }), messages, 'ios');
+        expect(off.pass).toBe(true);
+        expect(off.entries.find((e) => e.name === 'baseline: type 22 present')!.status).toBe('N/A');
+        const on = evaluate(suite.buildSuite({ platform: 'ios' }), messages, 'ios');
+        expect(on.pass).toBe(false);
+        expect(on.entries.find((e) => e.name === 'baseline: type 22 present')!.status).toBe('FAIL');
+    });
+});
+
 describe('capture-off suites (ios)', () => {
     for (const phase of ['screen-capture-off', 'layout-config-off']) {
         it(`${phase}: no layout, but the screen views the app logs are still there`, () => {

@@ -32,6 +32,9 @@ afterAll(() => {
 const hook = require('../src/ios/hooks/after_prepare.js');
 const {
     updatePodfile,
+    resolvePushEnabled,
+    otherDeclaresRemoteNotification,
+    removeRemoteNotificationMode,
     patchXcframeworksScriptPhases,
     resolveConnectConfigPath,
     resolveIosDevelopmentTeam,
@@ -39,7 +42,10 @@ const {
     addApsEnvironmentToEntitlementsFile,
     resolveApsEnvironmentForEntitlementsFile,
 } = hook._internal as {
-    updatePodfile:                 (iosDir: string) => boolean;
+    updatePodfile:                 (iosDir: string, pushEnabled?: boolean) => boolean;
+    resolvePushEnabled:            (projectRoot: string) => boolean;
+    otherDeclaresRemoteNotification: (projectRoot: string) => boolean;
+    removeRemoteNotificationMode:  (infoPlistPath: string) => boolean;
     patchXcframeworksScriptPhases: (p: string, variant?: string) => void;
     resolveConnectConfigPath:      (projectRoot: string) => string;
     resolveIosDevelopmentTeam:     (projectRoot: string) => string | null;
@@ -495,5 +501,183 @@ describe('resolveApsEnvironmentForEntitlementsFile', () => {
 
     it('returns development for the named .entitlements template file', () => {
         expect(resolveApsEnvironmentForEntitlementsFile('App.entitlements')).toBe('development');
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Connect.PushEnabled
+// ---------------------------------------------------------------------------
+
+describe('resolvePushEnabled — Connect.PushEnabled of ConnectConfig.json', () => {
+    function configWith(connect: unknown): void {
+        fs.writeFileSync(path.join(tmpDir, 'ConnectConfig.json'), JSON.stringify({ Connect: connect }));
+    }
+
+    it('is on when the key is absent, because push has always been on in this plugin', () => {
+        configWith({ AppKey: 'k' });
+        expect(resolvePushEnabled(tmpDir)).toBe(true);
+    });
+
+    it('is on for true and for null', () => {
+        configWith({ PushEnabled: true });
+        expect(resolvePushEnabled(tmpDir)).toBe(true);
+        configWith({ PushEnabled: null });
+        expect(resolvePushEnabled(tmpDir)).toBe(true);
+    });
+
+    it('is off only for false', () => {
+        configWith({ PushEnabled: false });
+        expect(resolvePushEnabled(tmpDir)).toBe(false);
+    });
+
+    it('is on when there is no config, or it is not JSON (the hook reports those itself)', () => {
+        expect(resolvePushEnabled(tmpDir)).toBe(true);
+        fs.writeFileSync(path.join(tmpDir, 'ConnectConfig.json'), '{ nope');
+        expect(resolvePushEnabled(tmpDir)).toBe(true);
+    });
+});
+
+describe('updatePodfile with push off', () => {
+    const BASE = [
+        "source 'https://cdn.cocoapods.org/'",
+        "install! 'cocoapods', :warn_for_unused_master_specs_repo => false",
+        "platform :ios, '15.1'",
+        'use_frameworks!',
+        "target 'App' do",
+        "\tproject 'App.xcodeproj'",
+        "\tpod 'AcousticConnectDebug', '>= 2.1.12'",
+        'end',
+        '',
+        'post_install do |installer|',
+        'end',
+        '',
+    ].join('\n');
+
+    it('adds no ConnectNSE or ConnectNCE target, and says nothing changed', () => {
+        fs.writeFileSync(path.join(tmpDir, 'Podfile'), BASE, 'utf8');
+        expect(updatePodfile(tmpDir, false)).toBe(false);
+        const result = fs.readFileSync(path.join(tmpDir, 'Podfile'), 'utf8');
+        expect(result).toBe(BASE);
+        expect(result).not.toContain('ConnectNSE');
+        expect(result).not.toContain('ConnectNCE');
+    });
+
+    it('takes out the extension targets a Podfile has from a time push was on', () => {
+        const withExtensions = updatePodfile; // adds them with push on
+        fs.writeFileSync(path.join(tmpDir, 'Podfile'), BASE, 'utf8');
+        withExtensions(tmpDir);
+        expect(fs.readFileSync(path.join(tmpDir, 'Podfile'), 'utf8')).toContain("target 'ConnectNSE' do");
+        expect(updatePodfile(tmpDir, false)).toBe(true);
+        const result = fs.readFileSync(path.join(tmpDir, 'Podfile'), 'utf8');
+        expect(result).not.toContain('ConnectNSE');
+        expect(result).not.toContain('ConnectNCE');
+        expect(result).toContain("target 'App' do");
+        expect(result).toContain("pod 'AcousticConnectDebug'");
+    });
+
+    it('still adds them with push on (the default)', () => {
+        fs.writeFileSync(path.join(tmpDir, 'Podfile'), BASE, 'utf8');
+        expect(updatePodfile(tmpDir)).toBe(true);
+        expect(fs.readFileSync(path.join(tmpDir, 'Podfile'), 'utf8')).toContain("target 'ConnectNSE' do");
+    });
+});
+
+describe('removeRemoteNotificationMode — UIBackgroundModes of Info.plist with push off', () => {
+    const plist = (modes: string[] | null): string =>
+        [
+            '<?xml version="1.0" encoding="UTF-8"?>',
+            '<plist version="1.0">',
+            '<dict>',
+            '\t<key>CFBundleName</key>',
+            '\t<string>App</string>',
+            ...(modes === null
+                ? []
+                : ['\t<key>UIBackgroundModes</key>', '\t<array>', ...modes.map((m) => `\t\t<string>${m}</string>`), '\t</array>']),
+            '\t<key>UILaunchStoryboardName</key>',
+            '\t<string>CDVLaunchScreen</string>',
+            '</dict>',
+            '</plist>',
+            '',
+        ].join('\n');
+    const file = (): string => path.join(tmpDir, 'App-Info.plist');
+    const read = (): string => fs.readFileSync(file(), 'utf8');
+
+    it('takes the whole key out when remote-notification was the only mode', () => {
+        fs.writeFileSync(file(), plist(['remote-notification']), 'utf8');
+        expect(removeRemoteNotificationMode(file())).toBe(true);
+        expect(read()).toBe(plist(null));
+    });
+
+    it('keeps the other modes the app declares', () => {
+        fs.writeFileSync(file(), plist(['fetch', 'remote-notification', 'audio']), 'utf8');
+        expect(removeRemoteNotificationMode(file())).toBe(true);
+        expect(read()).toBe(plist(['fetch', 'audio']));
+    });
+
+    it('changes nothing when remote-notification is not there, or there are no modes', () => {
+        fs.writeFileSync(file(), plist(['fetch']), 'utf8');
+        expect(removeRemoteNotificationMode(file())).toBe(false);
+        expect(read()).toBe(plist(['fetch']));
+        fs.writeFileSync(file(), plist(null), 'utf8');
+        expect(removeRemoteNotificationMode(file())).toBe(false);
+        expect(read()).toBe(plist(null));
+    });
+
+    it('is safe to run again, and when there is no Info.plist yet', () => {
+        fs.writeFileSync(file(), plist(['remote-notification']), 'utf8');
+        removeRemoteNotificationMode(file());
+        expect(removeRemoteNotificationMode(file())).toBe(false);
+        fs.rmSync(file());
+        expect(removeRemoteNotificationMode(file())).toBe(false);
+    });
+});
+
+describe('otherDeclaresRemoteNotification — a push plugin of the app must keep its background mode', () => {
+    const plugin = (id: string, xml: string): void => {
+        fs.mkdirSync(path.join(tmpDir, 'plugins', id), { recursive: true });
+        fs.writeFileSync(path.join(tmpDir, 'plugins', id, 'plugin.xml'), xml);
+    };
+
+    it('is false for an app with only this plugin (its own plugin.xml names the mode)', () => {
+        fs.writeFileSync(path.join(tmpDir, 'config.xml'), '<widget id="x"></widget>');
+        plugin('co.acoustic.connect.push', '<string>remote-notification</string>');
+        expect(otherDeclaresRemoteNotification(tmpDir)).toBe(false);
+    });
+
+    it('is true when another plugin declares the mode', () => {
+        fs.writeFileSync(path.join(tmpDir, 'config.xml'), '<widget id="x"></widget>');
+        plugin('co.acoustic.connect.push', '<string>remote-notification</string>');
+        plugin('cordova-plugin-firebasex', '<array><string>remote-notification</string></array>');
+        expect(otherDeclaresRemoteNotification(tmpDir)).toBe(true);
+    });
+
+    it('is true when the app config.xml declares it, and false when a plugin names other modes only', () => {
+        plugin('some-plugin', '<string>fetch</string>');
+        fs.writeFileSync(path.join(tmpDir, 'config.xml'), '<widget id="x"></widget>');
+        expect(otherDeclaresRemoteNotification(tmpDir)).toBe(false);
+        fs.writeFileSync(path.join(tmpDir, 'config.xml'), '<widget id="x"><string>remote-notification</string></widget>');
+        expect(otherDeclaresRemoteNotification(tmpDir)).toBe(true);
+    });
+
+    it('finds a scoped plugin (@scope/name), which sits one folder deeper', () => {
+        fs.writeFileSync(path.join(tmpDir, 'config.xml'), '<widget id="x"></widget>');
+        plugin('co.acoustic.connect.push', '<string>remote-notification</string>');
+        fs.mkdirSync(path.join(tmpDir, 'plugins', '@havesource', 'cordova-plugin-push'), { recursive: true });
+        fs.writeFileSync(
+            path.join(tmpDir, 'plugins', '@havesource', 'cordova-plugin-push', 'plugin.xml'),
+            '<array><string>remote-notification</string></array>',
+        );
+        expect(otherDeclaresRemoteNotification(tmpDir)).toBe(true);
+    });
+
+    it('is false for a scoped plugin that names other modes only', () => {
+        fs.writeFileSync(path.join(tmpDir, 'config.xml'), '<widget id="x"></widget>');
+        fs.mkdirSync(path.join(tmpDir, 'plugins', '@scope', 'p'), { recursive: true });
+        fs.writeFileSync(path.join(tmpDir, 'plugins', '@scope', 'p', 'plugin.xml'), '<string>fetch</string>');
+        expect(otherDeclaresRemoteNotification(tmpDir)).toBe(false);
+    });
+
+    it('is false when there is no config.xml and no plugins folder', () => {
+        expect(otherDeclaresRemoteNotification(tmpDir)).toBe(false);
     });
 });

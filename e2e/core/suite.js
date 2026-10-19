@@ -119,6 +119,9 @@ function adapt(source, platform) {
     }
 }
 
+const PUSH_OFF_REASON = 'push is off: Connect.PushEnabled is false in the config of this run';
+
+// `args.pushExpected === false` (Connect.PushEnabled is false): no push registration (type 22) is expected, and the row says so instead of failing.
 function buildSuite(args) {
     const platform = args && args.platform;
     const phase = (args && args.phase) || 'default';
@@ -137,7 +140,12 @@ function buildSuite(args) {
     if (phase === 'default') {
         rows.push({ name: 'baseline: session start (type 1)', check: 'type-present', type: 1 });
         scenario.BASELINE.forEach(function (b) {
-            rows.push({ name: 'baseline: ' + describe(b), check: b.check, type: b.type });
+            const name = 'baseline: ' + describe(b);
+            if (args && args.pushExpected === false && b.check === 'type-present' && b.type === 22) {
+                rows.push({ name: name, na: PUSH_OFF_REASON });
+            } else {
+                rows.push({ name: name, check: b.check, type: b.type });
+            }
         });
         scenario.expectations().forEach(function (e) { rows.push(adapt(e, platform)); });
         rows.push({ name: 'capture: layout (type 10) has non-empty control trees', check: 'layout-controls' });

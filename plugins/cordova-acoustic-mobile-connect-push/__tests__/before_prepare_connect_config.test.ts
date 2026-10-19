@@ -24,6 +24,7 @@ function readProperties(projectRoot: string): string {
 }
 
 function readNativeConfig(projectRoot: string): {
+    pushEnabled: boolean;
     useRelease: boolean;
     killSwitchEnabled: boolean;
     killSwitchUrl: string | null;
@@ -546,5 +547,41 @@ describe('the example ConnectConfig.json of the Demo', () => {
         expect(native.locationLoggingEnabled).toBeNull();
         expect(native.layoutConfigIos).toBeNull();
         expect(native.layoutConfigAndroid).toBeNull();
+    });
+});
+
+describe('PushEnabled (the master switch of push, both platforms)', () => {
+    beforeEach(() => {
+        writeConfig(tmpDir, VALID_CONFIG);
+    });
+
+    it('is on when omitted, because push has always been on in this plugin', () => {
+        hook(makeContext(tmpDir));
+        expect(readNativeConfig(tmpDir).pushEnabled).toBe(true);
+        expect(readJsConfig(tmpDir)).toMatch(/"PushEnabled": true/);
+    });
+
+    it('is on when null', () => {
+        writeConfig(tmpDir, { Connect: { ...VALID_CONFIG.Connect, PushEnabled: null } });
+        hook(makeContext(tmpDir));
+        expect(readNativeConfig(tmpDir).pushEnabled).toBe(true);
+    });
+
+    it('is on when true', () => {
+        writeConfig(tmpDir, { Connect: { ...VALID_CONFIG.Connect, PushEnabled: true } });
+        hook(makeContext(tmpDir));
+        expect(readNativeConfig(tmpDir).pushEnabled).toBe(true);
+    });
+
+    it('is off when false, for the native config and for the JS config', () => {
+        writeConfig(tmpDir, { Connect: { ...VALID_CONFIG.Connect, PushEnabled: false } });
+        hook(makeContext(tmpDir));
+        expect(readNativeConfig(tmpDir).pushEnabled).toBe(false);
+        expect(readJsConfig(tmpDir)).toMatch(/"PushEnabled": false/);
+    });
+
+    it.each([['true'], ['false'], [1], [0], [{}]])('stops, naming the key, for %j', (value) => {
+        writeConfig(tmpDir, { Connect: { ...VALID_CONFIG.Connect, PushEnabled: value } });
+        expect(() => hook(makeContext(tmpDir))).toThrow('Connect.PushEnabled must be a boolean');
     });
 });

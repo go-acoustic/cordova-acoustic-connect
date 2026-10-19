@@ -61,6 +61,17 @@ function resolveConnectConfigPath(projectRoot) {
     throw new Error('ConnectConfig.json not found');
 }
 
+// Connect.PushEnabled of ConnectConfig.json: on unless it is false, as before_prepare_connect_config.js reads it (push has always been on
+// in this plugin). An absent or unreadable config leaves it on; the hook's own resolution of the config reports those problems.
+function resolvePushEnabled(projectRoot) {
+    try {
+        const config = JSON.parse(fs.readFileSync(resolveConnectConfigPath(projectRoot), 'utf8'));
+        return (config.Connect || config).PushEnabled !== false;
+    } catch (_) {
+        return true;
+    }
+}
+
 function resolveAppGroupIdentifier(projectRoot) {
     const configPath = resolveConnectConfigPath(projectRoot);
     const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
@@ -291,7 +302,9 @@ function podVariantFromPodsJson(iosDir) {
 }
 
 
-function updatePodfile(iosDir) {
+// With push off (`pushEnabled` false) the Podfile gets no ConnectNSE/ConnectNCE targets: there are no extensions to host them. A Podfile
+// that has them from a time push was on loses them.
+function updatePodfile(iosDir, pushEnabled = true) {
     const podfilePath = path.join(iosDir, 'Podfile');
 
     // Fresh platform: cordova-ios has not yet generated the Podfile.
@@ -366,10 +379,22 @@ function updatePodfile(iosDir) {
         modified = true;
     }
 
+    // Push off: the extension targets go (add_ios_push_extensions.rb takes them out of the project too)
+    if (!pushEnabled) {
+        const { stripTargetBlock } = require('./before_prepare.js')._internal;
+        for (const name of ['ConnectNSE', 'ConnectNCE']) {
+            const stripped = stripTargetBlock(content, name);
+            if (stripped !== content) {
+                content = stripped;
+                modified = true;
+            }
+        }
+    }
+
     // Nested extension targets
     const hasNSE = content.includes("target 'ConnectNSE'");
     const hasNCE = content.includes("target 'ConnectNCE'");
-    if (!hasNSE || !hasNCE) {
+    if (pushEnabled && (!hasNSE || !hasNCE)) {
         const insertion = [
             hasNSE ? '' : "\n\ttarget 'ConnectNSE' do\n\t\tinherit! :search_paths\n\tend",
             hasNCE ? '' : "\n\ttarget 'ConnectNCE' do\n\t\tinherit! :search_paths\n\tend",
@@ -654,6 +679,52 @@ function updateEntitlements(iosDir, projectName, appGroupIdentifier) {
 }
 
 // ---------------------------------------------------------------------------
+// Push off: the remote-notification background mode
+// ---------------------------------------------------------------------------
+
+// Whether something other than this plugin declares the `remote-notification` background mode: another plugin's plugin.xml, or the app's
+// own config.xml. Another push plugin needs the mode, and Cordova puts it back on every prepare from each declaration, so taking it out
+// would break that plugin without a sign.
+function otherDeclaresRemoteNotification(projectRoot) {
+    const files = [path.join(projectRoot, 'config.xml')];
+    const pluginsDir = path.join(projectRoot, 'plugins');
+    if (fs.existsSync(pluginsDir)) {
+        fs.readdirSync(pluginsDir).forEach(function (id) {
+            // A scoped plugin (@scope/name) is a folder of plugin folders
+            if (id.charAt(0) === '@') {
+                fs.readdirSync(path.join(pluginsDir, id)).forEach(function (name) {
+                    files.push(path.join(pluginsDir, id, name, 'plugin.xml'));
+                });
+            } else if (id !== 'co.acoustic.connect.push') {
+                files.push(path.join(pluginsDir, id, 'plugin.xml'));
+            }
+        });
+    }
+    return files.some(function (file) {
+        try {
+            return fs.readFileSync(file, 'utf8').indexOf('remote-notification') !== -1;
+        } catch (_) {
+            return false;
+        }
+    });
+}
+
+// plugin.xml adds `remote-notification` to UIBackgroundModes of Info.plist for push, and cannot do it conditionally. With push off it is
+// taken out again, so the app does not declare a background mode it never uses. Other modes the app declares stay; when
+// `remote-notification` was the only one, the key goes too. Returns true when the file changed. Idempotent.
+function removeRemoteNotificationMode(infoPlistPath) {
+    if (!fs.existsSync(infoPlistPath)) return false;
+    const text = fs.readFileSync(infoPlistPath, 'utf8');
+    const modes = /([ \t]*<key>UIBackgroundModes<\/key>\s*<array>)([\s\S]*?)(<\/array>[ \t]*\n?)/.exec(text);
+    if (!modes || modes[2].indexOf('<string>remote-notification</string>') === -1) return false;
+    const rest = modes[2].replace(/[ \t]*<string>remote-notification<\/string>[ \t]*\n?/g, '');
+    const replacement = /<string>/.test(rest) ? modes[1] + rest + modes[3] : '';
+    fs.writeFileSync(infoPlistPath, text.replace(modes[0], replacement), 'utf8');
+    console.log('[after_prepare] Connect.PushEnabled is false — removed the remote-notification background mode from ' + path.basename(infoPlistPath));
+    return true;
+}
+
+// ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
 
@@ -668,11 +739,15 @@ module.exports = function (context) {
     const iosDir = path.join(projectRoot, 'platforms', 'ios');
     if (!fs.existsSync(iosDir)) return;
 
-    let appGroupIdentifier;
+    // Push off: no extensions, no App Group, no aps-environment, no remote-notification background mode. The plugin itself is wired
+    // (its source in the App target, the Podfile, the xcframeworks phase) either way.
+    const pushEnabled = resolvePushEnabled(projectRoot);
+
+    let appGroupIdentifier = null;
     let appBundleId;
     let appVersion;
     try {
-        appGroupIdentifier = resolveAppGroupIdentifier(projectRoot);
+        if (pushEnabled) appGroupIdentifier = resolveAppGroupIdentifier(projectRoot);
         appBundleId        = resolveAppBundleId(projectRoot);
         appVersion         = resolveAppVersion(projectRoot);
     } catch (e) {
@@ -691,7 +766,11 @@ module.exports = function (context) {
     const pod          = podVariantFromPodsJson(iosDir);
 
     // 1. Copy NSE/NCE source files with placeholder substituted
-    copyExtensionSources(pluginIosDir, iosDir, appGroupIdentifier, extensions);
+    if (pushEnabled) {
+        copyExtensionSources(pluginIosDir, iosDir, appGroupIdentifier, extensions);
+    } else {
+        console.log('[after_prepare] Connect.PushEnabled is false — no ConnectNSE/ConnectNCE extensions');
+    }
 
     // 2. Copy plugin source files to platforms/ios (pbxproj registration is done by Ruby)
     copyPluginSourceFiles(pluginIosDir, iosDir);
@@ -711,6 +790,7 @@ module.exports = function (context) {
         ACOUSTIC_APP_BUNDLE_ID: appBundleId,
         ACOUSTIC_SDK_VARIANT:   pod.name,
         ACOUSTIC_APP_VERSION:   appVersion,
+        ACOUSTIC_PUSH_ENABLED:  pushEnabled ? '1' : '0',
     });
     if (developmentTeam) rubyEnv.ACOUSTIC_DEVELOPMENT_TEAM = developmentTeam;
     execSync('ruby "' + rubyScript + '"', { cwd: iosDir, stdio: 'inherit', env: rubyEnv });
@@ -725,10 +805,18 @@ module.exports = function (context) {
     patchAppTargetHeaderSearchPaths(iosDir, projectName);
 
     // 4. Update Podfile
-    const podfileChanged = updatePodfile(iosDir);
+    const podfileChanged = updatePodfile(iosDir, pushEnabled);
 
-    // 5. Update host-app entitlements
-    updateEntitlements(iosDir, projectName, appGroupIdentifier);
+    // 5. Update host-app entitlements (push on), or take the push background mode out (push off)
+    if (pushEnabled) {
+        updateEntitlements(iosDir, projectName, appGroupIdentifier);
+    } else {
+        if (otherDeclaresRemoteNotification(projectRoot)) {
+            console.log('[after_prepare] another plugin or config.xml declares the remote-notification background mode — keeping it');
+        } else {
+            removeRemoteNotificationMode(path.join(iosDir, projectName, projectName + '-Info.plist'));
+        }
+    }
 
     // 5b. Add Cordova headers to build-extras.xcconfig so SourceKit resolves them in IDE
     updateBuildExtrasXcconfig(iosDir);
@@ -758,11 +846,16 @@ module.exports = function (context) {
         patchXcframeworksScriptPhases(pbxprojPath, pod.name);
     }
 
-    console.log('[after_prepare] iOS NSE/NCE setup complete (' + appGroupIdentifier + ')');
+    console.log(pushEnabled
+        ? '[after_prepare] iOS NSE/NCE setup complete (' + appGroupIdentifier + ')'
+        : '[after_prepare] iOS setup complete (push is off)');
 };
 
 // Internal functions exposed for unit tests — not part of the public plugin API.
 module.exports._internal = {
+    otherDeclaresRemoteNotification,
+    resolvePushEnabled,
+    removeRemoteNotificationMode,
     updatePodfile,
     patchXcframeworksScriptPhases,
     resolveConnectConfigPath,

@@ -1,5 +1,6 @@
 // Acoustic Connect Cordova plugin — Gradle extras.
-// Selects the connect-push-fcm artefact (release or debug variant).
+// Selects the Connect artefact: connect-push-fcm (with the FCM push transport and Firebase Messaging),
+// or the analytics-only connect when Connect.PushEnabled is false in ConnectConfig.json.
 // Also seeds the JUnit + Mockito-Kotlin + Robolectric test harness used
 // by the PR-build Jenkinsfile.
 
@@ -24,11 +25,14 @@ def connectConfigFile = connectConfigCandidates.find { it.exists() }
 
 def androidVersion = ""
 def useRelease = false
+// Push has always been on in this plugin, so it stays on unless ConnectConfig.json says false (the same default as before_prepare_connect_config.js).
+def pushEnabled = true
 if (connectConfigFile) {
     try {
         def cfg = new JsonSlurper().parse(connectConfigFile)
         androidVersion = cfg?.Connect?.AndroidVersion ?: ""
         useRelease    = cfg?.Connect?.useRelease == true
+        pushEnabled   = cfg?.Connect?.PushEnabled != false
     } catch (Exception e) {
         logger.warn("[Acoustic] ConnectConfig.json parse error: ${e.message}")
     }
@@ -73,9 +77,10 @@ if (useRelease) {
     }
 }
 
-// Android always uses the release FCM artifact. No debug Maven artifact exists;
+// Android always uses a release artifact. No debug Maven artifact exists;
 // useRelease controls iOS pod selection only (via select_sdk_variant.js).
-def connectSdkArtifact = "io.github.go-acoustic:connect-push-fcm"
+// PushEnabled=false takes the analytics-only artifact: no FCM transport, no Firebase.
+def connectSdkArtifact = pushEnabled ? "io.github.go-acoustic:connect-push-fcm" : "io.github.go-acoustic:connect"
 
 // AndroidVersion in ConnectConfig.json takes precedence over the Cordova
 // preference and the default pin.
@@ -112,13 +117,15 @@ if (useRelease && connectSdkVersion.endsWith('-beta')) {
 dependencies {
   implementation "${connectSdkArtifact}:${connectSdkVersion}"
 
-  // connect-push-fcm's POM declares no Firebase dependency — the host app
-  // must supply it. firebase-messaging brings in play-services-base which
-  // contains GoogleApiAvailability, required by the SDK's GMS availability
-  // check. Without this the check throws ClassNotFoundException and GMS is
-  // always reported unavailable, blocking FCM token registration.
-  implementation platform('com.google.firebase:firebase-bom:33.7.0')
-  implementation 'com.google.firebase:firebase-messaging'
+  if (pushEnabled) {
+    // connect-push-fcm's POM declares no Firebase dependency — the host app
+    // must supply it. firebase-messaging brings in play-services-base which
+    // contains GoogleApiAvailability, required by the SDK's GMS availability
+    // check. Without this the check throws ClassNotFoundException and GMS is
+    // always reported unavailable, blocking FCM token registration.
+    implementation platform('com.google.firebase:firebase-bom:33.7.0')
+    implementation 'com.google.firebase:firebase-messaging'
+  }
 
   // Unit-test harness. Test source-set lives under src/android/src/test/java/.
   testImplementation 'junit:junit:4.13.2'

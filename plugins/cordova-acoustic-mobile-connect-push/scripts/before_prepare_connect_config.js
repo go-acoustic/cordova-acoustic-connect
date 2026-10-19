@@ -199,6 +199,14 @@ module.exports = function (context) {
     }
     const killSwitchEnabled = connect.KillSwitchEnabled === true;
 
+    // The master switch of push. Unlike the other plugins (react-native-acoustic-connect, capacitor-acoustic-connect, where push
+    // is opt-in), push has always been on in this plugin, so an absent value stays true: an app that wants an analytics-only build
+    // sets PushEnabled to false. A value that is not a boolean stops the prepare, naming the key, rather than being read as one.
+    if (connect.PushEnabled !== undefined && connect.PushEnabled !== null && typeof connect.PushEnabled !== 'boolean') {
+        throw new Error('ConnectConfig.json: Connect.PushEnabled must be a boolean (got ' + typeof connect.PushEnabled + ')');
+    }
+    const pushEnabled = connect.PushEnabled !== false;
+
     if (connect.LocationLoggingEnabled !== undefined && connect.LocationLoggingEnabled !== null &&
             typeof connect.LocationLoggingEnabled !== 'boolean') {
         throw new Error('ConnectConfig.json: Connect.LocationLoggingEnabled must be a boolean (got ' + typeof connect.LocationLoggingEnabled + ')');
@@ -233,6 +241,7 @@ module.exports = function (context) {
     const jsConfig = {
         AppKey:                appKey,
         PostMessageUrl:        postMessageUrl,
+        PushEnabled:           pushEnabled,
         iOSPushMode:           connect.iOSPushMode                   || 'automatic',
         iOSAppGroupIdentifier: connect.iOSAppGroupIdentifier         || null,
         AndroidIconResName:    connect.AndroidNotificationIconResName || null,
@@ -313,7 +322,16 @@ module.exports = function (context) {
     //     iOS: applied right after enable() by ConnectPlugin.swift.
     //     Android: also written to ConnectLayoutConfig.json (project root), which the
     //       Android after_prepare hook copies into the app assets, overriding the SDK's own.
+    //   pushEnabled (boolean, default true) — the master switch of push on both platforms. false
+    //   builds the app without push:
+    //     Android: build-extras.gradle takes the analytics-only `connect` artifact and no Firebase
+    //       (it reads ConnectConfig.json itself); ConnectPlugin.kt does not start push.
+    //     iOS: ConnectPlugin.swift enables the SDK with ConnectPushConfig.off; the after_prepare hook
+    //       adds no ConnectNSE/ConnectNCE extension, no App Group or aps-environment entitlement, and
+    //       takes the remote-notification background mode out of Info.plist.
+    //     Both: the push.* calls reject with ACOUSTIC_PUSH_DISABLED (decided natively, from this file).
     const nativeConfig = {
+        pushEnabled: pushEnabled,
         useRelease: useRelease,
         killSwitchEnabled: killSwitchEnabled,
         killSwitchUrl: killSwitchUrl || null,

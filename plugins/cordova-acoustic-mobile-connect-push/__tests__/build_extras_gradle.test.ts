@@ -52,3 +52,30 @@ describe('build-extras.gradle: where the Connect Android SDK comes from', () => 
         expect(GRADLE).not.toContain('11.0.21-beta');
     });
 });
+
+describe('build-extras.gradle: PushEnabled decides the artifact and Firebase', () => {
+    it('reads PushEnabled from ConnectConfig.json and keeps push on unless it is false', () => {
+        expect(GRADLE).toContain('def pushEnabled = true');
+        expect(GRADLE).toContain('pushEnabled   = cfg?.Connect?.PushEnabled != false');
+        expect(GRADLE.indexOf('cfg?.Connect?.PushEnabled')).toBeGreaterThan(-1);
+    });
+
+    it('takes connect-push-fcm with push on and the analytics-only connect with push off', () => {
+        expect(GRADLE).toContain(
+            'def connectSdkArtifact = pushEnabled ? "io.github.go-acoustic:connect-push-fcm" : "io.github.go-acoustic:connect"',
+        );
+    });
+
+    it('adds Firebase Messaging only with push on', () => {
+        const dependencies = GRADLE.slice(GRADLE.indexOf('dependencies {'));
+        const block = /if \(pushEnabled\) \{([\s\S]*?)\n  \}/.exec(dependencies)?.[1] ?? '';
+        expect(block).toContain("implementation platform('com.google.firebase:firebase-bom:33.7.0')");
+        expect(block).toContain("implementation 'com.google.firebase:firebase-messaging'");
+        // and nowhere else
+        expect(dependencies.replace(block, '').match(/firebase/g)?.length ?? 0).toBeLessThanOrEqual(1);
+    });
+
+    it('reads PushEnabled before it picks the artifact', () => {
+        expect(GRADLE.indexOf('cfg?.Connect?.PushEnabled')).toBeLessThan(GRADLE.indexOf('def connectSdkArtifact'));
+    });
+});

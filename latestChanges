@@ -31,6 +31,14 @@ New Features
   `ConnectConfig.json` to deliver the SDK's screen-capture rules (`AutoLayout`,
   `AppendMapIds`), merged per platform
 - Demo app: the Behaviour tab now exercises the analytics API
+- `PushEnabled` in `ConnectConfig.json` — the master switch of push, `true` by
+  default (push has always been on in this plugin), the same switch that
+  `react-native-acoustic-connect` and `capacitor-acoustic-connect` have. `false`
+  builds an analytics-only app: Android takes the `connect` artifact with no
+  Firebase, iOS enables the SDK without push and adds no `ConnectNSE`/`ConnectNCE`
+  extensions, no App Group or `aps-environment` entitlement and no
+  `remote-notification` background mode. The `push.*` calls then reject with
+  `ACOUSTIC_PUSH_DISABLED`
 
 Fixes
 

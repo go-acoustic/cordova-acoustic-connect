@@ -34,6 +34,7 @@ Create `ConnectConfig.json` at your Cordova project root (gitignored — never c
     "iOSDevelopmentTeam": "<your-apple-team-id>",
     "AndroidVersion": "<optional-connect-android-sdk-version-override>",
     "iOSVersion": "<optional-connect-ios-sdk-version-override>",
+    "PushEnabled": true,
     "iOSPushMode": "automatic",
     "AndroidNotificationIconResName": "<optional-drawable-name>",
     "KillSwitchEnabled": false,
@@ -50,6 +51,7 @@ Create `ConnectConfig.json` at your Cordova project root (gitignored — never c
 | `iOSDevelopmentTeam` | Apple Team ID. Sets the Xcode signing team automatically, skipping the manual Signing & Capabilities step below. |
 | `AndroidVersion` | Pins a specific Connect Android SDK version (`x.y.z`) instead of the plugin's default (currently `11.1.17`). Invalid values are ignored with a build warning. |
 | `iOSVersion` | Pins a specific Connect iOS SDK pod version (`x.y.z`) instead of the plugin's default (`>= 2.1.51`, floating: CocoaPods resolves the newest release, for both the release and the debug pod). Values below `2.1.51` — the first build with the iOS screen-capture and WebView fixes — and non-version strings are ignored with a build warning. |
+| `PushEnabled` | Optional boolean, `true` by default (push has always been on in this plugin). `false` builds the app without push: on Android the analytics-only `connect` artifact and no Firebase, on iOS the SDK is enabled without push and the build has no `ConnectNSE`/`ConnectNCE` extensions, no App Group or `aps-environment` entitlement and no `remote-notification` background mode; the `push.*` calls reject with `ACOUSTIC_PUSH_DISABLED`. See "Turning push off" below. |
 | `iOSPushMode` | `'automatic'` (default) or `'manual'`. iOS only — Android is always `'automatic'` at the bridge boundary. |
 | `AndroidNotificationIconResName` | Drawable resource name for the push notification icon on Android. Fallback chain: your name → the plugin's bundled `ic_notification` (correct default — launcher icons crash at delivery) → `ic_launcher` (legacy) → the SDK's own default. |
 | `KillSwitchEnabled` | `false` (default) or `true`. Controls the native SDK's remote kill switch on both platforms — see below. The SDK's own bundled default is `true`; this plugin defaults it `false` so apps must opt in explicitly. |
@@ -241,6 +243,15 @@ Push-related methods, namespaced under `push`:
 | `push.didReceiveResponse(actionIdentifier, userInfo)` | `Promise<boolean>` | Manual mode only — forward a notification tap response from your own native delegate. |
 
 In `automatic` push mode (the default), the SDK owns the native push delegate and the `didReceiveNotification`/`didReceiveResponse` forwarders are not needed. They exist for `manual` mode, where the app owns its own native delegate.
+
+### Turning push off
+
+Set `"PushEnabled": false` in `ConnectConfig.json` for an analytics-only app: no Firebase and no `google-services.json` on Android, no push entitlement, App Group or notification extensions on iOS, and no notification permission dialog. `iOSAppGroupIdentifier`, `iOSPushMode` and `AndroidNotificationIconResName` have no effect then.
+
+- Android reads the setting at build time (`build-extras.gradle`), iOS during `cordova prepare` and at runtime. After changing it run `cordova prepare` and rebuild.
+- Switching an iOS project that had push on: `cordova prepare` takes the `ConnectNSE` and `ConnectNCE` targets out of the Xcode project and their targets out of the Podfile, and the `remote-notification` background mode out of `Info.plist` (it stays when another plugin or `config.xml` declares it, as that plugin needs it). The App Group and `aps-environment` entitlements the plugin added while push was on are left, because other plugins may share them: remove the platform and add it again (`cordova platform rm ios && cordova platform add ios`) for a project without them.
+- With push off, `push.requestPermission()`, `push.getPermissionState()`, `push.didReceiveAuthorization()`, `push.didReceiveNotification()` and `push.didReceiveResponse()` reject with `{ code: 'ACOUSTIC_PUSH_DISABLED' }`; `enable()` ignores its `pushMode` argument.
+- `react-native-acoustic-connect` and `capacitor-acoustic-connect` have the same switch, but push is off by default there; here it is on by default so that existing apps do not change.
 
 ## iOS push setup (Xcode)
 

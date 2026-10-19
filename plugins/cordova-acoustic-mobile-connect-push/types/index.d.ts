@@ -311,6 +311,10 @@ declare namespace AcousticConnect {
 
     // ── Push namespace ───────────────────────────────────────────────────
 
+    /**
+     * Push calls. While `Connect.PushEnabled` is false in ConnectConfig.json (push is on unless it says so), every one of them rejects
+     * with `{ code: 'ACOUSTIC_PUSH_DISABLED', message }`.
+     */
     namespace push {
 
         function requestPermission(): Promise<{

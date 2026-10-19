@@ -870,6 +870,42 @@ class ConnectPluginTest {
     }
 
     @Test
+    fun parseNativeConfig_pushEnabled_missing_defaultsToTrue() {
+        // push has always been on in this plugin: a native config written before the setting existed keeps it on
+        assertTrue(plugin.parseNativeConfig("{}").pushEnabled)
+    }
+
+    @Test
+    fun parseNativeConfig_pushEnabled_false_returnsFalse() {
+        assertFalse(plugin.parseNativeConfig("""{"pushEnabled":false}""").pushEnabled)
+    }
+
+    @Test
+    fun parseNativeConfig_pushEnabled_true_returnsTrue() {
+        assertTrue(plugin.parseNativeConfig("""{"pushEnabled":true}""").pushEnabled)
+    }
+
+    @Test
+    fun parseNativeConfig_unreadableJson_keepsPushOn() {
+        assertTrue(plugin.parseNativeConfig("not json").pushEnabled)
+    }
+
+    @Test
+    fun pushActions_areTheFiveCallsThatNeedPush() {
+        assertEquals(
+            setOf(
+                ConnectPlugin.ACTION_PUSH_REQUEST_PERMISSION,
+                ConnectPlugin.ACTION_PUSH_GET_PERMISSION_STATE,
+                ConnectPlugin.ACTION_PUSH_DID_RECEIVE_AUTHORIZATION,
+                ConnectPlugin.ACTION_PUSH_DID_RECEIVE_NOTIFICATION,
+                ConnectPlugin.ACTION_PUSH_DID_RECEIVE_RESPONSE
+            ),
+            ConnectPlugin.PUSH_ACTIONS
+        )
+        assertEquals("ACOUSTIC_PUSH_DISABLED", ConnectPlugin.CODE_PUSH_DISABLED)
+    }
+
+    @Test
     fun parseNativeConfig_missingKeys_defaultToFalseAndNull() {
         val config = plugin.parseNativeConfig("{}")
         assertFalse(config.useRelease)
