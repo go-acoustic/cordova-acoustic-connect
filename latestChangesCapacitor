@@ -4,44 +4,16 @@ Acoustic Connect plugin for Capacitor. Requires Capacitor 8 and Node 22 or newer
 
 New Features
 
-- Analytics API: `enable`, `disable`, `setLogLevel`, `logIdentity`,
-  `getSdkVersion`, `isSdkEnabled`, `flushQueues`, `setCurrentScreenName`,
-  `logCustomEvent`, `logClickEvent`, `logTextChangeEvent`, `logSignal`,
-  `logExceptionEvent`, `logScreenViewContextLoad`, `logScreenViewContextUnload`,
-  `logScreenLayout`, `logLocation`, `logLocationUpdate`, `setConfigItem` and
-  `getConfigItem`, with TypeScript types. Text passed to `logTextChangeEvent` is
-  masked by default
+- `logLocation()` and `logLocationUpdate(latitude, longitude, level?)`
 - Dialog events: `logDialogShowEvent`, `logDialogDismissEvent`,
   `logDialogButtonClickEvent` and `logDialogCustomEvent`. They are sent as custom
   events (`DialogShowEvent`, `DialogDismissEvent`, `DialogButtonClickEvent`,
   `DialogCustomEvent`), the same event names and keys as the Cordova plugin
-- Configuration in the `AcousticConnect` block of `capacitor.config`: with
-  `appKey` and `postMessageUrl` set, the SDK starts when the app launches, so
-  the first screen is captured (`autoEnable: false` starts it only from
-  `enable()`)
-- Config options: `useRelease`, `androidVersion`/`iosVersion` to pin a Connect
-  SDK version, `killSwitchEnabled`/`killSwitchUrl`, `locationLoggingEnabled`,
-  `screenCaptureEnabled`, and `layoutConfig`, `layoutConfigIos` and
-  `layoutConfigAndroid` for screen-capture rules
-- Opt-in push (`pushEnabled`, off by default): Android uses the Connect FCM push
-  artifact and Firebase Messaging, iOS runs the SDK with push. Without it
-  Android builds with the analytics-only artifact and needs no Firebase
-- `AcousticConnect.push` API: `requestPermission`, `getPermissionState`, and, for
-  iOS manual push mode (`iosPushMode: 'manual'`), `didRegisterWithToken`,
-  `didFailToRegister`, `didReceiveNotification` and `didReceiveResponse`
-- iOS rich push: `npx acoustic-connect setup-ios-push` adds the Notification
-  Service and Content extensions to the Xcode project of a Swift Package Manager
-  app. The extensions take the host app's version, as the App Store requires
-- `npx acoustic-connect doctor` checks the app's config, Android and iOS
-  projects and reports what would go wrong at build time or on the device
-- iOS links the Connect SDK through Swift Package Manager or CocoaPods
-- On iOS a `logSignal` payload is at the root of `signal` (Connect iOS SDK 2.1.26 and
-  newer), as on Android
 - `npx acoustic-connect setup-ios-push` adds the rich-push extensions to Swift
   Package Manager and CocoaPods apps (with CocoaPods it adds the pod to the
   Podfile: run `pod install` after it)
-- Sample apps: DemoCapacitor and an Angular + Ionic app, with end-to-end checks
-  of what the plugin sends
+- On iOS a `logSignal` payload is at the root of `signal` (Connect iOS SDK 2.1.26 and
+  newer), as on Android
 
 Known Issues
 
