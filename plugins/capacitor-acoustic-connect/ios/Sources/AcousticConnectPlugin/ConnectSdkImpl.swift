@@ -92,6 +92,14 @@ final class ConnectSdkImpl: ConnectSdk {
         return ConnectCustomEvent().logScreenLayout(with: controller, andName: name)
     }
 
+    func logLocation() -> Bool {
+        ConnectCustomEvent().logLocation(nil)
+    }
+
+    func logLocationUpdate(latitude: Double, longitude: Double, level: MonitoringLevel) -> Bool {
+        ConnectCustomEvent().logLocationUpdate(withLatitude: latitude, longitude: longitude, level: Self.map(level))
+    }
+
     func setConfigItem(key: String, value: Any) -> Bool {
         ConnectApplicationHelper.sharedInstance().setConfigurableItem(key, value: value)
     }

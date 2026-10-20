@@ -67,6 +67,8 @@ export interface AcousticConnectPlugin {
   logScreenViewContextLoad(options: { logicalPageName: string; referrer: string | null }): Promise<void>;
   logScreenViewContextUnload(options: { logicalPageName: string; referrer: string | null }): Promise<void>;
   logScreenLayout(options: { name: string; delayMs?: number }): Promise<void>;
+  logLocation(): Promise<void>;
+  logLocationUpdate(options: { latitude: number; longitude: number; level: number }): Promise<void>;
   setConfigItem(options: { key: string; value: FlatValue; moduleName: string }): Promise<void>;
   /** Resolves the raw item; the API applies the type of the default. Nothing when it is not set. */
   getConfigItem(options: { key: string; moduleName: string }): Promise<{ value?: FlatValue | null }>;
@@ -189,6 +191,26 @@ export interface AcousticConnectApi {
    * @param delayMs Milliseconds to wait before capturing (a non-negative integer); omitted means now.
    */
   logScreenLayout(name: string, delayMs?: number): Promise<void>;
+  /**
+   * Logs the device's current location, as the native SDK reads it. Subject to the app's location permission and `locationLoggingEnabled`.
+   */
+  logLocation(): Promise<void>;
+  /**
+   * Logs a location the app already has.
+   *
+   * @param latitude -90 to 90.
+   * @param longitude -180 to 180.
+   * @param level Monitoring level, a non-negative integer; the default is 3.
+   */
+  logLocationUpdate(latitude: number, longitude: number, level?: number): Promise<void>;
+  /** Logs that a dialog was shown, as a `DialogShowEvent` custom event (`dialogId`, `dialogTitle`, `dialogType`, `eventType`, `timestamp`). */
+  logDialogShowEvent(dialogId: string, dialogTitle: string, dialogType: string): Promise<void>;
+  /** Logs that a dialog was dismissed, as a `DialogDismissEvent` custom event; `dismissReason` is e.g. `'cancel'`, `'outside_touch'`, `'back'`. */
+  logDialogDismissEvent(dialogId: string, dismissReason: string): Promise<void>;
+  /** Logs a tap on a dialog button, as a `DialogButtonClickEvent` custom event; `buttonIndex` is the position of the button (a non-negative integer). */
+  logDialogButtonClickEvent(dialogId: string, buttonText: string, buttonIndex: number): Promise<void>;
+  /** Logs your own event for a dialog, as a `DialogCustomEvent` custom event; `eventName` travels as `customEventName`, `values` are extra flat values. */
+  logDialogCustomEvent(dialogId: string, eventName: string, values?: Record<string, FlatValue>): Promise<void>;
   setConfigItem(key: string, value: FlatValue, moduleName: string): Promise<void>;
   getConfigItem(key: string, defaultValue: boolean, moduleName: string): Promise<boolean>;
   getConfigItem(key: string, defaultValue: string, moduleName: string): Promise<string>;

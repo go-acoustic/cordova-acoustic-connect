@@ -233,5 +233,60 @@ Dir.mktmpdir('acoustic-smoke-') do |tmp|
     assert group.files.one? { |f| f.path == correct_path }, "#{name} exactly one '#{correct_path}' reference"
   end
 
+  puts "\nAll push-on smoke tests passed.\n"
+end
+
+# ── Push off (Connect.PushEnabled=false → ACOUSTIC_PUSH_ENABLED=0) ───────────────
+# No ConnectNSE/ConnectNCE target and no embed phase, but the plugin is still wired into the App target, and a
+# second run, and a run with push on afterwards, behave.
+Dir.mktmpdir('acoustic-smoke-push-off-') do |tmp|
+  proj_path = File.join(tmp, 'App.xcodeproj')
+  proj = Xcodeproj::Project.new(proj_path)
+  app_target = proj.new_target(:application, 'App', :ios, '15.1')
+  app_target.build_configurations.each { |c| c.build_settings['PRODUCT_BUNDLE_IDENTIFIER'] = BUNDLE_ID }
+  proj.save
+
+  env = {
+    'ACOUSTIC_PROJECT_PATH'  => proj_path,
+    'ACOUSTIC_APP_TARGET'    => 'App',
+    'ACOUSTIC_APP_BUNDLE_ID' => BUNDLE_ID,
+    'ACOUSTIC_SDK_VARIANT'   => VARIANT,
+    'ACOUSTIC_PUSH_ENABLED'  => '0',
+  }
+
+  2.times do |n|
+    puts "\nPush off, run #{n + 1}:"
+    assert system(env, 'ruby', SCRIPT, exception: false), 'script exits 0'
+    p2 = Xcodeproj::Project.open(proj_path)
+    names = p2.targets.map(&:name)
+    assert !names.include?('ConnectNSE') && !names.include?('ConnectNCE'), 'no ConnectNSE or ConnectNCE target'
+    app = p2.targets.find { |t| t.name == 'App' }
+    assert app.copy_files_build_phases.none? { |ph| ph.symbol_dst_subfolder_spec == :plug_ins }, 'no Embed Foundation Extensions phase'
+    assert app.dependencies.none? { |d| %w[ConnectNSE ConnectNCE].include?(d.name) }, 'App depends on no extension'
+    plugin_files = app.source_build_phase.files.map { |bf| bf.file_ref&.path.to_s }.select { |f| f.include?('ConnectPlugin.swift') }
+    assert plugin_files.length == 1, 'ConnectPlugin.swift is in the Compile Sources of App exactly once'
+  end
+
+  puts "\nPush on again (the default):"
+  assert system(env.merge('ACOUSTIC_PUSH_ENABLED' => '1'), 'ruby', SCRIPT, exception: false), 'script exits 0'
+  p3 = Xcodeproj::Project.open(proj_path)
+  assert %w[ConnectNSE ConnectNCE].all? { |n| p3.targets.any? { |t| t.name == n } }, 'the extension targets are added'
+
+  # ── Flipping a project that has the extensions to push off ───────────────────
+  # The extensions this project got a moment ago must go, completely: a target left behind fails the build (its xcframeworks
+  # script phase names a file list the Pods no longer have).
+  puts "\nPush off on a project that has the extensions:"
+  assert system(env, 'ruby', SCRIPT, exception: false), 'script exits 0'
+  p4 = Xcodeproj::Project.open(proj_path)
+  assert p4.targets.none? { |t| %w[ConnectNSE ConnectNCE].include?(t.name) }, 'the extension targets are gone'
+  app4 = p4.targets.find { |t| t.name == 'App' }
+  assert app4.dependencies.none? { |d| d.name.to_s.include?('Connect') && d.name.to_s =~ /N[SC]E/ }, 'App depends on no extension'
+  assert app4.copy_files_build_phases.none? { |ph| ph.symbol_dst_subfolder_spec == :plug_ins }, 'no embed phase is left, it was empty'
+  assert p4.main_group.find_subpath('ConnectNSE', false).nil? && p4.main_group.find_subpath('ConnectNCE', false).nil?, 'the extension file groups are gone'
+  leftovers = File.read(File.join(proj_path, 'project.pbxproj')).scan(/Connect(?:NSE|NCE)/).length
+  assert leftovers.zero?, "project.pbxproj does not name ConnectNSE or ConnectNCE any more (found #{leftovers})"
+  plugin_files = app4.source_build_phase.files.map { |bf| bf.file_ref&.path.to_s }.select { |f| f.include?('ConnectPlugin.swift') }
+  assert plugin_files.length == 1, 'ConnectPlugin.swift is still in the Compile Sources of App, once'
+
   puts "\nAll smoke tests passed.\n"
 end

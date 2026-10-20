@@ -126,6 +126,30 @@ describe('ConnectConfig.json / config.xml resolution guard', () => {
     });
 });
 
+describe('push off (Connect.PushEnabled false)', () => {
+    it('needs no iOSAppGroupIdentifier: the hook goes on past the guard that skips it with push on', () => {
+        fs.mkdirSync(iosDir, { recursive: true });
+        writeConfig({ Connect: { PushEnabled: false } });
+        writeConfigXml('com.example.app');
+
+        // it reaches the project resolution instead of warning "Skipping iOS NSE/NCE setup"
+        expect(() => hook(makeContext(tmpDir, ['ios']))).toThrow('No .xcodeproj found');
+        expect(console.warn).not.toHaveBeenCalledWith('[after_prepare] Skipping iOS NSE/NCE setup:', expect.anything());
+    });
+
+    it('still skips with push on and no iOSAppGroupIdentifier', () => {
+        fs.mkdirSync(iosDir, { recursive: true });
+        writeConfig({ Connect: { PushEnabled: true } });
+        writeConfigXml('com.example.app');
+
+        hook(makeContext(tmpDir, ['ios']));
+        expect(console.warn).toHaveBeenCalledWith(
+            '[after_prepare] Skipping iOS NSE/NCE setup:',
+            expect.stringContaining('iOSAppGroupIdentifier')
+        );
+    });
+});
+
 describe('project resolution guard', () => {
     it('throws when platforms/ios exists and config resolves, but no .xcodeproj is present', () => {
         fs.mkdirSync(iosDir, { recursive: true });

@@ -26,6 +26,8 @@ function makeNative(over: Partial<Mocked> = {}): Mocked {
     logScreenViewContextLoad: ok(),
     logScreenViewContextUnload: ok(),
     logScreenLayout: ok(),
+    logLocation: ok(),
+    logLocationUpdate: ok(),
     setConfigItem: ok(),
     getSdkVersion: jest.fn().mockResolvedValue({ value: '11.0.21-beta' }),
     isSdkEnabled: jest.fn().mockResolvedValue({ value: true }),
@@ -401,6 +403,115 @@ describe('logScreenLayout', () => {
     const native = makeNative();
     await expect(createAcousticConnect(native).logScreenLayout('Home', delay as never)).rejects.toMatchObject(INVALID);
     expect(native.logScreenLayout).not.toHaveBeenCalled();
+  });
+});
+
+describe('logLocation and logLocationUpdate', () => {
+  it('asks the native SDK for the current location', async () => {
+    const native = makeNative();
+    await createAcousticConnect(native).logLocation();
+    expect(native.logLocation).toHaveBeenCalledTimes(1);
+  });
+
+  it('sends the position, with the default level 3 or the one given', async () => {
+    const native = makeNative();
+    const api = createAcousticConnect(native);
+    await api.logLocationUpdate(52.5, -13.4);
+    expect(native.logLocationUpdate).toHaveBeenLastCalledWith({ latitude: 52.5, longitude: -13.4, level: 3 });
+    await api.logLocationUpdate(-90, 180, 0);
+    expect(native.logLocationUpdate).toHaveBeenLastCalledWith({ latitude: -90, longitude: 180, level: 0 });
+  });
+
+  it.each([
+    [91, 0],
+    [-91, 0],
+    [0, 181],
+    [0, -181],
+    [Number.NaN, 0],
+    [0, Infinity],
+    ['1', 0],
+    [null, 0],
+  ])('rejects the position %j, %j', async (latitude, longitude) => {
+    const native = makeNative();
+    await expect(
+      createAcousticConnect(native).logLocationUpdate(latitude as never, longitude as never),
+    ).rejects.toMatchObject(INVALID);
+    expect(native.logLocationUpdate).not.toHaveBeenCalled();
+  });
+
+  it.each([[-1], [1.5], ['3'], [null]])('rejects the level %j', async (level) => {
+    const native = makeNative();
+    await expect(createAcousticConnect(native).logLocationUpdate(1, 2, level as never)).rejects.toMatchObject(INVALID);
+    expect(native.logLocationUpdate).not.toHaveBeenCalled();
+  });
+});
+
+describe('dialog events', () => {
+  const sentValues = (native: ReturnType<typeof makeNative>) =>
+    (native.logCustomEvent as jest.Mock).mock.calls[(native.logCustomEvent as jest.Mock).mock.calls.length - 1][0];
+
+  it('sends a DialogShowEvent with the id, the type of event and a millisecond timestamp', async () => {
+    const native = makeNative();
+    await createAcousticConnect(native).logDialogShowEvent('d1', 'Delete?', 'alert');
+    const sent = sentValues(native);
+    expect(sent.eventName).toBe('DialogShowEvent');
+    expect(sent.values).toMatchObject({
+      dialogId: 'd1',
+      dialogTitle: 'Delete?',
+      dialogType: 'alert',
+      eventType: 'dialog_show',
+    });
+    expect(sent.values.timestamp).toMatch(/^\d{13}$/);
+    expect(sent.level).toBe(3);
+  });
+
+  it('sends a DialogDismissEvent', async () => {
+    const native = makeNative();
+    await createAcousticConnect(native).logDialogDismissEvent('d1', 'cancel');
+    expect(sentValues(native)).toMatchObject({
+      eventName: 'DialogDismissEvent',
+      values: { dialogId: 'd1', dismissReason: 'cancel', eventType: 'dialog_dismiss' },
+    });
+  });
+
+  it('sends a DialogButtonClickEvent with the index as text', async () => {
+    const native = makeNative();
+    await createAcousticConnect(native).logDialogButtonClickEvent('d1', 'OK', 0);
+    expect(sentValues(native)).toMatchObject({
+      eventName: 'DialogButtonClickEvent',
+      values: { dialogId: 'd1', buttonText: 'OK', buttonIndex: '0', eventType: 'dialog_button_click' },
+    });
+  });
+
+  it('sends a DialogCustomEvent with the name as customEventName and the extra values', async () => {
+    const native = makeNative();
+    const api = createAcousticConnect(native);
+    await api.logDialogCustomEvent('d1', 'shake', { force: 3, soft: true });
+    expect(sentValues(native)).toMatchObject({
+      eventName: 'DialogCustomEvent',
+      values: { dialogId: 'd1', customEventName: 'shake', force: 3, soft: true, eventType: 'dialog_custom_event' },
+    });
+    await api.logDialogCustomEvent('d1', 'shake');
+    expect(sentValues(native).values.customEventName).toBe('shake');
+  });
+
+  it('rejects an empty id and the fields each event needs, and sends nothing', async () => {
+    const native = makeNative();
+    const api = createAcousticConnect(native);
+    const calls = [
+      api.logDialogShowEvent('', 't', 'alert'),
+      api.logDialogShowEvent('d', '', 'alert'),
+      api.logDialogShowEvent('d', 't', ' '),
+      api.logDialogDismissEvent('d', ''),
+      api.logDialogButtonClickEvent('d', '', 0),
+      api.logDialogButtonClickEvent('d', 'OK', -1),
+      api.logDialogButtonClickEvent('d', 'OK', 1.5),
+      api.logDialogCustomEvent('d', ''),
+      api.logDialogCustomEvent('d', 'e', { nested: { a: 1 } } as never),
+      api.logDialogShowEvent(undefined as never, 't', 'alert'),
+    ];
+    for (const call of calls) await expect(call).rejects.toMatchObject(INVALID);
+    expect(native.logCustomEvent).not.toHaveBeenCalled();
   });
 });
 

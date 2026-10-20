@@ -175,6 +175,22 @@ describeIfXcodeproj('setup-ios-push on the Xcode project of a Capacitor app', ()
       expect(targets[name].settings.DEVELOPMENT_TEAM).toBe('ABCDE12345');
   });
 
+  it('links no Swift package when the app uses CocoaPods, where the Podfile gives the extensions the SDK', () => {
+    const dir = copyApp();
+    fs.writeFileSync(path.join(dir, 'ios', 'App', 'Podfile'), "platform :ios, '15.1'\n\ntarget 'App' do\nend\n");
+    const r = setup(dir);
+    expect(r.status).toBe(0);
+    expect(r.output).toMatch(/pod install/);
+    const { targets, packages } = inspect(dir);
+    expect(packages.filter((p) => /Connect-SP/.test(p.url))).toEqual([]);
+    expect(targets.ConnectNSE.products).toEqual([]);
+    expect(targets.ConnectNCE.products).toEqual([]);
+    expect(targets.App.embedded).toEqual(expect.arrayContaining(['ConnectNSE.appex', 'ConnectNCE.appex']));
+    const podfile = fs.readFileSync(path.join(dir, 'ios', 'App', 'Podfile'), 'utf8');
+    expect(podfile).toMatch(/target 'ConnectNSE' do\n {2}pod 'AcousticConnect'/);
+    expect(podfile).toMatch(/target 'ConnectNCE' do\n {2}pod 'AcousticConnect'/);
+  });
+
   it('is safe to run again: nothing is added twice', () => {
     const dir = copyApp();
     setup(dir);

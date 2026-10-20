@@ -8,6 +8,9 @@
  *
  *   UDID=$(node e2e/core/pick-simulator.js)
  *
+ * E2E_IOS_VERSION (like 26.5 or 26) limits the choice to that iOS runtime; the CI stages set it, so a newer
+ * runtime on the agent does not move the run by itself. Without it the newest runtime is used.
+ *
  * Only the udid goes to stdout; a problem goes to stderr with exit code 2.
  */
 
@@ -25,7 +28,7 @@ function run(file, args) {
 async function main(deps) {
     try {
         const out = await deps.exec('xcrun', ['simctl', 'list', 'devices', 'available', '-j']);
-        deps.write(commands.pickIosSimulator(out.stdout) + '\n');
+        deps.write(commands.pickIosSimulator(out.stdout, deps.iosVersion) + '\n');
         return 0;
     } catch (e) {
         deps.writeError(e.message + '\n');
@@ -36,6 +39,7 @@ async function main(deps) {
 if (require.main === module) {
     main({
         exec: run,
+        iosVersion: process.env.E2E_IOS_VERSION,
         write: function (s) { process.stdout.write(s); },
         writeError: function (s) { process.stderr.write(s); }
     }).then(function (code) { process.exitCode = code; });

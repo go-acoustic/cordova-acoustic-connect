@@ -11,6 +11,11 @@
  * Capacitor app: it writes their sources from templates, with the App Group in them, and has a Ruby script (cli/add_ios_extensions.rb,
  * the `xcodeproj` gem that CocoaPods brings) add the targets to the Xcode project. Running it again is safe: it never overwrites a file
  * that is there, and the project edits are idempotent.
+ *
+ * Both ways of linking the plugin are covered. In a Swift Package Manager app the extensions get the Connect SDK as a Swift package of the
+ * Xcode project. In a CocoaPods app (ios/App/Podfile) they get it as the AcousticConnect pod: the command adds a target block for each
+ * extension to the Podfile, with the same version requirement as the plugin's podspec, and `pod install` (or `npx cap sync ios`) then links
+ * it. The SDK is never linked to an extension by both ways.
  */
 
 const fs = require('fs');
@@ -94,11 +99,39 @@ function sdkVersionFrom(packageSwift) {
     return match ? match[1] : null;
 }
 
+/** The version requirement of the AcousticConnect pod, as the plugin's podspec states it: the floor of the plugin, and iosVersion when the app names one. */
+function podRequirements(dir, sdkVersion) {
+    const value = pluginSetting(dir, 'iosVersion');
+    const pinned = typeof value === 'string' ? value.trim() : '';
+    if (pinned && !/^\d+\.\d+\.\d+$/.test(pinned)) {
+        throw new Error('iosVersion "' + value + '" in the plugin block is not a version: write it as x.y.z');
+    }
+    return pinned ? ['>= ' + sdkVersion, '= ' + pinned] : ['>= ' + sdkVersion];
+}
+
+/**
+ * Adds a target block with the AcousticConnect pod to the Podfile for each extension that has none; returns the names it added. A block that is
+ * there is left as it is, so running the command again changes nothing. The blocks go at the end of the file, outside the target of the app.
+ */
+function addPodfileTargets(podfile, requirements, dryRun) {
+    let text = fs.readFileSync(podfile, 'utf8');
+    const added = [];
+    EXTENSIONS.forEach(function (extension) {
+        if (new RegExp('^\\s*target\\s+[\'"]' + extension + '[\'"]', 'm').test(text)) return;
+        added.push(extension);
+        const requirement = requirements.map(function (r) { return "'" + r + "'"; }).join(', ');
+        text = text.replace(/\s*$/, '\n') + '\ntarget \'' + extension + '\' do\n  pod \'AcousticConnect\', ' + requirement + '\nend\n';
+    });
+    if (added.length && !dryRun) fs.writeFileSync(podfile, text);
+    return added;
+}
+
 function runRuby(args) {
     const env = Object.assign({}, process.env, {
         ACOUSTIC_PROJECT_PATH: args.project,
         ACOUSTIC_APP_GROUP: args.appGroup,
         ACOUSTIC_SDK_VERSION: args.sdkVersion,
+        ACOUSTIC_LINK_SDK: args.linkSdk,
         ACOUSTIC_DEVELOPMENT_TEAM: args.team || ''
     });
     const result = spawnSync('ruby', [SCRIPT], { env: env, encoding: 'utf8' });
@@ -111,11 +144,8 @@ function setupIosPush(options) {
     if (!fs.existsSync(project)) {
         throw new Error('no iOS project at ' + path.join('ios', 'App', 'App.xcodeproj') + ' in ' + options.dir + ': run `npx cap add ios` first');
     }
-    if (fs.existsSync(path.join(iosDir, 'Podfile'))) {
-        throw new Error('this app uses CocoaPods (ios/App/Podfile), and the extensions are linked to the Connect SDK through Swift Package Manager, ' +
-            'so the SDK would be in the app twice. Add the extensions by hand for now: the CocoaPods set-up is described in the README, ' +
-            'or move the app to Swift Package Manager.');
-    }
+    const podfile = path.join(iosDir, 'Podfile');
+    const usesPods = fs.existsSync(podfile);
     const sdkVersion = sdkVersionFrom(fs.readFileSync(PACKAGE_SWIFT, 'utf8'));
     if (!sdkVersion) throw new Error('the plugin pins no Connect-SP version in its Package.swift');
 
@@ -137,13 +167,17 @@ function setupIosPush(options) {
         });
     });
 
+    const pods = usesPods ? addPodfileTargets(podfile, podRequirements(options.dir, sdkVersion), options.dryRun) : [];
+
     if (!options.dryRun) {
-        const result = (options.ruby || runRuby)({ project: project, appGroup: options.appGroup, sdkVersion: sdkVersion, team: options.team });
+        const result = (options.ruby || runRuby)({
+            project: project, appGroup: options.appGroup, sdkVersion: sdkVersion, team: options.team, linkSdk: usesPods ? 'pods' : 'spm'
+        });
         if (result.status !== 0) {
             throw new Error('adding the targets to the Xcode project failed (needs ruby and the xcodeproj gem: `gem install xcodeproj`):\n' + result.output);
         }
     }
-    return { written: written, kept: kept, sdkVersion: sdkVersion };
+    return { written: written, kept: kept, sdkVersion: sdkVersion, usesPods: usesPods, podfileTargets: pods };
 }
 
-module.exports = { parseArgs, appGroupFor, teamFor, sdkVersionFrom, setupIosPush, runRuby, PLACEHOLDER };
+module.exports = { parseArgs, appGroupFor, teamFor, sdkVersionFrom, podRequirements, addPodfileTargets, setupIosPush, runRuby, PLACEHOLDER };

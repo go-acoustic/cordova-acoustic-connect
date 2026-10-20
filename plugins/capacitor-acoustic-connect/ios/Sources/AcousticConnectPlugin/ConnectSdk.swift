@@ -50,6 +50,10 @@ protocol ConnectSdk: AnyObject {
 
     /// Captures the layout of the screen on display; `delayMs` nil or 0 captures now. `false` when there is no screen to capture.
     func logScreenLayout(name: String, delayMs: Int?) -> Bool
+
+    /// Logs the device's current location, as the SDK reads it. `false` when the SDK does not log it (no permission, location logging off).
+    func logLocation() -> Bool
+    func logLocationUpdate(latitude: Double, longitude: Double, level: MonitoringLevel) -> Bool
     func setConfigItem(key: String, value: Any) -> Bool
     func configItem(key: String) -> Any?
     func setKillSwitch(enabled: Bool, url: String?)

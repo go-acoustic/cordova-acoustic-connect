@@ -109,17 +109,24 @@ Before it, in your Apple developer account: create that App Group, and give the 
 development team on the app and the extensions.
 
 What the command does: writes the two extensions' sources, `Info.plist` and entitlements into `ios/App/` (it never overwrites a file that is
-there), adds the targets to `ios/App/App.xcodeproj` with the Connect SDK linked through Swift Package Manager at the version the plugin
-pins, embeds them in the app, gives the extensions the app's version (the App Store refuses an app and extensions with different ones),
+there), adds the targets to `ios/App/App.xcodeproj`, embeds them in the app, gives the extensions the app's version (the App Store refuses an app and extensions with different ones),
 adds the `aps-environment` entitlement and the App Group to the app's entitlements, and the `remote-notification` background mode to its
 `Info.plist`. It needs `ruby` and the `xcodeproj` gem (`gem install xcodeproj`; CocoaPods brings it). Run it again after you change the
 app's version, to bring the extensions in line; running it again changes nothing else. `--dry-run` shows what it would write.
 
-What it does not cover: an app that uses **CocoaPods** (it stops, as the SDK would be in the app twice: create the two extension targets in
-Xcode from the sources in `node_modules/capacitor-acoustic-connect/cli/templates/` and add the `AcousticConnect` pod to them in
-the Podfile; that way is not verified), and the Apple developer account set-up above. The extensions are built into the DemoCapacitor app
-and the app still passes its wire verification; a rich notification has not been received on a **real device** (the simulator does not show
-rich media).
+How the extensions get the Connect SDK depends on how the app links the plugin:
+
+- **Swift Package Manager** (the default): the command links the `Connect` product of `Connect-SP`, as a Swift package of the Xcode project, at the
+  version the plugin pins.
+- **CocoaPods** (`ios/App/Podfile` exists): the command adds a `target 'ConnectNSE'` and a `target 'ConnectNCE'` block with the `AcousticConnect` pod to
+  the Podfile, with the version requirement of the plugin (`>= 2.1.51`, and `= <iosVersion>` when the plugin block names one), and links no
+  package. Then run `pod install` in `ios/App` (or `npx cap sync ios`), which keeps those blocks. The app and the extensions share one
+  copy of the SDK frameworks.
+
+What it does not cover is the Apple developer account set-up above. The extensions are built into the DemoCapacitor app (Swift Package Manager)
+and the app still passes its wire verification; the CocoaPods route was run on a new Capacitor 8 app (`npx cap add ios --packagemanager CocoaPods`),
+which then built for the iOS simulator with both extensions embedded. A rich notification has not been received on a **real device** (the
+simulator does not show rich media).
 
 ## Checking an app: `doctor`
 
@@ -160,6 +167,12 @@ runs them anyway, which suits a CI gate. A failed check makes the exit code 1; a
 * [`logScreenViewContextLoad(...)`](#logscreenviewcontextload)
 * [`logScreenViewContextUnload(...)`](#logscreenviewcontextunload)
 * [`logScreenLayout(...)`](#logscreenlayout)
+* [`logLocation()`](#loglocation)
+* [`logLocationUpdate(...)`](#loglocationupdate)
+* [`logDialogShowEvent(...)`](#logdialogshowevent)
+* [`logDialogDismissEvent(...)`](#logdialogdismissevent)
+* [`logDialogButtonClickEvent(...)`](#logdialogbuttonclickevent)
+* [`logDialogCustomEvent(...)`](#logdialogcustomevent)
 * [`setConfigItem(...)`](#setconfigitem)
 * [`getConfigItem(...)`](#getconfigitem)
 * [`getConfigItem(...)`](#getconfigitem)
@@ -384,6 +397,101 @@ Asks the native SDK to capture the layout of the screen on display, under `name`
 | ------------- | ------------------- | ---------------------------------------------------------------------------------- |
 | **`name`**    | <code>string</code> | Screen name, e.g. `'Login'`. Rejects with `ACOUSTIC_INVALID_ARGS` when empty.      |
 | **`delayMs`** | <code>number</code> | Milliseconds to wait before capturing (a non-negative integer); omitted means now. |
+
+--------------------
+
+
+### logLocation()
+
+```typescript
+logLocation() => Promise<void>
+```
+
+Logs the device's current location, as the native SDK reads it. Subject to the app's location permission and `locationLoggingEnabled`.
+
+--------------------
+
+
+### logLocationUpdate(...)
+
+```typescript
+logLocationUpdate(latitude: number, longitude: number, level?: number | undefined) => Promise<void>
+```
+
+Logs a location the app already has.
+
+| Param           | Type                | Description                                                 |
+| --------------- | ------------------- | ----------------------------------------------------------- |
+| **`latitude`**  | <code>number</code> | -90 to 90.                                                  |
+| **`longitude`** | <code>number</code> | -180 to 180.                                                |
+| **`level`**     | <code>number</code> | Monitoring level, a non-negative integer; the default is 3. |
+
+--------------------
+
+
+### logDialogShowEvent(...)
+
+```typescript
+logDialogShowEvent(dialogId: string, dialogTitle: string, dialogType: string) => Promise<void>
+```
+
+Logs that a dialog was shown, as a `DialogShowEvent` custom event (`dialogId`, `dialogTitle`, `dialogType`, `eventType`, `timestamp`).
+
+| Param             | Type                |
+| ----------------- | ------------------- |
+| **`dialogId`**    | <code>string</code> |
+| **`dialogTitle`** | <code>string</code> |
+| **`dialogType`**  | <code>string</code> |
+
+--------------------
+
+
+### logDialogDismissEvent(...)
+
+```typescript
+logDialogDismissEvent(dialogId: string, dismissReason: string) => Promise<void>
+```
+
+Logs that a dialog was dismissed, as a `DialogDismissEvent` custom event; `dismissReason` is e.g. `'cancel'`, `'outside_touch'`, `'back'`.
+
+| Param               | Type                |
+| ------------------- | ------------------- |
+| **`dialogId`**      | <code>string</code> |
+| **`dismissReason`** | <code>string</code> |
+
+--------------------
+
+
+### logDialogButtonClickEvent(...)
+
+```typescript
+logDialogButtonClickEvent(dialogId: string, buttonText: string, buttonIndex: number) => Promise<void>
+```
+
+Logs a tap on a dialog button, as a `DialogButtonClickEvent` custom event; `buttonIndex` is the position of the button (a non-negative integer).
+
+| Param             | Type                |
+| ----------------- | ------------------- |
+| **`dialogId`**    | <code>string</code> |
+| **`buttonText`**  | <code>string</code> |
+| **`buttonIndex`** | <code>number</code> |
+
+--------------------
+
+
+### logDialogCustomEvent(...)
+
+```typescript
+logDialogCustomEvent(dialogId: string, eventName: string, values?: Record<string, FlatValue> | undefined) => Promise<void>
+```
+
+Logs your own event for a dialog, as a `DialogCustomEvent` custom event; `eventName` travels as `customEventName`, `values` are extra flat values.
+
+| Param           | Type                                                                                        |
+| --------------- | ------------------------------------------------------------------------------------------- |
+| **`dialogId`**  | <code>string</code>                                                                         |
+| **`eventName`** | <code>string</code>                                                                         |
+| **`values`**    | <code><a href="#record">Record</a>&lt;string, <a href="#flatvalue">FlatValue</a>&gt;</code> |
 
 --------------------
 

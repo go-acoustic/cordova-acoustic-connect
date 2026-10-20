@@ -555,3 +555,53 @@ describe('ConnectPlugin.swift — layout and location actions', () => {
         expect(SWIFT).toMatch(/andDelay:\s*delayMs\s*\/\s*1000\.0/);
     });
 });
+
+// ── PushEnabled ────────────────────────────────────────────────────────────
+
+describe('ConnectPlugin.swift — PushEnabled', () => {
+    const PUSH_CALLS = [
+        'pushRequestPermission',
+        'pushGetPermissionState',
+        'pushDidReceiveAuthorization',
+        'pushDidReceiveNotification',
+        'pushDidReceiveResponse',
+    ];
+
+    function funcBody(name: string): string {
+        const match = new RegExp(`func\\s+${name}\\s*\\([^)]*\\)\\s*(?:->\\s*\\w+\\s*)?\\{`).exec(SWIFT);
+        if (!match) return '';
+        let depth = 0;
+        for (let i = match.index + match[0].length - 1; i < SWIFT.length; i++) {
+            if (SWIFT[i] === '{') depth++;
+            else if (SWIFT[i] === '}' && --depth === 0) return SWIFT.slice(match.index, i + 1);
+        }
+        return '';
+    }
+
+    it('reads pushEnabled from the native config, on when it is absent or the file cannot be read', () => {
+        expect(SWIFT).toMatch(/private var pushEnabled: Bool = true/);
+        expect(SWIFT).toContain('pushEnabled = config["pushEnabled"] as? Bool ?? true');
+    });
+
+    it('enables the SDK without push (ConnectPushConfig.off) while push is off, whatever mode the call names', () => {
+        const enable = funcBody('enable');
+        expect(enable).toBeTruthy();
+        expect(enable).toMatch(/let pushConfig: ConnectPushConfig = pushEnabled\s*\?\s*ConnectPushConfig\(mode: mode, appGroupIdentifier: appGroupId\)\s*:\s*\.off/);
+        expect(enable).toContain('ConnectSDK.shared.enable(appKey: appKey, postURL: postURL, push: pushConfig)');
+    });
+
+    it.each(PUSH_CALLS)('%s is refused with ACOUSTIC_PUSH_DISABLED while push is off, before it reaches the SDK', (name) => {
+        const body = funcBody(name);
+        expect(body).toBeTruthy();
+        expect(body.indexOf('guard requirePushEnabled(command) else { return }')).toBeGreaterThan(-1);
+        expect(body.indexOf('guard requirePushEnabled(command) else { return }')).toBeLessThan(body.indexOf('ConnectSDK.shared') === -1 ? Infinity : body.indexOf('ConnectSDK.shared'));
+    });
+
+    it('answers a refused call with its own code and a message that says what to change', () => {
+        expect(SWIFT).toContain('static let codePushDisabled      = "ACOUSTIC_PUSH_DISABLED"');
+        expect(SWIFT).toContain('push is off: Connect.PushEnabled is false in ConnectConfig.json');
+        const guard = funcBody('requirePushEnabled');
+        expect(guard).toContain('guard pushEnabled else');
+        expect(guard).toContain('Constants.codePushDisabled');
+    });
+});

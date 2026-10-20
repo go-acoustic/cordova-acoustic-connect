@@ -26,6 +26,8 @@ public class ConnectPlugin: CDVPlugin {
     // MARK: - State
 
     private var pushMode: String = Constants.pushModeAutomatic
+    // The master switch of push (Connect.PushEnabled). On unless the app turned it off: push has always been on in this plugin.
+    private var pushEnabled: Bool = true
     private var bridgeLogLevel: String = Constants.logLevelDefault
     private var killSwitchEnabled: Bool = false
     private var killSwitchUrl: String?
@@ -111,7 +113,10 @@ public class ConnectPlugin: CDVPlugin {
         let appGroupId = options?["iosAppGroupIdentifier"] as? String
         pushMode = modeString
         let mode = mapPushMode(modeString)
-        let pushConfig = ConnectPushConfig(mode: mode, appGroupIdentifier: appGroupId)
+        // Push off (Connect.PushEnabled=false): the SDK is enabled without push, whatever mode the call names.
+        let pushConfig: ConnectPushConfig = pushEnabled
+            ? ConnectPushConfig(mode: mode, appGroupIdentifier: appGroupId)
+            : .off
 
         // Captured by value (not via self) so the JS Promise can still be resolved
         // from the guard-else branch below even if self is deallocated before the
@@ -475,6 +480,7 @@ public class ConnectPlugin: CDVPlugin {
     /// JS: `AcousticConnect.push.requestPermission()` — presents the system push prompt via the SDK.
     @objc(pushRequestPermission:)
     func pushRequestPermission(command: CDVInvokedUrlCommand) {
+        guard requirePushEnabled(command) else { return }
         Task { @MainActor [weak self] in
             guard let self else { return }
             do {
@@ -496,6 +502,7 @@ public class ConnectPlugin: CDVPlugin {
     /// JS: `AcousticConnect.push.getPermissionState()` — returns true/false/null tri-state via the SDK.
     @objc(pushGetPermissionState:)
     func pushGetPermissionState(command: CDVInvokedUrlCommand) {
+        guard requirePushEnabled(command) else { return }
         Task { @MainActor [weak self] in
             guard let self else { return }
             do {
@@ -514,6 +521,7 @@ public class ConnectPlugin: CDVPlugin {
     /// JS: `AcousticConnect.push.didReceiveAuthorization(granted, error?)`
     @objc(pushDidReceiveAuthorization:)
     func pushDidReceiveAuthorization(command: CDVInvokedUrlCommand) {
+        guard requirePushEnabled(command) else { return }
         // nil granted (notDetermined) has no SDK equivalent — skip the call.
         guard let granted = command.argument(at: 0) as? Bool else {
             sendBool(command, value: true)
@@ -539,12 +547,14 @@ public class ConnectPlugin: CDVPlugin {
 
     @objc(pushDidReceiveNotification:)
     func pushDidReceiveNotification(command: CDVInvokedUrlCommand) {
+        guard requirePushEnabled(command) else { return }
         guard requireManualMode(command) else { return }
         sendBool(command, value: true)
     }
 
     @objc(pushDidReceiveResponse:)
     func pushDidReceiveResponse(command: CDVInvokedUrlCommand) {
+        guard requirePushEnabled(command) else { return }
         guard requireManualMode(command) else { return }
         sendBool(command, value: true)
     }
@@ -594,6 +604,10 @@ public class ConnectPlugin: CDVPlugin {
         }
         #endif
 
+        pushEnabled = config["pushEnabled"] as? Bool ?? true
+        if !pushEnabled {
+            NSLog("[AcousticConnect] Connect.PushEnabled=false — the SDK will be enabled without push")
+        }
         killSwitchEnabled = config["killSwitchEnabled"] as? Bool ?? false
         killSwitchUrl = config["killSwitchUrl"] as? String
         // config["locationLoggingEnabled"] is JSON `null` when not configured, which
@@ -801,6 +815,16 @@ public class ConnectPlugin: CDVPlugin {
         commandDelegate.send(result, callbackId: command.callbackId)
     }
 
+    /// Returns `true` when push is on; otherwise sends `ACOUSTIC_PUSH_DISABLED` and returns `false`: the push calls fail with a code
+    /// of their own while `Connect.PushEnabled` is false, not with whatever the SDK says about a push it was never given.
+    private func requirePushEnabled(_ command: CDVInvokedUrlCommand) -> Bool {
+        guard pushEnabled else {
+            sendError(command, code: Constants.codePushDisabled, message: Constants.pushDisabledMessage)
+            return false
+        }
+        return true
+    }
+
     /// Returns `true` when pushMode is `'manual'`; otherwise sends `ACOUSTIC_PUSH_MODE_NOT_MANUAL`
     /// and returns `false`.
     private func requireManualMode(_ command: CDVInvokedUrlCommand) -> Bool {
@@ -827,6 +851,9 @@ public class ConnectPlugin: CDVPlugin {
         static let codeInvalidArgs       = "ACOUSTIC_INVALID_ARGS"
         static let codeInternalError     = "ACOUSTIC_INTERNAL_ERROR"
         static let codePushModeNotManual = "ACOUSTIC_PUSH_MODE_NOT_MANUAL"
+        static let codePushDisabled      = "ACOUSTIC_PUSH_DISABLED"
+        static let pushDisabledMessage   =
+            "push is off: Connect.PushEnabled is false in ConnectConfig.json (set it to true, run cordova prepare and rebuild)"
     }
 }
 

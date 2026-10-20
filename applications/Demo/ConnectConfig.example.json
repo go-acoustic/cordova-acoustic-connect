@@ -6,6 +6,7 @@
         "PostMessageUrl": "https://collector.example.com/collector/collectorPost",
         "AndroidVersion": "",
         "iOSVersion": "",
+        "PushEnabled": true,
         "iOSPushMode": "automatic",
         "iOSAppGroupIdentifier": "YOUR_APP_GROUP_ID_HERE",
         "iOSDevelopmentTeam": "YOUR_TEAM_ID",

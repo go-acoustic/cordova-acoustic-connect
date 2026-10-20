@@ -137,25 +137,44 @@ function parseIosPod(podfileLock) {
 
 // Picks the simulator the CI stage runs on from `simctl list devices available -j`: a booted
 // iPhone first (so no second one is started), otherwise one on the newest iOS runtime.
-function pickIosSimulator(simctlJson) {
+// `wanted` (optional, like '26.5' or '26') limits the choice to the iOS runtimes that start with that
+// version: an agent that gets a newer runtime would otherwise move the run to it without anyone
+// asking (build #152 went from iOS 26.5 to 27.0 that way, and the push registration was gone). With
+// `wanted` set and no such runtime, it fails and names the runtimes there are.
+function pickIosSimulator(simctlJson, wanted) {
+    let want = null;
+    if (wanted !== undefined && wanted !== null && String(wanted).trim() !== '') {
+        if (!/^\d+(\.\d+)*$/.test(String(wanted).trim())) {
+            throw new Error('the wanted iOS version "' + wanted + '" is not a version like 26 or 26.5');
+        }
+        want = String(wanted).trim().split('.').map(Number);
+    }
     let parsed;
     try {
         parsed = JSON.parse(simctlJson);
     } catch (e) {
         throw new Error('could not read the simctl output as JSON: ' + e.message);
     }
-    const candidates = [];
+    const all = [];
     Object.keys((parsed && parsed.devices) || {}).forEach(function (runtime) {
         const match = /\.iOS-(\d+(?:-\d+)*)$/.exec(runtime);
         if (!match) return;
         const version = match[1].split('-').map(Number);
         parsed.devices[runtime].forEach(function (d) {
             if (d.isAvailable && /^iPhone/.test(d.name)) {
-                candidates.push({ udid: d.udid, booted: d.state === 'Booted', version: version });
+                all.push({ udid: d.udid, booted: d.state === 'Booted', version: version });
             }
         });
     });
-    if (candidates.length === 0) throw new Error('no available iPhone simulator on an iOS runtime');
+    if (all.length === 0) throw new Error('no available iPhone simulator on an iOS runtime');
+    const candidates = want === null ? all : all.filter(function (c) {
+        return want.every(function (part, i) { return c.version[i] === part; });
+    });
+    if (candidates.length === 0) {
+        const found = all.map(function (c) { return c.version.join('.'); })
+            .filter(function (v, i, list) { return list.indexOf(v) === i; });
+        throw new Error('no available iPhone simulator on iOS ' + wanted + ' (iOS runtimes with an iPhone: ' + found.join(', ') + ')');
+    }
     candidates.sort(function (a, b) {
         if (a.booted !== b.booted) return a.booted ? -1 : 1;
         for (let i = 0; i < Math.max(a.version.length, b.version.length); i += 1) {

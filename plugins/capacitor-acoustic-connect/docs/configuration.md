@@ -55,4 +55,3 @@ log says so; run `npx cap sync` and rebuild.
 ## Not covered yet
 
 - Choosing the iOS SDK version in a Swift Package Manager app: the plugin sets it (`Connect-SP` `from: "2.1.51"` in `Package.swift`, the newest 2.x). `iosVersion` works for CocoaPods apps.
-- iOS push extensions for an app that uses CocoaPods: `npx acoustic-connect setup-ios-push` covers Swift Package Manager apps (README, "Rich push on iOS"); with CocoaPods it stops and the extensions are added by hand.

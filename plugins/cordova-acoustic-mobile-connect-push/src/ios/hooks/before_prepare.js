@@ -139,3 +139,6 @@ module.exports = function (context) {
     patchPbxproj(pbxprojPath);
     syncPodfileWithPbxproj(iosDir, pbxprojPath);
 };
+
+// Exposed for after_prepare.js (push off strips the extension targets from the Podfile) and for unit tests.
+module.exports._internal = { stripTargetBlock };

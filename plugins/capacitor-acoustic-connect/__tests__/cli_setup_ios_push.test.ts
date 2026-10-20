@@ -160,6 +160,7 @@ describe('setupIosPush', () => {
         appGroup: GROUP,
         sdkVersion: expect.stringMatching(/^\d+\.\d+\.\d+$/),
         team: 'ABCDE12345',
+        linkSdk: 'spm',
       },
     ]);
   });
@@ -188,14 +189,75 @@ describe('setupIosPush', () => {
     expect(report.written.length).toBe(6);
   });
 
-  it('does not go on with an app that uses CocoaPods, whose Connect SDK would then be in the app twice, and says what to do', () => {
-    const dir = app({ 'ios/App/Podfile': "target 'App' do\nend\n" });
-    let called = false;
-    expect(() =>
-      setupIosPush({ dir, appGroup: GROUP, ruby: () => ((called = true), { status: 0, output: '' }) }),
-    ).toThrow(/CocoaPods/);
-    expect(called).toBe(false);
-    expect(fs.existsSync(path.join(dir, 'ios', 'App', 'ConnectNSE'))).toBe(false);
+  describe('in an app that uses CocoaPods', () => {
+    const PODFILE =
+      "platform :ios, '15.1'\n\ntarget 'App' do\n  pod 'Capacitor'\nend\n\npost_install do |installer|\nend\n";
+    const run = (dir: string, extra: Record<string, unknown> = {}) => {
+      const calls: any[] = [];
+      const report = setupIosPush({
+        dir,
+        appGroup: GROUP,
+        ruby: (args: unknown) => (calls.push(args), { status: 0, output: '' }),
+        ...extra,
+      });
+      return { calls, report };
+    };
+
+    it('gives each extension a target block with the AcousticConnect pod, and has the script link no Swift package', () => {
+      const dir = app({ 'ios/App/Podfile': PODFILE });
+      const { calls, report } = run(dir);
+      const podfile = read(dir, 'Podfile');
+      expect(podfile.startsWith(PODFILE)).toBe(true);
+      for (const name of ['ConnectNSE', 'ConnectNCE']) {
+        expect(podfile).toMatch(
+          new RegExp(`target '${name}' do\\n  pod 'AcousticConnect', '>= \\d+\\.\\d+\\.\\d+'\\nend`),
+        );
+      }
+      expect(report.usesPods).toBe(true);
+      expect(report.podfileTargets).toEqual(['ConnectNSE', 'ConnectNCE']);
+      expect(calls[0].linkSdk).toBe('pods');
+    });
+
+    it('adds nothing to the Podfile when it is run again', () => {
+      const dir = app({ 'ios/App/Podfile': PODFILE });
+      run(dir);
+      const once = read(dir, 'Podfile');
+      const again = run(dir);
+      expect(read(dir, 'Podfile')).toBe(once);
+      expect(again.report.podfileTargets).toEqual([]);
+    });
+
+    it('adds only the block that is missing', () => {
+      const dir = app({ 'ios/App/Podfile': PODFILE + "\ntarget 'ConnectNSE' do\n  pod 'AcousticConnect'\nend\n" });
+      expect(run(dir).report.podfileTargets).toEqual(['ConnectNCE']);
+      expect(read(dir, 'Podfile').match(/target 'ConnectNSE'/g)).toHaveLength(1);
+    });
+
+    it('asks for the iosVersion of the plugin block as well, like the podspec', () => {
+      const dir = app({
+        'ios/App/Podfile': PODFILE,
+        'capacitor.config.json': { plugins: { AcousticConnect: { iosVersion: '2.2.2' } } },
+      });
+      run(dir);
+      expect(read(dir, 'Podfile')).toMatch(/pod 'AcousticConnect', '>= \d+\.\d+\.\d+', '= 2\.2\.2'/);
+    });
+
+    it('stops, naming iosVersion, when it is not a version', () => {
+      const dir = app({
+        'ios/App/Podfile': PODFILE,
+        'capacitor.config.json': { plugins: { AcousticConnect: { iosVersion: 'latest' } } },
+      });
+      expect(() => run(dir)).toThrow(/iosVersion/);
+      expect(read(dir, 'Podfile')).toBe(PODFILE);
+    });
+
+    it('leaves the Podfile as it is in a dry run, and says what it would add', () => {
+      const dir = app({ 'ios/App/Podfile': PODFILE });
+      const { calls, report } = run(dir, { dryRun: true });
+      expect(read(dir, 'Podfile')).toBe(PODFILE);
+      expect(report.podfileTargets).toEqual(['ConnectNSE', 'ConnectNCE']);
+      expect(calls).toEqual([]);
+    });
   });
 
   it('says where the iOS project should be when it is not there', () => {

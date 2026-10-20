@@ -498,3 +498,60 @@ describe('ConnectPlugin.kt — runtime config items', () => {
         expect(KOTLIN_CODE).toMatch(/toLong\(\)/);
     });
 });
+
+describe('ConnectPlugin.kt — PushEnabled', () => {
+    const block = (name: string): string =>
+        KOTLIN.match(new RegExp(`internal fun ${name}[\\s\\S]*?\\n {4}\\}`))?.[0] ?? '';
+
+    test('the native config carries pushEnabled, on by default and when the file cannot be read', () => {
+        expect(KOTLIN_CODE).toMatch(/val pushEnabled: Boolean = true/);
+        expect(KOTLIN_CODE).toContain('pushEnabled = obj.optBoolean("pushEnabled", true)');
+    });
+
+    test('the five push calls are refused with ACOUSTIC_PUSH_DISABLED while push is off, before any of them is dispatched', () => {
+        expect(KOTLIN_CODE).toContain('internal const val CODE_PUSH_DISABLED = "ACOUSTIC_PUSH_DISABLED"');
+        const guard = KOTLIN_CODE.indexOf('action in PUSH_ACTIONS && !isPushEnabled()');
+        expect(guard).toBeGreaterThan(-1);
+        expect(guard).toBeLessThan(KOTLIN_CODE.indexOf('ACTION_ENABLE ->'));
+        expect(KOTLIN_CODE.slice(guard, guard + 200)).toContain('CODE_PUSH_DISABLED');
+        for (const action of [
+            'ACTION_PUSH_REQUEST_PERMISSION',
+            'ACTION_PUSH_GET_PERMISSION_STATE',
+            'ACTION_PUSH_DID_RECEIVE_AUTHORIZATION',
+            'ACTION_PUSH_DID_RECEIVE_NOTIFICATION',
+            'ACTION_PUSH_DID_RECEIVE_RESPONSE',
+        ]) {
+            expect(KOTLIN_CODE).toMatch(new RegExp(`PUSH_ACTIONS = setOf\\([\\s\\S]*?${action}`));
+        }
+    });
+
+    test('enable() stops after the analytics set-up when push is off: no push.enable, no turnOnPush', () => {
+        const b = block('handleEnable');
+        expect(b).toBeTruthy();
+        const off = b.indexOf('if (!nativeConfig.pushEnabled)');
+        expect(off).toBeGreaterThan(-1);
+        expect(off).toBeGreaterThan(b.indexOf('applyKillSwitchConfig(activity.application, nativeConfig)'));
+        expect(off).toBeLessThan(b.indexOf('Connect.push.enable('));
+        expect(off).toBeLessThan(b.indexOf('Connect.push.turnOnPush()'));
+        expect(b.slice(off, off + 400)).toContain('return@runOnUiThread');
+    });
+
+    test('the bundled-config init does the same', () => {
+        const start = KOTLIN_CODE.indexOf('private fun tryBundledConfigInit');
+        const body = KOTLIN_CODE.slice(start, KOTLIN_CODE.indexOf('internal data class NativeConfig'));
+        const off = body.indexOf('if (!nativeConfig.pushEnabled)');
+        expect(off).toBeGreaterThan(-1);
+        expect(off).toBeLessThan(body.indexOf('Connect.push.enable('));
+        expect(body.slice(off, off + 300)).toContain('return@Runnable');
+    });
+
+    test('says Push is off, or that the artifact is missing with push on, not the old "set PushEnabled=true" hint', () => {
+        expect(KOTLIN_CODE).toContain('private fun isPushEnabled()');
+        // the native config is bundled and static: the push guard reads it once, not on every push call
+        expect(KOTLIN_CODE).toContain('@Volatile private var pushEnabledCached: Boolean? = null');
+        expect(KOTLIN_CODE).toContain('readNativeConfig(context).pushEnabled.also { pushEnabledCached = it }');
+        expect(KOTLIN).toContain('Push is off (Connect.PushEnabled=false in ConnectConfig.json)');
+        expect(KOTLIN).toContain('Push is on but connect-push-fcm is not in the build');
+        expect(KOTLIN).not.toContain('set Connect.PushEnabled=true in ConnectConfig');
+    });
+});

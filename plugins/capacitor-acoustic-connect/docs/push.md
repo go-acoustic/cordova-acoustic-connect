@@ -46,5 +46,5 @@ goes out with an empty token. The simulator does not show rich media.
 
 - A notification arriving and being tapped, with a real push on a real device (the SDK handles both; on the wire they are the message types 23 and 25 next to the
   registration, type 22). The registration is checked by the wire run on the emulator and the simulator.
-- Rich push on a device, and the extensions of an app that uses CocoaPods.
+- Rich push on a device. (The extensions of an app that uses CocoaPods are added by `setup-ios-push` as well; that route is built, not run on a device.)
 - `didRegisterWithToken` and the other manual-mode calls against a real push, and with the token of `@capacitor/push-notifications`.

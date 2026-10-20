@@ -2,7 +2,17 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 // The Angular sample (applications/DemoCapacitorAngular) promises a call for every public method of the plugin: this fails
-// when a method is added to AcousticConnectApi and the sample does not call it.
+// when a method is added to AcousticConnectApi and the sample does not call it. The methods in NOT_IN_THE_SAMPLE are left out on
+// purpose: the Cordova Demo and the React Native examples have no buttons for them either, and the shared end-to-end scenario
+// (e2e/core/scenario.js) exercises them.
+const NOT_IN_THE_SAMPLE = [
+  'logLocation',
+  'logLocationUpdate',
+  'logDialogShowEvent',
+  'logDialogDismissEvent',
+  'logDialogButtonClickEvent',
+  'logDialogCustomEvent',
+];
 
 const DEFINITIONS = path.join(__dirname, '..', 'src', 'definitions.ts');
 const SERVICE = path.join(
@@ -34,7 +44,8 @@ function methodNames(block: string): { top: string[]; push: string[] } {
 
 describe('the Angular sample covers the plugin API', () => {
   const service = fs.readFileSync(SERVICE, 'utf8');
-  const { top, push } = methodNames(apiBlock());
+  const { top: allTop, push } = methodNames(apiBlock());
+  const top = allTop.filter((n) => !NOT_IN_THE_SAMPLE.includes(n));
 
   it('reads the methods of the API', () => {
     expect(top).toEqual(

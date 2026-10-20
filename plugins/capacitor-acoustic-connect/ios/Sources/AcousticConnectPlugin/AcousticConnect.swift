@@ -257,6 +257,21 @@ final class AcousticConnect {
         finish(sdk.logScreenLayout(name: name, delayMs: delayMs), "logScreenLayout", reply)
     }
 
+    /// Logs the device's current location, as the Cordova plugin's `logLocation` does.
+    func logLocation(reply: Reply) {
+        finish(sdk.logLocation(), "logLocation", reply)
+    }
+
+    /// Logs a location the app has, as the Cordova plugin's `logLocationUpdate` does.
+    func logLocationUpdate(_ options: [String: Any], reply: Reply) {
+        guard let latitude = (options["latitude"] as? NSNumber)?.doubleValue, (-90.0...90.0).contains(latitude),
+              let longitude = (options["longitude"] as? NSNumber)?.doubleValue, (-180.0...180.0).contains(longitude)
+        else {
+            return reply.reject(code: Constants.codeInvalidArgs, message: "logLocationUpdate: latitude/longitude out of range")
+        }
+        finish(sdk.logLocationUpdate(latitude: latitude, longitude: longitude, level: level(options)), "logLocationUpdate", reply)
+    }
+
     // MARK: Config items
 
     /// iOS has a single config store, so `moduleName` is only validated.

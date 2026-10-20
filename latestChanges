@@ -2,62 +2,20 @@ Acoustic Connect for Cordova
 
 New Features
 
-- Opt-in remote kill switch control via `KillSwitchEnabled`/`KillSwitchUrl` in
-  `ConnectConfig.json` — both native SDKs ship with the kill switch on by
-  default, but this plugin forces it off unless the app explicitly opts in
-- Opt-in location-logging control via `LocationLoggingEnabled` in
-  `ConnectConfig.json` — tri-state: omit or set `null` to leave the native
-  SDK's own default untouched, or explicitly opt in/out of location data
-  collection
-- `AndroidVersion`/`iOSVersion` config fields to pin a specific native Connect
-  SDK version instead of the plugin's bundled default
-- Analytics API in the JavaScript bridge: `logCustomEvent`, `logSignal`,
-  `setCurrentScreenName`, `logScreenViewContextLoad`/`logScreenViewContextUnload`,
-  `logClickEvent`, `logTextChangeEvent`, `logExceptionEvent`, `flushQueues`,
-  `isSdkEnabled` and `getSdkVersion`, with TypeScript types. Text passed to
-  `logTextChangeEvent` is masked by default before it leaves JavaScript
-- JavaScript bridge: `logScreenLayout(name, delayMs?)`,
-  `logLocation()`, `logLocationUpdate(latitude, longitude, level?)` and the dialog
-  events `logDialogShowEvent`, `logDialogDismissEvent`, `logDialogButtonClickEvent`
-  and `logDialogCustomEvent`. The dialog events are sent as custom events
-  (`DialogShowEvent`, `DialogDismissEvent`, `DialogButtonClickEvent`,
-  `DialogCustomEvent`), the same event names and keys on both platforms
-- `setConfigItem` / `getConfigItem` in the JavaScript bridge to set and read native
-  SDK configuration items at runtime, with TypeScript types
-- `ScreenCaptureEnabled` in `ConnectConfig.json` — set `false` to turn the SDK's
-  layout and screenshot capture off on both platforms (screen views keep
-  flowing). Omit it to keep the SDK default
-- `layoutConfig`, `layoutConfigIos` and `layoutConfigAndroid` in
-  `ConnectConfig.json` to deliver the SDK's screen-capture rules (`AutoLayout`,
-  `AppendMapIds`), merged per platform
-- Demo app: the Behaviour tab now exercises the analytics API
+- `PushEnabled` in `ConnectConfig.json` — the master switch of push. `true` by
+  default (push has always been on in this plugin, so existing apps keep it;
+  the Capacitor plugin's `pushEnabled` is off by default). `false` builds an
+  analytics-only app: Android takes the `connect` artifact with no Firebase, iOS
+  enables the SDK without push and adds no `ConnectNSE`/`ConnectNCE` extensions,
+  no App Group or `aps-environment` entitlement and no `remote-notification`
+  background mode (a plugin or `config.xml` that declares it keeps it). The
+  `push.*` calls then reject with `ACOUSTIC_PUSH_DISABLED`
 
 Fixes
 
-- iOS: the plugin now requests the screen layout (type 10) itself once the WebView
-  page has loaded. Connect iOS SDK 2.1.39 (debug) and 2.2.2 (release) no longer
-  capture it for a Cordova screen on their own. Skipped when
-  `ScreenCaptureEnabled` is `false`
-- iOS: the default Connect iOS SDK is now floating, `>= 2.1.51` (CocoaPods resolves the
-  newest release; it was a fixed 2.1.15). The minimum `iOSVersion` pin is 2.1.51 (it was
-  2.1.13), the first build with the iOS screen-capture and WebView fixes. Connect iOS SDK
-  2.1.17 (debug) / 2.1.26 (release) and newer send a `logSignal` payload at the root
-  of `signal`, no longer under `signal.data.value`, so anything that reads signals
-  from the collector must accept that
-- iOS rich push (NSE/NCE) extensions' `CFBundleVersion`/`CFBundleShortVersionString`
-  now automatically track the host app's own version, fixing an App Store
-  submission blocker (Apple rejects a mismatch between an app extension's
-  version and its containing app's)
-- Fixed a build failure when switching `useRelease` (Debug ↔ Release) via
-  `cordova plugin rm`/`add` — a stale xcframeworks build-phase reference left
-  over from the previous SDK variant is now cleaned up automatically, so a
-  full `cordova platform rm`/`add ios` rebuild is no longer required
-- Fixed duplicate push token-registration logs and a duplicate Cordova bridge
-  callback warning on Android, caused by a race between the bundled auto-init
-  path and an explicit `enable()` call both running push setup
-- iOS `enable()` no longer blocks Cordova's own thread watchdog — native SDK
-  initialization is now deferred by one run-loop turn instead of running
-  synchronously on the calling thread
+- iOS: the hook that rewrites the Podfile kept only the Connect pod and dropped
+  the pods that the app's other plugins declare. It now keeps them, and restores
+  the ones an earlier run lost from `pods.json`
 
 
 Known Issues

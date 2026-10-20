@@ -56,6 +56,6 @@ native projects.
 
 - The Cordova hooks and the generated files (`connect-config.js`, `AcousticConnectNativeConfig.json`).
 - The hook that added the iOS Notification Service and Content extensions to the Xcode project: Capacitor has no hooks, so run
-  `npx acoustic-connect setup-ios-push` once (see "Rich push on iOS" in the README). It covers Swift Package Manager apps; an app that
-  uses CocoaPods adds the extensions by hand.
+  `npx acoustic-connect setup-ios-push` once (see "Rich push on iOS" in the README). It covers Swift Package Manager and CocoaPods apps;
+  with CocoaPods, run `pod install` after it.
 - The Cordova WebView engine setting: Capacitor has its own WebView, and the plugin keeps the SDK's page injection off.

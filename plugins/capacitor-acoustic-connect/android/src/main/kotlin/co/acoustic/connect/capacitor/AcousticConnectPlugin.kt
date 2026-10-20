@@ -65,6 +65,8 @@ class AcousticConnectPlugin : Plugin() {
     @PluginMethod fun logScreenViewContextLoad(call: PluginCall) = connect.logScreenViewContextLoad(call.dataOrEmpty(), CallReply(call))
     @PluginMethod fun logScreenViewContextUnload(call: PluginCall) = connect.logScreenViewContextUnload(call.dataOrEmpty(), CallReply(call))
     @PluginMethod fun logScreenLayout(call: PluginCall) = connect.logScreenLayout(call.dataOrEmpty(), CallReply(call))
+    @PluginMethod fun logLocation(call: PluginCall) = connect.logLocation(CallReply(call))
+    @PluginMethod fun logLocationUpdate(call: PluginCall) = connect.logLocationUpdate(call.dataOrEmpty(), CallReply(call))
     @PluginMethod fun setConfigItem(call: PluginCall) = connect.setConfigItem(call.dataOrEmpty(), CallReply(call))
     @PluginMethod fun getConfigItem(call: PluginCall) = connect.getConfigItem(call.dataOrEmpty(), CallReply(call))
     @PluginMethod fun pushRequestPermission(call: PluginCall) = connect.pushRequestPermission(CallReply(call))

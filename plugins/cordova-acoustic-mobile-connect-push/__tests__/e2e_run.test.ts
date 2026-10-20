@@ -602,6 +602,48 @@ describe('runE2E on Android', () => {
         expect(files['/out/results-android.md']).toContain('11.1.10-beta');
     });
 
+    describe('push off', () => {
+        const registrationRow = (files: Record<string, string>) =>
+            JSON.parse(files['/out/suite.json']).find((r: { name: string }) => r.name === 'baseline: type 22 present');
+
+        it('expects a push registration by default', async () => {
+            const { deps, files } = makeDeps();
+            await runner.runE2E(RUN_OPTS, deps);
+            expect(registrationRow(files)).toMatchObject({ check: 'type-present', type: 22 });
+        });
+
+        it('does not expect one when the run turns push off (--connect-config)', async () => {
+            const { deps, files } = makeDeps();
+            await runner.runE2E({ ...RUN_OPTS, connectConfig: { PushEnabled: false } }, deps);
+            expect(registrationRow(files).check).toBeUndefined();
+            expect(registrationRow(files).na).toMatch(/PushEnabled is false/);
+        });
+
+        it('does not expect one when the app config turns push off', async () => {
+            const { deps, files } = makeDeps({
+                readFile: (p: string) => {
+                    if (p.endsWith('config.xml')) return '<widget id="co.x.app" version="1">';
+                    if (p.endsWith('ConnectConfig.json')) return JSON.stringify({ Connect: { AppKey: 'k', PostMessageUrl: 'p', PushEnabled: false } });
+                    return '{}';
+                },
+            });
+            await runner.runE2E(RUN_OPTS, deps);
+            expect(registrationRow(files).na).toMatch(/PushEnabled is false/);
+        });
+
+        it('lets the run turn push back on over an app config that has it off', async () => {
+            const { deps, files } = makeDeps({
+                readFile: (p: string) => {
+                    if (p.endsWith('config.xml')) return '<widget id="co.x.app" version="1">';
+                    if (p.endsWith('ConnectConfig.json')) return JSON.stringify({ Connect: { AppKey: 'k', PostMessageUrl: 'p', PushEnabled: false } });
+                    return '{}';
+                },
+            });
+            await runner.runE2E({ ...RUN_OPTS, connectConfig: { PushEnabled: true } }, deps);
+            expect(registrationRow(files)).toMatchObject({ check: 'type-present', type: 22 });
+        });
+    });
+
     it('never puts the app key into the report, in any form', async () => {
         const SECRET_KEY = 'APPKEY-0123456789-abcdef';
         const { deps, files } = makeDeps();
