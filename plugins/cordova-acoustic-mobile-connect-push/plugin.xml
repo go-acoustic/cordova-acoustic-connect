@@ -77,6 +77,12 @@ Acoustic, L.P. Any unauthorized copying or distribution of content from this fil
         <hook type="after_prepare" src="src/ios/hooks/after_prepare.js" />
 
         <source-file src="src/ios/ConnectPlugin.swift" />
+        <!--
+          Holds the notification tap that launched the app until enable() runs: the hook registers
+          at launch (+load), the holder keeps the tap. See ConnectPushLaunchHolder.swift.
+        -->
+        <source-file src="src/ios/ConnectPushLaunchHolder.swift" />
+        <source-file src="src/ios/ConnectPushLaunchHook.m" />
 
         <!--
           CocoaPods SDK dependency.

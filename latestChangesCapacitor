@@ -15,8 +15,25 @@ New Features
 - On iOS a `logSignal` payload is at the root of `signal` (Connect iOS SDK 2.1.26 and
   newer), as on Android
 
+Fixes
+
+- iOS: tapping a push notification that launched a killed app now runs its
+  action (open URL, open dialer) in automatic push mode when the SDK is started
+  by `enable()` from the page (`autoEnable: false`, or no keys in the plugin
+  config). The tap used to be lost: iOS delivered it to Capacitor's notification
+  router before the SDK had taken over notification handling. The plugin now
+  keeps the tap from launch and replays it once `enable()` has run, as long as
+  that happens within 30 seconds of the tap. Capacitor's own notification
+  handling still receives the tap meanwhile. Nothing is kept in manual push mode
+  or when push is off. An app that starts the SDK from the config was not
+  affected
+
 Known Issues
 
+- On iOS, with the SDK handling push in automatic mode, its notification delegate
+  takes the place of Capacitor's notification router, so Capacitor's push and
+  local-notification events (such as `pushNotificationActionPerformed`) do not
+  reach the app. Use manual push mode to keep them
 - A notification arriving and being tapped has not been checked with a real push
   on a real device. Registration is checked on the Android emulator and the iOS
   simulator

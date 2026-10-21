@@ -58,7 +58,12 @@ public class AcousticConnectPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         #endif
         // The SDK is main-actor isolated and Capacitor loads plugins on the main thread.
-        let started = MainActor.assumeIsolated { AcousticConnect(sdk: ConnectSdkImpl(viewController: { [weak self] in self?.bridge?.viewController }), config: config) }
+        // Before iOS delivers the notification that launched the app, which is right after this: with the SDK not enabled yet that
+        // tap would go to Capacitor's router and be lost. Held here, it is replayed into the SDK once `enable` has run.
+        let launchHold = MainActor.assumeIsolated { PushLaunchHolder.installIfWanted(config: config) }
+        let started = MainActor.assumeIsolated {
+            AcousticConnect(sdk: ConnectSdkImpl(viewController: { [weak self] in self?.bridge?.viewController }), config: config, launchHold: launchHold)
+        }
         connect = started
         // Started right here, not in a Task: the SDK has to be up before the first screen appears.
         let reply = LogReply()

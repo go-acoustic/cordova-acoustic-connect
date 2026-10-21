@@ -16,6 +16,17 @@ Fixes
 - iOS: the hook that rewrites the Podfile kept only the Connect pod and dropped
   the pods that the app's other plugins declare. It now keeps them, and restores
   the ones an earlier run lost from `pods.json`
+- iOS: tapping a push notification that launched a killed app now runs its
+  action (open URL, open dialer) in automatic push mode. The tap used to be
+  lost: the SDK takes over notification handling only when your app calls
+  `enable()`, which happens after iOS has already delivered the tap. The plugin
+  now keeps the tap from launch and replays it once `enable()` has run, as long
+  as that happens within 30 seconds of the tap. Nothing is kept in manual push
+  mode or when push is off
+- iOS: in manual push mode `push.didReceiveNotification` and
+  `push.didReceiveResponse` now pass the notification or the tapped action to
+  the SDK. They resolve `true` when the SDK took it and `false` when it refused
+  it; before they resolved `true` without doing anything
 
 
 Known Issues

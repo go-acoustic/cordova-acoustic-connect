@@ -51,6 +51,7 @@
         "src/ios/ConnectNCE/",
         "src/ios/ConnectNSE/",
         "src/ios/*.swift",
+        "src/ios/*.m",
         "src/ios/*.rb",
         "src/ios/hooks/",
         "plugin.xml",

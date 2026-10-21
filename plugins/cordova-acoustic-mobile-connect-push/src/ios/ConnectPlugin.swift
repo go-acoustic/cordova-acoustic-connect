@@ -9,8 +9,33 @@
  */
 
 import Foundation
+import UserNotifications
 import Cordova
 import Connect
+
+// MARK: - Push adapters (manual mode)
+
+/// Gives the SDK's `ConnectNotification` protocol (a single `userInfo` requirement) the `userInfo`
+/// dictionary the JS app forwarded.
+private struct CordovaPushNotification: ConnectNotification {
+    let userInfo: [AnyHashable: Any]
+
+    init(userInfo: [String: Any]) {
+        self.userInfo = userInfo as [AnyHashable: Any]
+    }
+}
+
+/// Gives the SDK's `ConnectNotificationResponse` protocol (`actionIdentifier` + `userInfo`) the
+/// response the JS app forwarded.
+private struct CordovaPushNotificationResponse: ConnectNotificationResponse {
+    let actionIdentifier: String
+    let userInfo: [AnyHashable: Any]
+
+    init(actionIdentifier: String, userInfo: [String: Any]) {
+        self.actionIdentifier = actionIdentifier
+        self.userInfo = userInfo as [AnyHashable: Any]
+    }
+}
 
 /// Cordova entry point for the Acoustic Connect plugin (iOS).
 ///
@@ -155,12 +180,21 @@ public class ConnectPlugin: CDVPlugin {
             //
             self.applyKillSwitchConfig()
             self.applyLocationLoggingConfig()
+            // The SDK installs its own notification-center delegate inside enable() in automatic
+            // mode and asserts that the slot is empty, so the launch-time holder (which keeps the
+            // tap that launched the app until now) steps down first. The tap is replayed only when
+            // the SDK is about to handle taps itself: push on, automatic mode.
+            let launchTap = ConnectPushLaunchHolder.shared.handOver(
+                replay: self.pushEnabled && modeString == Constants.pushModeAutomatic)
             ConnectSDK.shared.enable(appKey: appKey, postURL: postURL, push: pushConfig)
             // Unlike the kill switch and location logging, screen-capture settings only
             // take effect when applied AFTER enable(): applied earlier, the SDK reloads
             // its bundled layout defaults during enable() and the setting is lost.
             self.applyLayoutConfig()
             self.applyScreenCaptureConfig()
+            if let launchTap {
+                self.replayLaunchTap(launchTap)
+            }
             self.waitForEnabled(command)
         }
     }
@@ -543,20 +577,68 @@ public class ConnectPlugin: CDVPlugin {
         }
     }
 
+    // MARK: - Launch notification tap
+
+    /// Runs the notification tap that launched the app through the delegate the SDK installed in
+    /// `enable()`, exactly as if iOS had delivered it there. `ConnectPush.didReceive(_:)` is not an
+    /// option in automatic mode (it throws `pushModeNotManual`), and the delegate is the one place the
+    /// built-in OPEN_URL / OPEN_DIALER action and the `pushAction` event both happen.
+    private func replayLaunchTap(_ response: UNNotificationResponse) {
+        let center = UNUserNotificationCenter.current()
+        guard let delegate = center.delegate else {
+            NSLog("[AcousticConnect] enable: the SDK installed no notification delegate — dropping the launch notification tap")
+            return
+        }
+        delegate.userNotificationCenter?(center, didReceive: response, withCompletionHandler: {})
+    }
+
     // MARK: - Manual-mode notification forwarders
 
+    /// JS: `AcousticConnect.push.didReceiveNotification(userInfo)` — manual mode: the app's own
+    /// `userNotificationCenter(_:willPresent:)` hands the notification to the SDK so it logs `pushReceived`.
+    /// Resolves `true` when the SDK processed it, `false` when it refused (SDK not enabled).
     @objc(pushDidReceiveNotification:)
     func pushDidReceiveNotification(command: CDVInvokedUrlCommand) {
         guard requirePushEnabled(command) else { return }
         guard requireManualMode(command) else { return }
-        sendBool(command, value: true)
+        guard let userInfo = command.argument(at: 0) as? [String: Any] else {
+            sendError(command, code: Constants.codeInvalidArgs,
+                      message: "pushDidReceiveNotification: userInfo must be an object")
+            return
+        }
+        let notification = CordovaPushNotification(userInfo: userInfo)
+        do {
+            try ConnectSDK.shared.push.didReceiveNotification(notification)
+            sendBool(command, value: true)
+        } catch {
+            NSLog("[AcousticConnect] pushDidReceiveNotification failed: \(error.localizedDescription)")
+            sendBool(command, value: false)
+        }
     }
 
+    /// JS: `AcousticConnect.push.didReceiveResponse(actionIdentifier, userInfo)` — manual mode: the
+    /// app's own `userNotificationCenter(_:didReceive:)` hands the tap or action to the SDK so it runs
+    /// the built-in action (OPEN_URL / OPEN_DIALER) and logs `pushAction`. Resolves `true` when the
+    /// SDK processed it, `false` when it refused (SDK not enabled).
     @objc(pushDidReceiveResponse:)
     func pushDidReceiveResponse(command: CDVInvokedUrlCommand) {
         guard requirePushEnabled(command) else { return }
         guard requireManualMode(command) else { return }
-        sendBool(command, value: true)
+        guard let actionIdentifier = command.argument(at: 0) as? String, !actionIdentifier.isEmpty,
+              let userInfo = command.argument(at: 1) as? [String: Any]
+        else {
+            sendError(command, code: Constants.codeInvalidArgs,
+                      message: "pushDidReceiveResponse: actionIdentifier must be a non-empty string and userInfo an object")
+            return
+        }
+        let response = CordovaPushNotificationResponse(actionIdentifier: actionIdentifier, userInfo: userInfo)
+        do {
+            try ConnectSDK.shared.push.didReceive(response)
+            sendBool(command, value: true)
+        } catch {
+            NSLog("[AcousticConnect] pushDidReceiveResponse failed: \(error.localizedDescription)")
+            sendBool(command, value: false)
+        }
     }
 
     // MARK: - Runtime config

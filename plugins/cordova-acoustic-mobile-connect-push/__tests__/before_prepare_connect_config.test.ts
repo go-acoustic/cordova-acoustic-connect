@@ -25,6 +25,7 @@ function readProperties(projectRoot: string): string {
 
 function readNativeConfig(projectRoot: string): {
     pushEnabled: boolean;
+    iosPushMode: 'automatic' | 'manual';
     useRelease: boolean;
     killSwitchEnabled: boolean;
     killSwitchUrl: string | null;
@@ -332,6 +333,34 @@ describe('AcousticConnectNativeConfig.json generation (screenCaptureEnabled, bot
     it('throws when ScreenCaptureEnabled is not a boolean', () => {
         writeConfig(tmpDir, { Connect: { ...VALID_CONFIG.Connect, ScreenCaptureEnabled: 'false' } });
         expect(() => hook(makeContext(tmpDir))).toThrow('Connect.ScreenCaptureEnabled must be a boolean');
+    });
+});
+
+describe('AcousticConnectNativeConfig.json generation (iosPushMode, iOS launch notification tap)', () => {
+    // ConnectPushLaunchHolder reads this key at launch, before any JavaScript runs, to decide whether
+    // to hold the notification tap that launched the app until enable() is called.
+    it('defaults iosPushMode to automatic when Connect.iOSPushMode is omitted', () => {
+        writeConfig(tmpDir, { Connect: { ...VALID_CONFIG.Connect } });
+        hook(makeContext(tmpDir));
+        expect(readNativeConfig(tmpDir).iosPushMode).toBe('automatic');
+    });
+
+    it('writes iosPushMode=manual when Connect.iOSPushMode is manual', () => {
+        writeConfig(tmpDir, { Connect: { ...VALID_CONFIG.Connect, iOSPushMode: 'manual' } });
+        hook(makeContext(tmpDir));
+        expect(readNativeConfig(tmpDir).iosPushMode).toBe('manual');
+    });
+
+    it('writes iosPushMode=automatic when Connect.iOSPushMode is automatic', () => {
+        writeConfig(tmpDir, { Connect: { ...VALID_CONFIG.Connect, iOSPushMode: 'automatic' } });
+        hook(makeContext(tmpDir));
+        expect(readNativeConfig(tmpDir).iosPushMode).toBe('automatic');
+    });
+
+    it('reads an unrecognised Connect.iOSPushMode as automatic, the mode the JS side falls back to', () => {
+        writeConfig(tmpDir, { Connect: { ...VALID_CONFIG.Connect, iOSPushMode: 'bogus' } });
+        hook(makeContext(tmpDir));
+        expect(readNativeConfig(tmpDir).iosPushMode).toBe('automatic');
     });
 });
 

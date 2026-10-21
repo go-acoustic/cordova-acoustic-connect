@@ -605,3 +605,72 @@ describe('ConnectPlugin.swift — PushEnabled', () => {
         expect(guard).toContain('Constants.codePushDisabled');
     });
 });
+
+// ── Launch notification tap (automatic mode) and manual-mode forwarders ────
+
+describe('ConnectPlugin.swift — launch notification tap', () => {
+    const enableBody = extractBlock(SWIFT, ENABLE_HEADER) ?? '';
+
+    it('hands the notification center to the SDK before enabling it, and only replays when the SDK will handle taps', () => {
+        expect(enableBody).toMatch(/let launchTap = ConnectPushLaunchHolder\.shared\.handOver\(\s*replay: self\.pushEnabled && modeString == Constants\.pushModeAutomatic\)/);
+        expect(enableBody.indexOf('handOver(')).toBeGreaterThan(-1);
+        expect(enableBody.indexOf('handOver(')).toBeLessThan(enableBody.indexOf('ConnectSDK.shared.enable('));
+    });
+
+    it('replays the held tap after the SDK is enabled, not before', () => {
+        expect(enableBody).toMatch(/if let launchTap \{\s*self\.replayLaunchTap\(launchTap\)\s*\}/);
+        expect(enableBody.indexOf('self.replayLaunchTap(launchTap)')).toBeGreaterThan(enableBody.indexOf('ConnectSDK.shared.enable('));
+    });
+
+    it('does not enable the SDK at launch: enable() stays the consent point', () => {
+        const pluginInit = extractBlock(SWIFT, /override func pluginInitialize\(\)\s*\{/) ?? '';
+        expect(pluginInit).toBeTruthy();
+        expect(pluginInit).not.toContain('ConnectSDK.shared.enable');
+        expect(SWIFT.match(/ConnectSDK\.shared\.enable\(/g)).toHaveLength(1);
+    });
+
+    it('replays through the delegate the SDK installed, since push.didReceive throws in automatic mode', () => {
+        const replay = extractBlock(SWIFT, /private func replayLaunchTap\(_ response: UNNotificationResponse\)\s*\{/) ?? '';
+        expect(replay).toBeTruthy();
+        expect(replay).toContain('guard let delegate = center.delegate else');
+        expect(replay).toContain('delegate.userNotificationCenter?(center, didReceive: response, withCompletionHandler: {})');
+        expect(replay).not.toContain('push.didReceive');
+    });
+});
+
+describe('ConnectPlugin.swift — manual-mode forwarders', () => {
+    function funcBody(name: string): string {
+        return extractBlock(SWIFT, new RegExp(`func\\s+${name}\\s*\\([^)]*\\)\\s*\\{`)) ?? '';
+    }
+
+    it('pushDidReceiveResponse forwards the response to the SDK and reports whether it was processed', () => {
+        const body = funcBody('pushDidReceiveResponse');
+        expect(body).toBeTruthy();
+        expect(body).toContain('CordovaPushNotificationResponse(actionIdentifier: actionIdentifier, userInfo: userInfo)');
+        expect(body).toContain('try ConnectSDK.shared.push.didReceive(response)');
+        expect(body).toMatch(/try ConnectSDK\.shared\.push\.didReceive\(response\)\s*sendBool\(command, value: true\)/);
+        expect(body).toMatch(/catch \{[\s\S]*sendBool\(command, value: false\)/);
+    });
+
+    it('pushDidReceiveNotification forwards the notification to the SDK and reports whether it was processed', () => {
+        const body = funcBody('pushDidReceiveNotification');
+        expect(body).toBeTruthy();
+        expect(body).toContain('CordovaPushNotification(userInfo: userInfo)');
+        expect(body).toContain('try ConnectSDK.shared.push.didReceiveNotification(notification)');
+        expect(body).toMatch(/catch \{[\s\S]*sendBool\(command, value: false\)/);
+    });
+
+    it.each(['pushDidReceiveResponse', 'pushDidReceiveNotification'])('%s keeps both guards ahead of the SDK call and rejects bad arguments', (name) => {
+        const body = funcBody(name);
+        const sdk = body.indexOf('try ConnectSDK.shared.push');
+        expect(body.indexOf('guard requirePushEnabled(command) else { return }')).toBeLessThan(sdk);
+        expect(body.indexOf('guard requireManualMode(command) else { return }')).toBeLessThan(sdk);
+        expect(body).toContain('Constants.codeInvalidArgs');
+        expect(body.indexOf('Constants.codeInvalidArgs')).toBeLessThan(sdk);
+    });
+
+    it('the adapters give the SDK protocols the dictionaries the app forwarded, as [AnyHashable: Any]', () => {
+        expect(SWIFT).toMatch(/private struct CordovaPushNotification: ConnectNotification \{\s*let userInfo: \[AnyHashable: Any\]/);
+        expect(SWIFT).toMatch(/private struct CordovaPushNotificationResponse: ConnectNotificationResponse \{\s*let actionIdentifier: String\s*let userInfo: \[AnyHashable: Any\]/);
+    });
+});

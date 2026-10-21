@@ -20,15 +20,18 @@ final class AcousticConnect {
     private let readyTimeout: TimeInterval
     private let pollInterval: TimeInterval
     private let log: (String) -> Void
+    /// Keeps the notification tap that launched the app until the SDK is enabled; nil when push is off or not automatic.
+    private let launchHold: PushLaunchHold?
     private(set) var pushMode: PushMode = .automatic
     /// What the SDK was started with, to say what a later `enable()` could not change.
     private var started: (appKey: String, postURL: String, group: String?)?
     private(set) var logLevel = Constants.logLevelDefault
 
     init(sdk: ConnectSdk, config: NativeConfig = NativeConfig(), readyTimeout: TimeInterval = 5, pollInterval: TimeInterval = 0.1,
-         log: @escaping (String) -> Void = { NSLog("[AcousticConnect] %@", $0) }) {
+         launchHold: PushLaunchHold? = nil, log: @escaping (String) -> Void = { NSLog("[AcousticConnect] %@", $0) }) {
         self.sdk = sdk
         self.log = log
+        self.launchHold = launchHold
         self.config = config
         self.readyTimeout = readyTimeout
         self.pollInterval = pollInterval
@@ -83,8 +86,12 @@ final class AcousticConnect {
         pushMode = mode
         started = (appKey, postURL, appGroup)
         applyConfigBeforeEnable()
+        // In automatic mode the SDK installs its own notification delegate inside `enable` and expects the slot to be empty, so what
+        // kept the launch tap steps down first. The tap is replayed once the SDK is up, only when the SDK is going to handle taps.
+        let launchTap = launchHold?.handOver(sdkInstallsDelegate: mode == .automatic)
         sdk.enable(appKey: appKey, postURL: postURL, pushMode: mode, appGroupIdentifier: appGroup)
         applyConfigAfterEnable()
+        launchTap?()
         return true
     }
 

@@ -173,7 +173,7 @@ function copyExtensionSources(pluginIosDir, iosDir, appGroupIdentifier, extensio
 function copyPluginSourceFiles(pluginIosDir, iosDir) {
     const pluginId  = 'co.acoustic.connect.push';
     const pluginDst = path.join(iosDir, 'App', 'Plugins', pluginId);
-    const files     = ['ConnectPlugin.swift'];
+    const files     = ['ConnectPlugin.swift', 'ConnectPushLaunchHolder.swift', 'ConnectPushLaunchHook.m'];
 
     if (!fs.existsSync(pluginDst)) fs.mkdirSync(pluginDst, { recursive: true });
     for (const fname of files) {

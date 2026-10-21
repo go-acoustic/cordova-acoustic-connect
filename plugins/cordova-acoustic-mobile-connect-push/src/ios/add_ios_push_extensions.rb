@@ -62,9 +62,12 @@ EXTENSIONS = [
   },
 ].freeze
 
-# ConnectPlugin.swift must be in the App target's Compile Sources so the JS
-# bridge class is compiled. The file copy is handled by after_prepare.js; this
-# script registers it in the pbxproj. The path is relative to SRCROOT.
+# The plugin's native sources must be in the App target's Compile Sources so the
+# JS bridge class and the launch-notification holder are compiled. The file copy
+# is handled by after_prepare.js; this script registers them in the pbxproj. The
+# paths are relative to SRCROOT. Cordova's own plugin-add also puts these files
+# into the extension targets, and the purge step below removes them from there,
+# so a source file missing from this list is dropped from every target.
 PLUGIN_COMPILE_FILES = [
   {
     path: "App/Plugins/co.acoustic.connect.push/ConnectPlugin.swift",
@@ -76,6 +79,19 @@ PLUGIN_COMPILE_FILES = [
     # assumption breaks silently (wrong group, no error) if `path` ever
     # gains/loses a segment; an explicit, paired anchor fails loudly instead
     # (see the start_with? check at its point of use).
+    group_anchor: "App/Plugins",
+  },
+  {
+    # Holds the notification tap that launches a killed app until JavaScript
+    # enables the SDK, then hands it over.
+    path: "App/Plugins/co.acoustic.connect.push/ConnectPushLaunchHolder.swift",
+    type: 'sourcecode.swift',
+    group_anchor: "App/Plugins",
+  },
+  {
+    # Installs that holder while the app is still launching (+load observer).
+    path: "App/Plugins/co.acoustic.connect.push/ConnectPushLaunchHook.m",
+    type: 'sourcecode.c.objc',
     group_anchor: "App/Plugins",
   },
 ].freeze
@@ -511,7 +527,7 @@ end
 end
 
 # ---------------------------------------------------------------------------
-# 4. ConnectPlugin.swift in App target Compile Sources
+# 4. Plugin native sources in App target Compile Sources
 #    File copy is handled by after_prepare.js; this registers it in pbxproj.
 # ---------------------------------------------------------------------------
 

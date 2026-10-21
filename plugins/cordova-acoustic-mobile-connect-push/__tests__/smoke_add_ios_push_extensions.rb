@@ -98,6 +98,19 @@ Dir.mktmpdir('acoustic-smoke-') do |tmp|
     assert deps.include?(name), "#{name} is a dependency of App"
   end
 
+  # Every native source of the plugin must reach the App target, the launch-notification holder and its +load hook
+  # included, and none of them may stay in an extension: a file this script does not register is dropped from every target.
+  PLUGIN_SOURCES = %w[ConnectPlugin.swift ConnectPushLaunchHolder.swift ConnectPushLaunchHook.m].freeze
+  PLUGIN_SOURCES.each do |file|
+    in_app = app.source_build_phase.files.count { |bf| bf.file_ref&.path.to_s.end_with?(file) }
+    assert in_app == 1, "#{file} is in the Compile Sources of App exactly once"
+    %w[ConnectNSE ConnectNCE].each do |name|
+      t = proj2.targets.find { |x| x.name == name }
+      assert t.source_build_phase.files.none? { |bf| bf.file_ref&.path.to_s.end_with?(file) },
+             "#{file} is not in the Compile Sources of #{name}"
+    end
+  end
+
   # ── Second run (idempotency) ─────────────────────────────────────────────────
   puts "\nRun 2 (idempotency):"
   ok2 = system(env, 'ruby', SCRIPT, exception: false)
@@ -113,6 +126,10 @@ Dir.mktmpdir('acoustic-smoke-') do |tmp|
   embed3    = app3.copy_files_build_phases.find { |p| p.symbol_dst_subfolder_spec == :plug_ins }
   embed3_ct = embed3&.files&.count { |f| %w[ConnectNSE ConnectNCE].any? { |n| f.display_name.include?(n) } }
   assert embed3_ct == 2, 'no duplicate embed entries (exactly 2 extension files)'
+  PLUGIN_SOURCES.each do |file|
+    in_app3 = app3.source_build_phase.files.count { |bf| bf.file_ref&.path.to_s.end_with?(file) }
+    assert in_app3 == 1, "#{file} is still in the Compile Sources of App exactly once after a second run"
+  end
 
   # ── Run 3 (SDK variant switch, e.g. useRelease false -> true) ───────────────
   # Regression coverage for: stale "[CP] Prepare <old variant> xcframeworks"

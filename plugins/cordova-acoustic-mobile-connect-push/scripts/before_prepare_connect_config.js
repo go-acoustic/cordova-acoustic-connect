@@ -330,8 +330,14 @@ module.exports = function (context) {
     //       adds no ConnectNSE/ConnectNCE extension, no App Group or aps-environment entitlement, and
     //       takes the remote-notification background mode out of Info.plist.
     //     Both: the push.* calls reject with ACOUSTIC_PUSH_DISABLED (decided natively, from this file).
+    //   iosPushMode ('automatic' | 'manual', default 'automatic') — Connect.iOSPushMode. iOS only: read at launch
+    //   by ConnectPushLaunchHolder, before any JavaScript runs, to decide whether to hold a notification tap
+    //   that launched the app until enable() is called. Only 'automatic' holds it: in 'manual' mode the app owns
+    //   the notification delegate. The mode the app passes to enable() still decides what the SDK does.
+    const iosPushMode = connect.iOSPushMode === 'manual' ? 'manual' : 'automatic';
     const nativeConfig = {
         pushEnabled: pushEnabled,
+        iosPushMode: iosPushMode,
         useRelease: useRelease,
         killSwitchEnabled: killSwitchEnabled,
         killSwitchUrl: killSwitchUrl || null,
