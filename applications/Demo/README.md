@@ -109,7 +109,7 @@ The stage is new, so it is deliberately cautious:
 
 - It always runs on `develop` and `main`; on a feature branch it runs only when you tick `RUN_E2E` (default off).
 - It does not block the build yet: a runner exit code `1` (FAIL) or `2` (INCONCLUSIVE, no evidence) marks the build UNSTABLE, and the stage itself shows red. Set `e2eBuildResult` to `'FAILURE'` in the `Jenkinsfile` to make it blocking once it has proved stable.
-- Builds queue for the simulator (`lock(resource: 'ios-simulator-e2e')`) instead of sharing it.
+- Builds on the same Mac queue for its simulator (`lock(resource: "ios-simulator-e2e-${env.NODE_NAME}")`, also taken by the SDK E2E tests) instead of sharing it; builds on other Macs do not wait.
 - Every run logs `E2E Verification took <n>s`, so the duration and the pass rate can be read from the build history.
 
 **What it changes on your machine**

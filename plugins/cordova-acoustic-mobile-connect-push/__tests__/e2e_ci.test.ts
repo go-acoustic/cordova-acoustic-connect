@@ -243,10 +243,13 @@ describe('Jenkinsfile: E2E Verification stage', () => {
     });
 
     it('serialises the simulator between builds with a lock, as the React Native pipeline does for its emulator', () => {
-        expect(jenkins).toMatch(/@Field def e2eLock\s*=\s*'[\w-]+'/);
-        expect(fnBlock).toContain('lock(resource: c.e2eLock)');
+        expect(jenkins).toMatch(/@Field def e2eLockPrefix\s*=\s*'ios-simulator-e2e'/);
+        // one lock per Mac, named like the SDK E2E tests name theirs, and no lock without a node name
+        expect(jenkins).toContain('return "${e2eLockPrefix}-${env.NODE_NAME}"');
+        expect(jenkins).toMatch(/if \(!env\.NODE_NAME\?\.trim\(\)\) \{\s*error\(/);
+        expect(fnBlock).toContain('lock(resource: c.e2eLock())');
         // the shutdown in finally happens while the lock is still held
-        const lockAt = fnBlock.indexOf('lock(resource: c.e2eLock)');
+        const lockAt = fnBlock.indexOf('lock(resource: c.e2eLock())');
         expect(lockAt).toBeGreaterThanOrEqual(0);
         expect(lockAt).toBeLessThan(fnBlock.indexOf('simctl shutdown'));
     });
@@ -356,8 +359,8 @@ describe('Jenkinsfile: Capacitor E2E Verification', () => {
     });
 
     it('shares the simulator lock, shuts the simulator down while holding it, and keeps the evidence', () => {
-        expect(fnBlock).toContain('lock(resource: c.e2eLock)');
-        const lockAt = fnBlock.indexOf('lock(resource: c.e2eLock)');
+        expect(fnBlock).toContain('lock(resource: c.e2eLock())');
+        const lockAt = fnBlock.indexOf('lock(resource: c.e2eLock())');
         expect(lockAt).toBeGreaterThanOrEqual(0);
         expect(lockAt).toBeLessThan(fnBlock.indexOf('simctl shutdown'));
         expect(fnBlock).toContain('archiveArtifacts');
