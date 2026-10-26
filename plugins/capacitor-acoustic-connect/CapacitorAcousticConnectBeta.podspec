@@ -48,6 +48,33 @@ unless ios_version.empty? || ios_version.match?(/\A\d+\.\d+\.\d+\z/)
 end
 sdk_requirements = ios_version.empty? ? [">= #{SDK_FLOOR}"] : [">= #{SDK_FLOOR}", "= #{ios_version}"]
 
+# CocoaPods trunk is read-only from 2 December 2026: later AcousticConnect versions are published only to the Acoustic spec repo, and a pod
+# cannot name its source, so the app's Podfile has to. Warn during `pod install` when it does not (an active line; a comment does not count),
+# so a CocoaPods app that never ran `npx acoustic-connect setup-ios-pods` or setup-ios-push hears about it. ACOUSTIC_PODFILE names another
+# Podfile (the tests use it). Never stops the install: the app keeps working on the versions trunk has.
+podfile_path = ENV['ACOUSTIC_PODFILE']
+unless podfile_path
+  root = begin
+    Pod::Config.instance.installation_root.to_s
+  rescue ::StandardError
+    nil
+  end
+  podfile_path = File.join(root, 'Podfile') if root && !root.empty?
+end
+if podfile_path && File.exist?(podfile_path)
+  podspecs_line = %r{^[ \t]*source[ \t]+(['"])https://github\.com/go-acoustic/PodSpecs(?:\.git)?\1}
+  unless File.read(podfile_path).match?(podspecs_line)
+    message = 'AcousticConnect: ios/App/Podfile does not name the go-acoustic/PodSpecs source. CocoaPods trunk is read-only from ' \
+              '2 December 2026, so later Connect SDK versions cannot be found. Run `npx acoustic-connect setup-ios-pods`, or add ' \
+              "`source 'https://github.com/go-acoustic/PodSpecs.git'` above `source 'https://cdn.cocoapods.org/'` in the Podfile."
+    if defined?(Pod::UI) && Pod::UI.respond_to?(:warn)
+      Pod::UI.warn(message)
+    else
+      warn message
+    end
+  end
+end
+
 Pod::Spec.new do |s|
   s.name = 'CapacitorAcousticConnectBeta'
   s.version = package['version']

@@ -296,6 +296,27 @@ describe('iOS', () => {
       ...over,
     });
 
+  describe('the CocoaPods sources', () => {
+    const PODSPECS = "source 'https://github.com/go-acoustic/PodSpecs.git'";
+
+    it('is fine when the Podfile names the Acoustic spec repo', () => {
+      const checks = run(ios({ 'ios/App/Podfile': `${PODSPECS}\nsource 'https://cdn.cocoapods.org/'\n` }));
+      expect(find(checks, 'ios-pod-sources').status).toBe('ok');
+    });
+
+    it('warns, naming the command, when the Podfile does not name it or only in a comment', () => {
+      for (const podfile of ["platform :ios, '15.1'\n", `# ${PODSPECS}\n`]) {
+        const check = find(run(ios({ 'ios/App/Podfile': podfile })), 'ios-pod-sources');
+        expect(check.status).toBe('warn');
+        expect(check.message).toMatch(/setup-ios-pods/);
+      }
+    });
+
+    it('skips an app that uses Swift Package Manager', () => {
+      expect(find(run(ios()), 'ios-pod-sources').status).toBe('skip');
+    });
+  });
+
   it('skips everything about iOS when the app has no iOS project', () => {
     const checks = run(app({ 'capacitor.config.json': block() }));
     for (const id of ['ios-entitlements', 'ios-background-mode', 'ios-resources'])

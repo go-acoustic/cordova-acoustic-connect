@@ -97,7 +97,15 @@ Acoustic, L.P. Any unauthorized copying or distribution of content from this fil
           linter) that reads this file stays in sync with pods.json and the Podfile.
         -->
         <podspec>
+            <!--
+              go-acoustic/PodSpecs is the Acoustic spec repo. CocoaPods trunk
+              becomes read-only on 2 December 2026 and receives no later Connect
+              SDK versions, so new versions are published there. CocoaPods
+              merges versions across sources, so a pin on an older version still
+              resolves from the CDN.
+            -->
             <config>
+                <source url="https://github.com/go-acoustic/PodSpecs.git" />
                 <source url="https://cdn.cocoapods.org/" />
             </config>
             <pods use-frameworks="true">

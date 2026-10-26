@@ -17,14 +17,35 @@ const USAGE = [
     '  doctor [dir] [--require-push]',
     '      Checks the config, the Android and iOS projects of the app in dir for what the plugin needs; changes nothing.',
     '  setup-ios-push [dir] [--app-group group.x] [--team ID] [--dry-run]',
-    '      Adds the rich-push extensions (ConnectNSE, ConnectNCE) to the iOS project of the app in dir.'
+    '      Adds the rich-push extensions (ConnectNSE, ConnectNCE) to the iOS project of the app in dir.',
+    '  setup-ios-pods [dir] [--dry-run]',
+    '      Adds the Acoustic spec repo (go-acoustic/PodSpecs) as a source to ios/App/Podfile of a CocoaPods app in dir.'
 ].join('\n');
+
+const SOURCE_NOTE = 'the go-acoustic/PodSpecs source to ios/App/Podfile';
 
 function main(argv) {
     const command = argv[0];
     if (command === 'doctor') {
         try {
             return doctor.runDoctor(argv.slice(1));
+        } catch (error) {
+            process.stderr.write('ERROR: ' + error.message + '\n');
+            return 1;
+        }
+    }
+    if (command === 'setup-ios-pods') {
+        try {
+            const options = setup.parseArgs(argv.slice(1));
+            const report = setup.setupIosPods(options);
+            if (!report.usesPods) {
+                process.stdout.write('ios/App/Podfile not found: the app does not use CocoaPods, so there is nothing to add.\n');
+            } else if (report.podfileSource) {
+                process.stdout.write((options.dryRun ? 'would add ' : 'added ') + SOURCE_NOTE + '\n');
+            } else {
+                process.stdout.write('ios/App/Podfile already names the go-acoustic/PodSpecs source.\n');
+            }
+            return 0;
         } catch (error) {
             process.stderr.write('ERROR: ' + error.message + '\n');
             return 1;
@@ -45,6 +66,7 @@ function main(argv) {
         if (options.team) process.stdout.write((options.dryRun ? 'would set' : 'set') + ' team ' + options.team + ' on the app and the extensions\n');
         const podVerb = options.dryRun ? 'would add' : 'added';
         report.podfileTargets.forEach(function (name) { process.stdout.write(podVerb + " target '" + name + "' with the AcousticConnect pod to ios/App/Podfile\n"); });
+        if (report.podfileSource) process.stdout.write(podVerb + ' ' + SOURCE_NOTE + '\n');
         if (!options.dryRun) {
             if (report.usesPods) {
                 process.stdout.write('Added the ConnectNSE and ConnectNCE targets to the Xcode project, linked to the Connect SDK by the AcousticConnect pod.\n');

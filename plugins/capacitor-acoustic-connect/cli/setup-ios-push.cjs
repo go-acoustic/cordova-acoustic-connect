@@ -109,12 +109,52 @@ function podRequirements(dir, sdkVersion) {
     return pinned ? ['>= ' + sdkVersion, '= ' + pinned] : ['>= ' + sdkVersion];
 }
 
+const PODSPECS_SOURCE = "source 'https://github.com/go-acoustic/PodSpecs.git'";
+const CDN_SOURCE = "source 'https://cdn.cocoapods.org/'";
+// Only active lines count: a commented-out source names nothing. Either quote style, with or without .git.
+const PODSPECS_LINE = /^[ \t]*source[ \t]+(['"])https:\/\/github\.com\/go-acoustic\/PodSpecs(?:\.git)?\1/m;
+const FIRST_SOURCE = /^[ \t]*source[ \t]+['"]/m;
+
+/** True when the Podfile has an active `source` line for the Acoustic spec repo. */
+function hasPodSpecsSource(text) {
+    return PODSPECS_LINE.test(text);
+}
+
+/**
+ * Returns the Podfile text with the Acoustic spec repo as its first source. CocoaPods trunk becomes read-only on 2 December 2026 and gets no
+ * later AcousticConnect versions; they are published to go-acoustic/PodSpecs, and a pod cannot name its source, so the Podfile has to. The repo
+ * goes on its own line just before the first active source the Podfile names; when it names none, the CocoaPods CDN is added after it, because
+ * declaring any source turns off the CDN default. CocoaPods takes versions from every source, so a version that is only on trunk still resolves.
+ * A Podfile that already names the repo is returned as it is.
+ */
+function addPodSpecsSource(text) {
+    if (hasPodSpecsSource(text)) return text;
+    const firstSource = FIRST_SOURCE.exec(text);
+    if (firstSource) return text.slice(0, firstSource.index) + PODSPECS_SOURCE + '\n' + text.slice(firstSource.index);
+    return PODSPECS_SOURCE + '\n' + CDN_SOURCE + '\n' + text;
+}
+
+/**
+ * Adds the Acoustic spec repo to the Podfile of a CocoaPods app, for apps that do not run setup-ios-push. Returns whether the app uses CocoaPods
+ * and whether the source was (or, in a dry run, would be) added.
+ */
+function setupIosPods(options) {
+    const podfile = path.join(options.dir, 'ios', 'App', 'Podfile');
+    if (!fs.existsSync(podfile)) return { usesPods: false, podfileSource: false };
+    const text = fs.readFileSync(podfile, 'utf8');
+    const updated = addPodSpecsSource(text);
+    if (updated !== text && !options.dryRun) fs.writeFileSync(podfile, updated);
+    return { usesPods: true, podfileSource: updated !== text };
+}
+
 /**
  * Adds a target block with the AcousticConnect pod to the Podfile for each extension that has none; returns the names it added. A block that is
  * there is left as it is, so running the command again changes nothing. The blocks go at the end of the file, outside the target of the app.
+ * The Acoustic spec repo is added as a source as well (addPodSpecsSource).
  */
 function addPodfileTargets(podfile, requirements, dryRun) {
-    let text = fs.readFileSync(podfile, 'utf8');
+    const original = fs.readFileSync(podfile, 'utf8');
+    let text = addPodSpecsSource(original);
     const added = [];
     EXTENSIONS.forEach(function (extension) {
         if (new RegExp('^\\s*target\\s+[\'"]' + extension + '[\'"]', 'm').test(text)) return;
@@ -122,7 +162,7 @@ function addPodfileTargets(podfile, requirements, dryRun) {
         const requirement = requirements.map(function (r) { return "'" + r + "'"; }).join(', ');
         text = text.replace(/\s*$/, '\n') + '\ntarget \'' + extension + '\' do\n  pod \'AcousticConnect\', ' + requirement + '\nend\n';
     });
-    if (added.length && !dryRun) fs.writeFileSync(podfile, text);
+    if (text !== original && !dryRun) fs.writeFileSync(podfile, text);
     return added;
 }
 
@@ -167,6 +207,7 @@ function setupIosPush(options) {
         });
     });
 
+    const podfileSource = usesPods && !hasPodSpecsSource(fs.readFileSync(podfile, 'utf8'));
     const pods = usesPods ? addPodfileTargets(podfile, podRequirements(options.dir, sdkVersion), options.dryRun) : [];
 
     if (!options.dryRun) {
@@ -177,7 +218,7 @@ function setupIosPush(options) {
             throw new Error('adding the targets to the Xcode project failed (needs ruby and the xcodeproj gem: `gem install xcodeproj`):\n' + result.output);
         }
     }
-    return { written: written, kept: kept, sdkVersion: sdkVersion, usesPods: usesPods, podfileTargets: pods };
+    return { written: written, kept: kept, sdkVersion: sdkVersion, usesPods: usesPods, podfileTargets: pods, podfileSource: podfileSource };
 }
 
-module.exports = { parseArgs, appGroupFor, teamFor, sdkVersionFrom, podRequirements, addPodfileTargets, setupIosPush, runRuby, PLACEHOLDER };
+module.exports = { parseArgs, appGroupFor, teamFor, sdkVersionFrom, podRequirements, hasPodSpecsSource, addPodSpecsSource, setupIosPods, addPodfileTargets, setupIosPush, runRuby, PLACEHOLDER };

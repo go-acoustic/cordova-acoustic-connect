@@ -10,6 +10,8 @@ const {
   teamFor,
   sdkVersionFrom,
   setupIosPush,
+  setupIosPods,
+  addPodSpecsSource,
   PLACEHOLDER,
 } = require('../cli/setup-ios-push.cjs');
 
@@ -115,6 +117,62 @@ describe('sdkVersionFrom', () => {
   });
 });
 
+describe('addPodSpecsSource', () => {
+  const PODSPECS = "source 'https://github.com/go-acoustic/PodSpecs.git'";
+  const CDN = "source 'https://cdn.cocoapods.org/'";
+  const MIRROR = "source 'https://specs.example.com/mirror.git'";
+
+  it('inserts the repo before the first active source, not before a commented copy of it', () => {
+    const out = addPodSpecsSource(`# ${CDN}\n${CDN}\nplatform :ios, '15.1'\n`);
+    expect(out).toBe(`# ${CDN}\n${PODSPECS}\n${CDN}\nplatform :ios, '15.1'\n`);
+  });
+
+  it('adds an active line when the only PodSpecs line is commented out', () => {
+    const out = addPodSpecsSource(`# ${PODSPECS}\n${CDN}\n`);
+    expect(out).toBe(`# ${PODSPECS}\n${PODSPECS}\n${CDN}\n`);
+  });
+
+  it.each([
+    [`source "https://github.com/go-acoustic/PodSpecs.git"\n${CDN}\n`],
+    [`source 'https://github.com/go-acoustic/PodSpecs'\n${CDN}\n`],
+    [`  ${PODSPECS}\n${CDN}\n`],
+  ])('takes %j as already naming the repo', (text) => {
+    expect(addPodSpecsSource(text)).toBe(text);
+  });
+
+  it('finds a source on the last line with no final newline, and adds no CDN', () => {
+    expect(addPodSpecsSource(`platform :ios, '15.1'\n${MIRROR}`)).toBe(`platform :ios, '15.1'\n${PODSPECS}\n${MIRROR}`);
+  });
+
+  it('gives the same result when run again', () => {
+    for (const text of [`# ${CDN}\n${CDN}\n`, `# ${PODSPECS}\n${CDN}\n`, `x\n${MIRROR}`, "platform :ios, '15.1'\n"]) {
+      const once = addPodSpecsSource(text);
+      expect(addPodSpecsSource(once)).toBe(once);
+    }
+  });
+});
+
+describe('setupIosPods', () => {
+  const PODFILE = "platform :ios, '15.1'\n\ntarget 'App' do\n  pod 'Capacitor'\nend\n";
+
+  it('adds the Acoustic spec repo to the Podfile of an app that does not use push', () => {
+    const dir = app({ 'ios/App/Podfile': PODFILE });
+    expect(setupIosPods({ dir })).toEqual({ usesPods: true, podfileSource: true });
+    expect(read(dir, 'Podfile')).toMatch(/^source 'https:\/\/github\.com\/go-acoustic\/PodSpecs\.git'\n/);
+    expect(setupIosPods({ dir })).toEqual({ usesPods: true, podfileSource: false });
+  });
+
+  it('writes nothing in a dry run, and says it would add the source', () => {
+    const dir = app({ 'ios/App/Podfile': PODFILE });
+    expect(setupIosPods({ dir, dryRun: true })).toEqual({ usesPods: true, podfileSource: true });
+    expect(read(dir, 'Podfile')).toBe(PODFILE);
+  });
+
+  it('has nothing to do in an app that uses Swift Package Manager', () => {
+    expect(setupIosPods({ dir: app() })).toEqual({ usesPods: false, podfileSource: false });
+  });
+});
+
 describe('setupIosPush', () => {
   const noRuby = () => ({ status: 0, output: '' });
 
@@ -190,6 +248,8 @@ describe('setupIosPush', () => {
   });
 
   describe('in an app that uses CocoaPods', () => {
+    const PODSPECS = "source 'https://github.com/go-acoustic/PodSpecs.git'";
+    const CDN = "source 'https://cdn.cocoapods.org/'";
     const PODFILE =
       "platform :ios, '15.1'\n\ntarget 'App' do\n  pod 'Capacitor'\nend\n\npost_install do |installer|\nend\n";
     const run = (dir: string, extra: Record<string, unknown> = {}) => {
@@ -207,7 +267,7 @@ describe('setupIosPush', () => {
       const dir = app({ 'ios/App/Podfile': PODFILE });
       const { calls, report } = run(dir);
       const podfile = read(dir, 'Podfile');
-      expect(podfile.startsWith(PODFILE)).toBe(true);
+      expect(podfile).toContain(PODFILE);
       for (const name of ['ConnectNSE', 'ConnectNCE']) {
         expect(podfile).toMatch(
           new RegExp(`target '${name}' do\\n  pod 'AcousticConnect', '>= \\d+\\.\\d+\\.\\d+'\\nend`),
@@ -216,6 +276,22 @@ describe('setupIosPush', () => {
       expect(report.usesPods).toBe(true);
       expect(report.podfileTargets).toEqual(['ConnectNSE', 'ConnectNCE']);
       expect(calls[0].linkSdk).toBe('pods');
+    });
+
+    it('lists the Acoustic spec repo and the CocoaPods CDN first when the Podfile names no source', () => {
+      // CocoaPods trunk is read-only from 2 December 2026; later AcousticConnect versions are only in
+      // go-acoustic/PodSpecs. Declaring any source turns off the CDN default, so the CDN is added too.
+      const dir = app({ 'ios/App/Podfile': PODFILE });
+      run(dir);
+      expect(read(dir, 'Podfile').startsWith(`${PODSPECS}\n${CDN}\n`)).toBe(true);
+    });
+
+    it('puts the Acoustic spec repo just before the first source the Podfile names, and adds no second CDN', () => {
+      const dir = app({ 'ios/App/Podfile': `${CDN}\n${PODFILE}` });
+      run(dir);
+      const podfile = read(dir, 'Podfile');
+      expect(podfile.startsWith(`${PODSPECS}\n${CDN}\n`)).toBe(true);
+      expect(podfile.split(CDN)).toHaveLength(2);
     });
 
     it('adds nothing to the Podfile when it is run again', () => {
@@ -251,6 +327,22 @@ describe('setupIosPush', () => {
       expect(read(dir, 'Podfile')).toBe(PODFILE);
     });
 
+    it('leaves a Podfile that already names the Acoustic spec repo as it is', () => {
+      const text = `${PODSPECS}\n${CDN}\n${PODFILE}`;
+      expect(addPodSpecsSource(text)).toBe(text);
+    });
+
+    it('reports the source it adds even when both extension targets are already there', () => {
+      const withTargets = PODFILE + "\ntarget 'ConnectNSE' do\nend\n\ntarget 'ConnectNCE' do\nend\n";
+      const dir = app({ 'ios/App/Podfile': withTargets });
+      const { report } = run(dir, { dryRun: true });
+      expect(report.podfileTargets).toEqual([]);
+      expect(report.podfileSource).toBe(true);
+      expect(read(dir, 'Podfile')).toBe(withTargets);
+      expect(run(dir).report.podfileSource).toBe(true);
+      expect(run(dir).report.podfileSource).toBe(false);
+    });
+
     it('leaves the Podfile as it is in a dry run, and says what it would add', () => {
       const dir = app({ 'ios/App/Podfile': PODFILE });
       const { calls, report } = run(dir, { dryRun: true });
@@ -273,6 +365,17 @@ describe('the acoustic-connect command', () => {
     const r = run();
     expect(r.status).toBe(2);
     expect(r.stdout + r.stderr).toMatch(/setup-ios-push/);
+  });
+
+  it('adds the Acoustic spec repo with setup-ios-pods, and says what it would do with --dry-run', () => {
+    const dir = app({ 'ios/App/Podfile': "platform :ios, '15.1'\n" });
+    const dry = run('setup-ios-pods', dir, '--dry-run');
+    expect(dry.status).toBe(0);
+    expect(dry.stdout).toMatch(/would add the go-acoustic\/PodSpecs source to ios\/App\/Podfile/);
+    expect(read(dir, 'Podfile')).toBe("platform :ios, '15.1'\n");
+    const real = run('setup-ios-pods', dir);
+    expect(real.stdout).toMatch(/added the go-acoustic\/PodSpecs source to ios\/App\/Podfile/);
+    expect(run('setup-ios-pods', dir).stdout).toMatch(/already names the go-acoustic\/PodSpecs source/);
   });
 
   it('refuses a command it does not have', () => {

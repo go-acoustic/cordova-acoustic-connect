@@ -106,3 +106,37 @@ describe('the SDK pin of the podspec', () => {
     expect(ruby).toBe(swift);
   });
 });
+
+/** Evaluates the podspec with ACOUSTIC_PODFILE pointing at a Podfile holding `podfile`; returns what CocoaPods printed on stderr. */
+function warningsFor(podfile: string | null) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'acoustic-podspec-'));
+  const env = { ...process.env, LANG: 'en_US.UTF-8', ACOUSTIC_APP_CONFIG: path.join(dir, 'none.json') } as Record<
+    string,
+    string
+  >;
+  env.ACOUSTIC_PODFILE = path.join(dir, 'Podfile');
+  if (podfile !== null) fs.writeFileSync(env.ACOUSTIC_PODFILE, podfile);
+  const r = spawnSync('pod', ['ipc', 'spec', PODSPEC], { encoding: 'utf8', env });
+  fs.rmSync(dir, { recursive: true, force: true });
+  expect(r.status).toBe(0);
+  JSON.parse(r.stdout);
+  return r.stderr;
+}
+
+describeIfPod('the podspec and the CocoaPods sources of the app', () => {
+  jest.setTimeout(120000);
+  const PODSPECS = "source 'https://github.com/go-acoustic/PodSpecs.git'";
+
+  it('warns during pod install when the Podfile does not name the Acoustic spec repo, and says how to add it', () => {
+    for (const podfile of ["platform :ios, '15.1'\n", `# ${PODSPECS}\nsource 'https://cdn.cocoapods.org/'\n`]) {
+      const stderr = warningsFor(podfile);
+      expect(stderr).toMatch(/go-acoustic\/PodSpecs/);
+      expect(stderr).toMatch(/setup-ios-pods/);
+    }
+  });
+
+  it('says nothing when the Podfile names it, or when there is no Podfile to read', () => {
+    expect(warningsFor(`${PODSPECS}\nsource 'https://cdn.cocoapods.org/'\n`)).not.toMatch(/PodSpecs/);
+    expect(warningsFor(null)).not.toMatch(/PodSpecs/);
+  });
+});

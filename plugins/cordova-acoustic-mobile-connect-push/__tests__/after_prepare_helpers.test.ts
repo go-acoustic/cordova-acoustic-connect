@@ -119,6 +119,26 @@ describe('updatePodfile — NSE/NCE target insertion', () => {
         "",
     ].join('\n');
 
+    it('bootstraps a fresh platform with the Acoustic PodSpecs repo ahead of the CocoaPods sources', () => {
+        // No Podfile yet: updatePodfile writes the App-only bootstrap Podfile.
+        fs.mkdirSync(path.join(tmpDir, 'App.xcodeproj'));
+        const previous = process.env.ACOUSTIC_SKIP_POD_INSTALL;
+        process.env.ACOUSTIC_SKIP_POD_INSTALL = '1';
+        try {
+            updatePodfile(tmpDir);
+        } finally {
+            if (previous === undefined) {
+                delete process.env.ACOUSTIC_SKIP_POD_INSTALL;
+            } else {
+                process.env.ACOUSTIC_SKIP_POD_INSTALL = previous;
+            }
+        }
+        const pf = readPodfile();
+        const podSpecs = pf.indexOf("source 'https://github.com/go-acoustic/PodSpecs.git'");
+        expect(podSpecs).toBeGreaterThan(-1);
+        expect(podSpecs).toBeLessThan(pf.indexOf("source 'https://cdn.cocoapods.org/'"));
+    });
+
     it("inserts a nested ConnectNSE target inside the App block", () => {
         writePodfile(BASE_PODFILE);
         updatePodfile(tmpDir);

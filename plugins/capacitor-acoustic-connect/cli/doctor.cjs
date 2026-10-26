@@ -14,7 +14,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { sdkVersionFrom } = require('./setup-ios-push.cjs');
+const { sdkVersionFrom, hasPodSpecsSource } = require('./setup-ios-push.cjs');
 
 const PLACEHOLDER_HOSTS = /(^|\.)example\.com$/i;
 const LOCAL_HOSTS = ['localhost', '127.0.0.1', '10.0.2.2'];
@@ -194,7 +194,7 @@ function diagnose(options) {
     // --- iOS ----------------------------------------------------------------------------------------------------------------------------
     const iosDir = path.join(dir, 'ios', 'App');
     const pbxproj = readText(path.join(iosDir, 'App.xcodeproj', 'project.pbxproj'));
-    const iosIds = ['ios-entitlements', 'ios-background-mode', 'ios-resources', 'ios-extensions'];
+    const iosIds = ['ios-entitlements', 'ios-background-mode', 'ios-resources', 'ios-extensions', 'ios-pod-sources'];
     if (pbxproj === null) {
         iosIds.forEach(function (id) { add(id, 'skip', 'no iOS project'); });
     } else {
@@ -223,6 +223,18 @@ function diagnose(options) {
                 add('ios-background-mode', 'fail', 'Info.plist has no remote-notification background mode');
             }
             add.apply(null, ['ios-extensions'].concat(extensionsCheck(iosDir, groupsOf(entitlements), config.iosAppGroupIdentifier)));
+        }
+
+        // CocoaPods trunk is read-only from 2 December 2026: later AcousticConnect versions are only in the Acoustic spec repo, which the
+        // Podfile has to name. Without it the app keeps working on the last trunk version, and an iosVersion only on PodSpecs fails pod install.
+        const podfileText = readText(path.join(iosDir, 'Podfile'));
+        if (podfileText === null) {
+            add('ios-pod-sources', 'skip', 'the app does not use CocoaPods');
+        } else if (hasPodSpecsSource(podfileText)) {
+            add('ios-pod-sources', 'ok', 'ios/App/Podfile names the go-acoustic/PodSpecs source');
+        } else {
+            add('ios-pod-sources', 'warn', 'ios/App/Podfile does not name the go-acoustic/PodSpecs source, so CocoaPods cannot find Connect SDK ' +
+                'versions released after 2 December 2026: run `npx acoustic-connect setup-ios-pods`');
         }
 
         if (fs.existsSync(path.join(iosDir, 'Podfile'))) {

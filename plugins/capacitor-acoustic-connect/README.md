@@ -61,6 +61,16 @@ through CocoaPods; Capacitor 8 projects use Swift Package Manager by default.
 - **CocoaPods** (`npx cap add ios --packagemanager CocoaPods`): the `AcousticConnect` pod (`>= 2.1.51`, floating)
   puts the bundle in place itself. The SDK needs iOS 15.1 here: raise `platform :ios` in the Podfile and the
   project's deployment target to `15.1`, because Capacitor's template targets 15.0.
+  CocoaPods trunk becomes read-only on 2 December 2026 and gets no later `AcousticConnect` versions; they are
+  published to the Acoustic spec repo. Add both sources at the top of `ios/App/Podfile` (keep the CDN line:
+  declaring any source turns off the CocoaPods default). `npx cap sync` keeps them.
+  `npx acoustic-connect setup-ios-pods` adds them (so does `setup-ios-push`), `npx acoustic-connect doctor`
+  checks for them, and `pod install` warns while they are missing:
+
+  ```ruby
+  source 'https://github.com/go-acoustic/PodSpecs.git'
+  source 'https://cdn.cocoapods.org/'
+  ```
 
 ## Use
 
@@ -610,7 +620,9 @@ Log level of the plugin bridge.
 
 Construct a type with a set of properties K of type T
 
-<code>{ [P in K]: T; }</code>
+<code>{
+ [P in K]: T;
+ }</code>
 
 
 #### FlatValue

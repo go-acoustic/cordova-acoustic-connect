@@ -201,6 +201,19 @@ describe('Podfile generation', () => {
         expect(pf).toContain("install! 'cocoapods', :warn_for_unused_master_specs_repo => false");
     });
 
+    it('lists the Acoustic PodSpecs repo first, ahead of the CocoaPods sources', () => {
+        // CocoaPods trunk is read-only from 2 December 2026; later Connect SDK
+        // versions are only published to go-acoustic/PodSpecs.
+        writeConfig(DEBUG_CONFIG);
+        writePodfile('OLD');
+        hook(makeContext(tmpDir));
+        const pf = readPodfile();
+        const podSpecs = pf.indexOf("source 'https://github.com/go-acoustic/PodSpecs.git'");
+        expect(podSpecs).toBeGreaterThan(-1);
+        expect(podSpecs).toBeLessThan(pf.indexOf("source 'https://cdn.cocoapods.org/'"));
+        expect(podSpecs).toBeLessThan(pf.indexOf("source 'https://github.com/CocoaPods/Specs.git'"));
+    });
+
     it('uses project name from .xcodeproj directory', () => {
         writeConfig(DEBUG_CONFIG);
         touchXcodeproj('MyApp');
@@ -299,6 +312,27 @@ describe("the pods of the app's other plugins", () => {
         expect(pods[0]).toBe("\tpod 'AcousticConnect', '= 2.2.2'");
         expect(pods).toContain("\tpod 'Firebase/Messaging', '11.8.0'");
         expect(readPodfile()).not.toContain('AcousticConnectDebug');
+    });
+
+    it('keeps a source another plugin declared in the Podfile, after the Acoustic ones', () => {
+        writeConfig(DEBUG_CONFIG);
+        writePodfile("source 'https://specs.example.com/mirror.git'\nplatform :ios, '15.1'\n");
+        hook(makeContext(tmpDir));
+        const pf = readPodfile();
+        expect(pf).toContain("source 'https://specs.example.com/mirror.git'");
+        expect(pf.indexOf("source 'https://github.com/CocoaPods/Specs.git'"))
+            .toBeLessThan(pf.indexOf("source 'https://specs.example.com/mirror.git'"));
+    });
+
+    it('keeps a source that pods.json lists, once, and the same Podfile on every run', () => {
+        writeConfig(DEBUG_CONFIG);
+        writePodfile('OLD');
+        writePodsJson({ sources: { 'https://specs.example.com/mirror.git': { source: 'https://specs.example.com/mirror.git', count: 1 } } });
+        hook(makeContext(tmpDir));
+        const once = readPodfile();
+        expect(once.split("source 'https://specs.example.com/mirror.git'")).toHaveLength(2);
+        hook(makeContext(tmpDir));
+        expect(readPodfile()).toBe(once);
     });
 
     it('puts back a pod that pods.json lists and the Podfile has already lost', () => {
