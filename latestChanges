@@ -13,6 +13,12 @@ New Features
 
 Fixes
 
+- Android: the default Connect Android SDK is now 11.1.19-beta (it was 11.1.17).
+  It brings the SDK's fix for an app that read as backgrounded while on screen
+  and stopped posting (found in a Jetpack Compose app), and the SDK no longer
+  drops a screen view UNLOAD that directly follows its own LOAD. With
+  `useRelease: true` the default stays the 11.1.17 release, which has neither
+  change yet: betas do not reach Maven Central
 - iOS: the hook that rewrites the Podfile kept only the Connect pod and dropped
   the pods that the app's other plugins declare. It now keeps them, and restores
   the ones an earlier run lost from `pods.json`
@@ -44,7 +50,8 @@ Known Issues
 - `logCustomEvent` values are nested under `data.value` on iOS but flat on
   Android, and a `logSignal` payload under `signal.data.value` on iOS but at the
   root of `signal` on Android; `logSignal` drops a top-level number on Android
-  SDKs before 11.0.24-beta (the default is 11.1.17, which sends it)
+  SDKs before 11.0.24-beta (the defaults, 11.1.19-beta and 11.1.17 under
+  `useRelease`, send it)
 - On iOS `logExceptionEvent` reports `stackTrace: (null)` and carries the stack
   text in `data.stacktrace`
 

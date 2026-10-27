@@ -407,8 +407,8 @@ var AcousticConnect = {
      * Android note: Connect Android SDK versions before 11.0.24-beta drop a number
      * at the TOP level of the payload (seen on 11.0.21-beta; strings and booleans
      * arrive, numbers nested inside an object or array are never affected). The
-     * plugin's default, 11.1.17, sends it; nest the number only if you pin an
-     * older `AndroidVersion`.
+     * plugin's defaults, 11.1.19-beta and 11.1.17 under `useRelease`, send it;
+     * nest the number only if you pin an older `AndroidVersion`.
      *
      * @param {Record<string, unknown>} values JSON-serialisable plain object.
      * @param {number} [level=3] Monitoring level (non-negative integer).

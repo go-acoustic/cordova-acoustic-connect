@@ -77,14 +77,16 @@ if (useRelease) {
     }
 }
 
-// Android always uses a release artifact. No debug Maven artifact exists;
-// useRelease controls iOS pod selection only (via select_sdk_variant.js).
+// Android has no debug Maven artifact, so the artifact does not depend on useRelease.
+// On Android useRelease picks the repositories and the default version; on iOS it
+// picks the pod (via select_sdk_variant.js).
 // PushEnabled=false takes the analytics-only artifact: no FCM transport, no Firebase.
 def connectSdkArtifact = pushEnabled ? "io.github.go-acoustic:connect-push-fcm" : "io.github.go-acoustic:connect"
 
 // AndroidVersion in ConnectConfig.json takes precedence over the Cordova
-// preference and the default pin.
-def defaultSdkVersion = project.hasProperty("connectSdkVersion") ? project.connectSdkVersion : "11.1.17"
+// preference and the default pin. The default is a beta, which only the
+// GitHub-hosted tree carries, and a release under useRelease.
+def defaultSdkVersion = project.hasProperty("connectSdkVersion") ? project.connectSdkVersion : (useRelease ? "11.1.17" : "11.1.19-beta")
 def connectSdkVersion
 if (!androidVersion.isEmpty()) {
     if (androidVersion ==~ /\d+\.\d+\.\d+(-[A-Za-z0-9._-]+)?/) {
@@ -102,8 +104,8 @@ if (!androidVersion.isEmpty()) {
 // fixed-version dependency request is still resolved through componentSelection.
 // Left unchecked, that combination fails with a generic "could not resolve
 // dependency" error with no indication of why. Fail fast with an actionable message
-// instead. The plugin's default is a release build, so this only fires for an explicit
-// beta pin (AndroidVersion in ConnectConfig.json or -PconnectSdkVersion).
+// instead. Under useRelease the plugin's default is a release build, so this only fires
+// for an explicit beta pin (AndroidVersion in ConnectConfig.json or -PconnectSdkVersion).
 if (useRelease && connectSdkVersion.endsWith('-beta')) {
     throw new GradleException(
         "[Acoustic] useRelease is true but the resolved Android Connect SDK version " +
