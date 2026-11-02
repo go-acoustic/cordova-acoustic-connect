@@ -10,10 +10,17 @@ New Features
   no App Group or `aps-environment` entitlement and no `remote-notification`
   background mode (a plugin or `config.xml` that declares it keeps it). The
   `push.*` calls then reject with `ACOUSTIC_PUSH_DISABLED`
+- iOS: the plugin adds the Acoustic CocoaPods spec repo,
+  `https://github.com/go-acoustic/PodSpecs.git`, ahead of the CocoaPods sources
+  in the app's Podfile, and keeps the sources that other plugins declare after
+  it. CocoaPods trunk becomes read-only on 2 December 2026, and Connect iOS SDK
+  versions released after that are published only to that repo. When
+  `pod install` fails, the plugin runs it once more with `--repo-update`, which
+  finds versions published since the spec repos were last updated
 
 Fixes
 
-- Android: the default Connect Android SDK is now 11.1.19-beta (it was 11.1.17).
+- Android: the default Connect Android SDK is now 11.1.30-beta (it was 11.1.17).
   It brings the SDK's fix for an app that read as backgrounded while on screen
   and stopped posting (found in a Jetpack Compose app), and the SDK no longer
   drops a screen view UNLOAD that directly follows its own LOAD. With
@@ -50,7 +57,7 @@ Known Issues
 - `logCustomEvent` values are nested under `data.value` on iOS but flat on
   Android, and a `logSignal` payload under `signal.data.value` on iOS but at the
   root of `signal` on Android; `logSignal` drops a top-level number on Android
-  SDKs before 11.0.24-beta (the defaults, 11.1.19-beta and 11.1.17 under
+  SDKs before 11.0.24-beta (the defaults, 11.1.30-beta and 11.1.17 under
   `useRelease`, send it)
 - On iOS `logExceptionEvent` reports `stackTrace: (null)` and carries the stack
   text in `data.stacktrace`

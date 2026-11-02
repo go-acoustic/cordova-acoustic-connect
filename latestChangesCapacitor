@@ -14,6 +14,14 @@ New Features
   Podfile: run `pod install` after it)
 - On iOS a `logSignal` payload is at the root of `signal` (Connect iOS SDK 2.1.26 and
   newer), as on Android
+- `npx acoustic-connect setup-ios-pods [dir] [--dry-run]` adds the Acoustic
+  CocoaPods spec repo, `https://github.com/go-acoustic/PodSpecs.git`, ahead of
+  the sources in `ios/App/Podfile`. CocoaPods trunk becomes read-only on
+  2 December 2026, and Connect iOS SDK versions released after that are
+  published only to that repo. `setup-ios-push` adds the source too,
+  `npx acoustic-connect doctor` warns when the Podfile lacks it
+  (`ios-pod-sources`), and `pod install` prints a warning until it is there.
+  Apps that use Swift Package Manager need nothing
 
 Fixes
 

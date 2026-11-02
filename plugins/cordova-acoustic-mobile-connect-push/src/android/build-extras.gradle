@@ -86,7 +86,7 @@ def connectSdkArtifact = pushEnabled ? "io.github.go-acoustic:connect-push-fcm" 
 // AndroidVersion in ConnectConfig.json takes precedence over the Cordova
 // preference and the default pin. The default is a beta, which only the
 // GitHub-hosted tree carries, and a release under useRelease.
-def defaultSdkVersion = project.hasProperty("connectSdkVersion") ? project.connectSdkVersion : (useRelease ? "11.1.17" : "11.1.19-beta")
+def defaultSdkVersion = project.hasProperty("connectSdkVersion") ? project.connectSdkVersion : (useRelease ? "11.1.17" : "11.1.30-beta")
 def connectSdkVersion
 if (!androidVersion.isEmpty()) {
     if (androidVersion ==~ /\d+\.\d+\.\d+(-[A-Za-z0-9._-]+)?/) {
