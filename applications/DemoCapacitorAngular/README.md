@@ -6,7 +6,9 @@ method of the plugin and every push call. Not a production app.
 
 - `src/app/acoustic.service.ts`: the one place that talks to the plugin, a thin method per call; copy it into your app.
 - `src/app/home`: the page, with the tab bar: **Notification** (permission state, Enable Push), **Identity** (log in / registered, the last five) and **Behaviour**
-  with **Actions** (quick calls), **Showcase** (a card per feature, including the SDK calls and the iOS manual push calls) and **Verification** (scenarios with the
+  with **Actions** (quick calls), **Showcase** (a card per feature, including the SDK calls and the iOS manual push calls, and the Gestures screen opened by `btn_open_gestures`:
+  targets `gesture_long_press`, `gesture_double_tap`, `gesture_swipe` and `gesture_pinch_zoom`, the status line `tv_gestures_last` and the list `gesture_scroll_list`;
+  it logs the screen view `Gestures`, and the targets log nothing) and **Verification** (scenarios with the
   expected result, to check against the collector).
 - `src/app/behaviour-core.ts`: the payloads and scenarios, the same list as `DemoCapacitor/src/js/behaviour/behaviour-core.js`.
 

@@ -110,10 +110,62 @@
         }, Promise.resolve([]));
     }
 
+    var GESTURE_SCREEN = 'Gestures';
+    var GESTURE_REFERRER = 'Showcase';
+    var GESTURE_ROWS = 40;
+    var LONG_PRESS_MS = 500;
+    var DOUBLE_TAP_MS = 300;
+    var TAP_SLOP = 8;
+    var SWIPE_THRESHOLD = 48;
+    var MIN_ZOOM = 0.5;
+    var MAX_ZOOM = 4;
+
+    function gestureLabel(name) {
+        return 'Last gesture: ' + (name || 'none');
+    }
+
+    function gestureRows() {
+        var rows = [];
+        for (var i = 0; i < GESTURE_ROWS; i++) {
+            rows.push({ id: 'gesture_row_' + i, text: 'Scrollable row ' + (i + 1) });
+        }
+        return rows;
+    }
+
+    function swipeName(dx, dy) {
+        var ax = Math.abs(dx);
+        var ay = Math.abs(dy);
+        if (ax < SWIPE_THRESHOLD && ay < SWIPE_THRESHOLD) return null;
+        if (ax >= ay) return dx > 0 ? 'swipeRight' : 'swipeLeft';
+        return dy > 0 ? 'swipeDown' : 'swipeUp';
+    }
+
+    function pressName(heldMs) {
+        return heldMs >= LONG_PRESS_MS ? 'longPress' : 'tap';
+    }
+
+    function isDoubleTap(previousUpAt, downAt) {
+        return typeof previousUpAt === 'number' && downAt - previousUpAt <= DOUBLE_TAP_MS;
+    }
+
+    function distance(a, b) {
+        return Math.hypot(b.x - a.x, b.y - a.y);
+    }
+
+    function pinchName(previousDistance, currentDistance) {
+        if (!(previousDistance > 0) || currentDistance === previousDistance) return null;
+        return currentDistance > previousDistance ? 'zoomIn' : 'zoomOut';
+    }
+
+    function clampZoom(zoom, factor) {
+        return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom * factor));
+    }
+
     // ── Showcase features ───────────────────────────────────────────────
 
     var FEATURES = [
         { id: 'taps',         title: 'Taps',                 description: 'Count taps and log each one as a click event.' },
+        { id: 'gestures',     title: 'Gestures',             description: 'Long press, double tap, swipe and pinch targets and a scrollable list, with nothing logged by the page.' },
         { id: 'text',         title: 'Text entry',           description: 'Log typing masked (default) or in plain text.' },
         { id: 'custom-event', title: 'Custom event',         description: 'One event with string, boolean and number values.' },
         { id: 'signal',       title: 'Signals',              description: 'Nested and flat signal payloads.' },
@@ -255,6 +307,14 @@
         FLAT_SIGNAL: FLAT_SIGNAL,
         CONFIG_PROBE: CONFIG_PROBE,
         DIRECT_CASES: DIRECT_CASES,
+        GESTURE_SCREEN: GESTURE_SCREEN,
+        GESTURE_REFERRER: GESTURE_REFERRER,
+        LONG_PRESS_MS: LONG_PRESS_MS,
+        DOUBLE_TAP_MS: DOUBLE_TAP_MS,
+        TAP_SLOP: TAP_SLOP,
+        SWIPE_THRESHOLD: SWIPE_THRESHOLD,
+        MIN_ZOOM: MIN_ZOOM,
+        MAX_ZOOM: MAX_ZOOM,
         FEATURES: FEATURES,
         SCENARIOS: SCENARIOS,
         describeName: describeName,
@@ -262,6 +322,14 @@
         openScreen: openScreen,
         closeScreen: closeScreen,
         runDirectCases: runDirectCases,
+        gestureLabel: gestureLabel,
+        gestureRows: gestureRows,
+        swipeName: swipeName,
+        pressName: pressName,
+        isDoubleTap: isDoubleTap,
+        distance: distance,
+        pinchName: pinchName,
+        clampZoom: clampZoom,
         findScenario: findScenario,
         scenariosFor: scenariosFor,
         runScenario: runScenario

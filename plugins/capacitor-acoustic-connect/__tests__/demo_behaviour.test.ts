@@ -298,6 +298,93 @@ describe('config round trip scenario', () => {
   });
 });
 
+describe('gestures', () => {
+  it("keeps the Android samples' screen name, thresholds and zoom limits", () => {
+    expect(core.GESTURE_SCREEN).toBe('Gestures');
+    expect(core.LONG_PRESS_MS).toBe(500);
+    expect(core.DOUBLE_TAP_MS).toBe(300);
+    expect(core.SWIPE_THRESHOLD).toBe(48);
+    expect(core.MIN_ZOOM).toBe(0.5);
+    expect(core.MAX_ZOOM).toBe(4);
+  });
+
+  it('words the status line as the Android samples do', () => {
+    expect(core.gestureLabel()).toBe('Last gesture: none');
+    expect(core.gestureLabel('longPress')).toBe('Last gesture: longPress');
+  });
+
+  it('lists 40 rows named from 1, with the ids of the Compose sample', () => {
+    const rows = core.gestureRows();
+    expect(rows).toHaveLength(40);
+    expect(rows[0]).toEqual({ id: 'gesture_row_0', text: 'Scrollable row 1' });
+    expect(rows[39]).toEqual({ id: 'gesture_row_39', text: 'Scrollable row 40' });
+  });
+
+  describe('swipeName', () => {
+    it('is no swipe when neither axis reaches the threshold', () => {
+      expect(core.swipeName(47, 47)).toBeNull();
+      expect(core.swipeName(0, 0)).toBeNull();
+      expect(core.swipeName(-47.9, 47.9)).toBeNull();
+    });
+
+    it('names the direction from the sign of the travel (y grows downwards)', () => {
+      expect(core.swipeName(100, 0)).toBe('swipeRight');
+      expect(core.swipeName(-100, 0)).toBe('swipeLeft');
+      expect(core.swipeName(0, 100)).toBe('swipeDown');
+      expect(core.swipeName(0, -100)).toBe('swipeUp');
+    });
+
+    it('resolves a diagonal to its larger axis and a perfect diagonal to horizontal', () => {
+      expect(core.swipeName(200, 120)).toBe('swipeRight');
+      expect(core.swipeName(120, 200)).toBe('swipeDown');
+      expect(core.swipeName(-120, -200)).toBe('swipeUp');
+      expect(core.swipeName(100, 100)).toBe('swipeRight');
+      expect(core.swipeName(-100, 100)).toBe('swipeLeft');
+    });
+
+    it('swipes when only one axis reaches the threshold, and at exactly the threshold', () => {
+      expect(core.swipeName(60, 10)).toBe('swipeRight');
+      expect(core.swipeName(10, -60)).toBe('swipeUp');
+      expect(core.swipeName(48, 0)).toBe('swipeRight');
+    });
+  });
+
+  it('calls a press long from 500 ms and a shorter one a tap', () => {
+    expect(core.pressName(0)).toBe('tap');
+    expect(core.pressName(499)).toBe('tap');
+    expect(core.pressName(500)).toBe('longPress');
+    expect(core.pressName(2000)).toBe('longPress');
+  });
+
+  it('calls a tap double when it starts within 300 ms of the last release', () => {
+    expect(core.isDoubleTap(1000, 1100)).toBe(true);
+    expect(core.isDoubleTap(1000, 1300)).toBe(true);
+    expect(core.isDoubleTap(1000, 1301)).toBe(false);
+    expect(core.isDoubleTap(null, 1100)).toBe(false);
+    expect(core.isDoubleTap(undefined, 1100)).toBe(false);
+  });
+
+  it('measures the distance between two points', () => {
+    expect(core.distance({ x: 0, y: 0 }, { x: 3, y: 4 })).toBe(5);
+    expect(core.distance({ x: 10, y: 10 }, { x: 10, y: 10 })).toBe(0);
+  });
+
+  it('names a pinch from the change of distance, none when still or without a start', () => {
+    expect(core.pinchName(50, 80)).toBe('zoomIn');
+    expect(core.pinchName(80, 50)).toBe('zoomOut');
+    expect(core.pinchName(50, 50)).toBeNull();
+    expect(core.pinchName(null, 50)).toBeNull();
+    expect(core.pinchName(0, 50)).toBeNull();
+  });
+
+  it('keeps the zoom between 0.5 and 4', () => {
+    expect(core.clampZoom(1, 2)).toBe(2);
+    expect(core.clampZoom(1, 0.8)).toBeCloseTo(0.8);
+    expect(core.clampZoom(3, 2)).toBe(4);
+    expect(core.clampZoom(1, 0.1)).toBe(0.5);
+  });
+});
+
 describe('showcase features', () => {
   it('lists each feature once with a title and description', () => {
     const ids = core.FEATURES.map((f: { id: string }) => f.id);
@@ -305,6 +392,7 @@ describe('showcase features', () => {
     expect(ids).toEqual(
       expect.arrayContaining([
         'taps',
+        'gestures',
         'text',
         'custom-event',
         'signal',
@@ -362,6 +450,11 @@ describe('Demo page wiring', () => {
     for (const id of ['showcaseList', 'showcaseDetail', 'verificationList']) {
       expect(html).toContain('id="' + id + '"');
     }
+  });
+
+  it('has the Gestures container in the DemoCapacitor page', () => {
+    const capacitorHtml: string = readFileSync(join(demo, '..', '..', 'DemoCapacitor', 'src', 'index.html'), 'utf8');
+    expect(capacitorHtml).toContain('id="showcaseGestures"');
   });
 });
 

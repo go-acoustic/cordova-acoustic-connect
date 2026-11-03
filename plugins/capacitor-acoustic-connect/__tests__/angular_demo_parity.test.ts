@@ -80,6 +80,33 @@ describe('the Angular sample shows the screens of DemoCapacitor', () => {
     expect(own.slice(core.FEATURES.length)).toEqual(['sdk', 'push-manual']);
   });
 
+  it('has the gesture screen name, thresholds and zoom limits of DemoCapacitor', () => {
+    expect(ts).toContain(`GESTURE_SCREEN = '${core.GESTURE_SCREEN}'`);
+    expect(ts).toContain(`GESTURE_REFERRER = '${core.GESTURE_REFERRER}'`);
+    for (const name of ['LONG_PRESS_MS', 'DOUBLE_TAP_MS', 'TAP_SLOP', 'SWIPE_THRESHOLD', 'MIN_ZOOM', 'MAX_ZOOM']) {
+      expect(ts).toContain(`${name} = ${core[name]}`);
+    }
+  });
+
+  it('has the ids of the Gestures screen of DemoCapacitor in the showcase', () => {
+    const showcase = fs.readFileSync(
+      path.join(root, 'DemoCapacitorAngular', 'src', 'app', 'tabs', 'behaviour-showcase.ts'),
+      'utf8',
+    );
+    for (const id of [
+      'btn_open_gestures',
+      'btn_gestures_back',
+      'tv_gestures_last',
+      'gesture_long_press',
+      'gesture_double_tap',
+      'gesture_swipe',
+      'gesture_pinch_zoom',
+      'gesture_scroll_list',
+    ]) {
+      expect(showcase).toContain(`id="${id}"`);
+    }
+  });
+
   it('has the same probe, payloads and chain depth', () => {
     expect(ts).toContain(`key: '${core.CONFIG_PROBE.key}'`);
     expect(ts).toContain(`name: '${core.CUSTOM_EVENT.name}'`);

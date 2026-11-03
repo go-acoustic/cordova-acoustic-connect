@@ -62,6 +62,7 @@ The SDK is enabled automatically on `deviceready` from the bundled `ConnectConfi
 | Behaviour | Log Screen Load / Unload | `AcousticConnect.logScreenViewContextLoad` / `logScreenViewContextUnload('demo_screen', 'behaviour')` |
 | Behaviour | Log Handled Exception | `AcousticConnect.logExceptionEvent(message, stack, false)` |
 | Behaviour | Flush Queues | `AcousticConnect.flushQueues()` |
+| Behaviour › Showcase | Open Gestures (`btn_open_gestures`) | Opens the Gestures screen and logs `AcousticConnect.logScreenViewContextLoad('Gestures', 'Showcase')`; Back logs the unload. Targets `gesture_long_press`, `gesture_double_tap`, `gesture_swipe`, `gesture_pinch_zoom`, the status line `tv_gestures_last` (`Last gesture: <name>`) and a 40-row list `gesture_scroll_list`. The targets use plain pointer events and log nothing themselves. |
 
 The Behaviour tab needs a plugin version that includes the analytics API; on an older published plugin it shows a message instead of failing. A resolved call means the SDK queued the event — batches are posted later, typically when the app goes to the background.
 

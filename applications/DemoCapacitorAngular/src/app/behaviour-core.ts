@@ -99,10 +99,60 @@ export async function runDirectCases(A: AcousticConnectApi): Promise<DirectResul
   return results;
 }
 
+export const GESTURE_SCREEN = 'Gestures';
+export const GESTURE_REFERRER = 'Showcase';
+const GESTURE_ROWS = 40;
+export const LONG_PRESS_MS = 500;
+export const DOUBLE_TAP_MS = 300;
+export const TAP_SLOP = 8;
+export const SWIPE_THRESHOLD = 48;
+export const MIN_ZOOM = 0.5;
+export const MAX_ZOOM = 4;
+
+export interface Point { x: number; y: number }
+
+export function gestureLabel(name?: string | null): string {
+  return 'Last gesture: ' + (name || 'none');
+}
+
+export function gestureRows(): { id: string; text: string }[] {
+  return Array.from({ length: GESTURE_ROWS }, (_, i) => ({ id: 'gesture_row_' + i, text: 'Scrollable row ' + (i + 1) }));
+}
+
+export function swipeName(dx: number, dy: number): string | null {
+  const ax = Math.abs(dx);
+  const ay = Math.abs(dy);
+  if (ax < SWIPE_THRESHOLD && ay < SWIPE_THRESHOLD) return null;
+  if (ax >= ay) return dx > 0 ? 'swipeRight' : 'swipeLeft';
+  return dy > 0 ? 'swipeDown' : 'swipeUp';
+}
+
+export function pressName(heldMs: number): 'longPress' | 'tap' {
+  return heldMs >= LONG_PRESS_MS ? 'longPress' : 'tap';
+}
+
+export function isDoubleTap(previousUpAt: number | null | undefined, downAt: number): boolean {
+  return typeof previousUpAt === 'number' && downAt - previousUpAt <= DOUBLE_TAP_MS;
+}
+
+export function distance(a: Point, b: Point): number {
+  return Math.hypot(b.x - a.x, b.y - a.y);
+}
+
+export function pinchName(previousDistance: number | null, currentDistance: number): 'zoomIn' | 'zoomOut' | null {
+  if (previousDistance === null || !(previousDistance > 0) || currentDistance === previousDistance) return null;
+  return currentDistance > previousDistance ? 'zoomIn' : 'zoomOut';
+}
+
+export function clampZoom(zoom: number, factor: number): number {
+  return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom * factor));
+}
+
 export interface Feature { id: string; title: string; description: string }
 
 export const FEATURES: Feature[] = [
   { id: 'taps', title: 'Taps', description: 'Count taps and log each one as a click event.' },
+  { id: 'gestures', title: 'Gestures', description: 'Long press, double tap, swipe and pinch targets and a scrollable list, with nothing logged by the page.' },
   { id: 'text', title: 'Text entry', description: 'Log typing masked (default) or in plain text.' },
   { id: 'custom-event', title: 'Custom event', description: 'One event with string, boolean and number values.' },
   { id: 'signal', title: 'Signals', description: 'Nested and flat signal payloads.' },

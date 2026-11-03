@@ -9,7 +9,7 @@
 
 (function () {
     var Core = window.BehaviourCore;
-    var state = { chain: [], taps: 0, enabled: false };
+    var state = { chain: [], taps: 0, enabled: false, gesturesLine: null };
 
     function el(tag, className, text) {
         var node = document.createElement(tag);
@@ -68,6 +68,10 @@
                 count.textContent = 'Taps: ' + state.taps;
                 run(line, function (a) { return a.logClickEvent('showcase_tap', { count: state.taps }); });
             }));
+        } else if (id === 'gestures') {
+            var openButton = button('Open Gestures', openGestures, true);
+            openButton.id = 'btn_open_gestures';
+            c.appendChild(openButton);
         } else if (id === 'text') {
             var input = el('input', 'field-input');
             input.type = 'text';
@@ -210,6 +214,181 @@
         if (texts[0]) texts[0].textContent = state.chain.length ? state.chain.join(' › ') : 'No screen open';
         if (metas[0]) metas[0].textContent = 'Depth ' + state.chain.length + ' of ' + Core.MAX_DEPTH;
         void line;
+    }
+
+    function openGestures() {
+        document.getElementById('showcaseList').classList.add('hidden');
+        document.getElementById('showcaseGestures').classList.remove('hidden');
+        renderGestures();
+        run(state.gesturesLine, function (a) { return a.logScreenViewContextLoad(Core.GESTURE_SCREEN, Core.GESTURE_REFERRER); });
+    }
+
+    function closeGestures() {
+        document.getElementById('showcaseGestures').classList.add('hidden');
+        document.getElementById('showcaseList').classList.remove('hidden');
+        run(state.gesturesLine, function (a) { return a.logScreenViewContextUnload(Core.GESTURE_SCREEN, Core.GESTURE_REFERRER); });
+    }
+
+    function onPointer(target, handlers) {
+        ['down', 'move', 'up', 'cancel'].forEach(function (kind) {
+            target.addEventListener('pointer' + kind, function (e) {
+                if (kind === 'down') {
+                    try { target.setPointerCapture(e.pointerId); } catch { /* the pointer is already gone */ }
+                }
+                e.preventDefault();
+                if (handlers[kind]) handlers[kind](e);
+            });
+        });
+        target.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+    }
+
+    function point(e) { return { x: e.clientX, y: e.clientY }; }
+
+    function wireLongPress(target, show) {
+        var press = null;
+        function cancel() {
+            if (press) clearTimeout(press.timer);
+            press = null;
+        }
+        onPointer(target, {
+            down: function (e) {
+                if (!e.isPrimary) return;
+                cancel();
+                var current = { from: point(e), at: e.timeStamp, long: false };
+                current.timer = setTimeout(function () { current.long = true; show('longPress'); }, Core.LONG_PRESS_MS);
+                press = current;
+            },
+            move: function (e) {
+                if (!e.isPrimary) return;
+                if (press && Core.distance(press.from, point(e)) > Core.TAP_SLOP) cancel();
+            },
+            up: function (e) {
+                if (!e.isPrimary || !press) return;
+                if (!press.long) show(Core.pressName(e.timeStamp - press.at));
+                cancel();
+            },
+            cancel: cancel
+        });
+    }
+
+    function wireDoubleTap(target, show) {
+        var down = null;
+        var previousUpAt = null;
+        onPointer(target, {
+            down: function (e) {
+                if (e.isPrimary) down = { from: point(e), at: e.timeStamp };
+            },
+            move: function (e) {
+                if (!e.isPrimary) return;
+                if (down && Core.distance(down.from, point(e)) > Core.TAP_SLOP) {
+                    down = null;
+                    previousUpAt = null;
+                }
+            },
+            up: function (e) {
+                if (!e.isPrimary || !down) return;
+                var tap = Core.pressName(e.timeStamp - down.at) === 'tap';
+                var second = tap && Core.isDoubleTap(previousUpAt, down.at);
+                previousUpAt = tap && !second ? e.timeStamp : null;
+                down = null;
+                if (second) show('doubleTap');
+            },
+            cancel: function () {
+                down = null;
+                previousUpAt = null;
+            }
+        });
+    }
+
+    function wireSwipe(target, show) {
+        var from = null;
+        onPointer(target, {
+            down: function (e) {
+                if (e.isPrimary) from = point(e);
+            },
+            up: function (e) {
+                if (!e.isPrimary || !from) return;
+                var name = Core.swipeName(e.clientX - from.x, e.clientY - from.y);
+                from = null;
+                if (name) show(name);
+            },
+            cancel: function () { from = null; }
+        });
+    }
+
+    function wirePinch(target, zoomed, show) {
+        var touches = {};
+        var spread = null;
+        var zoom = 1;
+        function measure() {
+            var ids = Object.keys(touches);
+            return ids.length === 2 ? Core.distance(touches[ids[0]], touches[ids[1]]) : null;
+        }
+        function release(e) {
+            delete touches[e.pointerId];
+            spread = measure();
+        }
+        onPointer(target, {
+            down: function (e) {
+                touches[e.pointerId] = point(e);
+                spread = measure();
+            },
+            move: function (e) {
+                if (!touches[e.pointerId]) return;
+                touches[e.pointerId] = point(e);
+                var now = measure();
+                var name = now === null ? null : Core.pinchName(spread, now);
+                if (name) {
+                    zoom = Core.clampZoom(zoom, now / spread);
+                    zoomed.style.transform = 'scale(' + zoom + ')';
+                    show(name);
+                }
+                spread = now;
+            },
+            up: release,
+            cancel: release
+        });
+    }
+
+    function renderGestures() {
+        var screen = document.getElementById('showcaseGestures');
+        screen.innerHTML = '';
+        var c = card('Gestures');
+        var last = el('p', 'card-text', Core.gestureLabel());
+        last.id = 'tv_gestures_last';
+        function show(name) { last.textContent = Core.gestureLabel(name); }
+        c.appendChild(last);
+
+        function makeTarget(id, classes, text) {
+            var t = el('div', 'gesture-surface ' + classes, text);
+            t.id = id;
+            c.appendChild(t);
+            return t;
+        }
+        wireLongPress(makeTarget('gesture_long_press', 'gesture-target gesture-taps', 'Long press me'), show);
+        wireDoubleTap(makeTarget('gesture_double_tap', 'gesture-target gesture-taps', 'Double tap me'), show);
+        wireSwipe(makeTarget('gesture_swipe', 'gesture-target gesture-claims', 'Swipe me — any direction'), show);
+        var pinch = makeTarget('gesture_pinch_zoom', 'gesture-pinch gesture-claims');
+        var zoomed = el('div', 'gesture-pinch-inner', 'Pinch to zoom');
+        pinch.appendChild(zoomed);
+        wirePinch(pinch, zoomed, show);
+
+        var list = el('ul', 'gesture-list');
+        list.id = 'gesture_scroll_list';
+        Core.gestureRows().forEach(function (row) {
+            var item = el('li', 'gesture-row', row.text);
+            item.id = row.id;
+            list.appendChild(item);
+        });
+        c.appendChild(list);
+
+        var back = el('button', 'action link', '‹ Back to Showcase');
+        back.id = 'btn_gestures_back';
+        back.addEventListener('click', closeGestures);
+        c.appendChild(back);
+        state.gesturesLine = el('p', 'result-line');
+        c.appendChild(state.gesturesLine);
+        screen.appendChild(c);
     }
 
     // ── Verification ────────────────────────────────────────────────

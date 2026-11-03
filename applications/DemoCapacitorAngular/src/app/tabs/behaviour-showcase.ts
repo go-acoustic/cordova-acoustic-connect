@@ -2,9 +2,10 @@ import { Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { AcousticService } from '../acoustic.service';
 import {
-  CONFIG_PROBE, CUSTOM_EVENT, DirectResult, FEATURES, FLAT_SIGNAL, MAX_DEPTH, NESTED_SIGNAL, closeScreen, errorMessage, maskPreview,
-  openScreen, runDirectCases
+  CONFIG_PROBE, CUSTOM_EVENT, DirectResult, FEATURES, FLAT_SIGNAL, GESTURE_REFERRER, GESTURE_SCREEN, MAX_DEPTH, NESTED_SIGNAL, closeScreen,
+  errorMessage, gestureLabel, gestureRows, maskPreview, openScreen, runDirectCases
 } from '../behaviour-core';
+import { createGestureHandlers } from './behaviour-gestures';
 
 interface Line { ok: boolean; text: string }
 
@@ -13,7 +14,35 @@ interface Line { ok: boolean; text: string }
   selector: 'app-behaviour-showcase',
   imports: [FormsModule],
   template: `
-    @if (!detail()) {
+    @if (gestures()) {
+      <section class="card">
+        <h2 class="card-title">Gestures</h2>
+        <p class="card-text" id="tv_gestures_last">{{ lastGesture() }}</p>
+        <div class="gesture-surface gesture-target gesture-taps" id="gesture_long_press" (contextmenu)="$event.preventDefault()"
+             (pointerdown)="handlers.longPress.down($event)" (pointermove)="handlers.longPress.move($event)"
+             (pointerup)="handlers.longPress.up($event)" (pointercancel)="handlers.longPress.cancel($event)">Long press me</div>
+        <div class="gesture-surface gesture-target gesture-taps" id="gesture_double_tap" (contextmenu)="$event.preventDefault()"
+             (pointerdown)="handlers.doubleTap.down($event)" (pointermove)="handlers.doubleTap.move($event)"
+             (pointerup)="handlers.doubleTap.up($event)" (pointercancel)="handlers.doubleTap.cancel($event)">Double tap me</div>
+        <div class="gesture-surface gesture-target gesture-claims" id="gesture_swipe" (contextmenu)="$event.preventDefault()"
+             (pointerdown)="handlers.swipe.down($event)" (pointermove)="handlers.swipe.move($event)"
+             (pointerup)="handlers.swipe.up($event)" (pointercancel)="handlers.swipe.cancel($event)">Swipe me — any direction</div>
+        <div class="gesture-surface gesture-pinch gesture-claims" id="gesture_pinch_zoom" (contextmenu)="$event.preventDefault()"
+             (pointerdown)="handlers.pinch.down($event)" (pointermove)="handlers.pinch.move($event)"
+             (pointerup)="handlers.pinch.up($event)" (pointercancel)="handlers.pinch.cancel($event)">
+          <div class="gesture-pinch-inner" [style.transform]="'scale(' + zoom() + ')'">Pinch to zoom</div>
+        </div>
+        <ul class="gesture-list" id="gesture_scroll_list">
+          @for (row of rows; track row.id) {
+            <li class="gesture-row" [id]="row.id">{{ row.text }}</li>
+          }
+        </ul>
+        <button class="action link" id="btn_gestures_back" (click)="closeGestures()">‹ Back to Showcase</button>
+        @if (lines()['gestures-screen']; as line) {
+          <p class="result-line" [class.success]="line.ok" [class.error]="!line.ok">{{ line.text }}</p>
+        }
+      </section>
+    } @else if (!detail()) {
       @for (f of features; track f.id) {
         <section class="card">
           <h2 class="card-title">{{ f.title }}</h2>
@@ -23,6 +52,9 @@ interface Line { ok: boolean; text: string }
             @case ('taps') {
               <p class="card-text">Taps: {{ taps() }}</p>
               <button class="action" [disabled]="!enabled()" (click)="tap()">Tap</button>
+            }
+            @case ('gestures') {
+              <button class="action secondary" id="btn_open_gestures" [disabled]="!enabled()" (click)="openGestures()">Open Gestures</button>
             }
             @case ('text') {
               <input class="field-input" type="text" placeholder="Type something" autocomplete="off" [(ngModel)]="text">
@@ -115,6 +147,11 @@ export class BehaviourShowcase {
   readonly taps = signal(0);
   readonly lines = signal<Record<string, Line>>({});
   readonly detail = signal(false);
+  readonly gestures = signal(false);
+  readonly lastGesture = signal(gestureLabel());
+  readonly zoom = signal(1);
+  readonly rows = gestureRows();
+  handlers = this.newGestureHandlers();
   readonly chain = signal<string[]>([]);
   readonly directResults = signal<DirectResult[]>([]);
   readonly configOut = signal('');
@@ -184,6 +221,20 @@ export class BehaviourShowcase {
     this.detail.set(true);
   }
 
+  openGestures(): void {
+    this.lastGesture.set(gestureLabel());
+    this.zoom.set(1);
+    this.lines.update(({ 'gestures-screen': screenLine, ...rest }) => rest);
+    this.handlers = this.newGestureHandlers();
+    this.gestures.set(true);
+    this.run('gestures-screen', () => this.acoustic.screenLoad(GESTURE_SCREEN, GESTURE_REFERRER));
+  }
+
+  closeGestures(): void {
+    this.gestures.set(false);
+    this.run('gestures-screen', () => this.acoustic.screenUnload(GESTURE_SCREEN, GESTURE_REFERRER));
+  }
+
   /** Each "next" screen loads with the previous one as referrer. */
   openNext(): void {
     const r = openScreen(this.chain(), 'Screen ' + (this.chain().length + 1));
@@ -203,6 +254,10 @@ export class BehaviourShowcase {
     }
     this.chain.set(r.chain);
     this.run('chain', () => this.acoustic.screenUnload(r.unload!.name, r.unload!.referrer));
+  }
+
+  private newGestureHandlers() {
+    return createGestureHandlers((name) => this.lastGesture.set(gestureLabel(name)), (zoom) => this.zoom.set(zoom));
   }
 
   private line(id: string, ok: boolean, text: string): void {
