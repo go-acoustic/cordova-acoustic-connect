@@ -2,8 +2,17 @@ package co.acoustic.connect.capacitor
 
 import com.getcapacitor.JSObject
 import com.getcapacitor.PluginCall
+import com.getcapacitor.PluginConfig
+import java.net.CookieHandler
+import java.net.CookieManager
+import java.net.CookiePolicy
+import java.net.CookieStore
+import org.json.JSONObject
+import org.junit.Assert.assertNotNull
 import org.junit.Test
 import org.mockito.kotlin.any
+import org.mockito.kotlin.doReturn
+import org.mockito.kotlin.spy
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
@@ -20,6 +29,23 @@ class AcousticConnectPluginTest {
         val captor = argumentCaptor<JSObject>()
         verify(call).resolve(captor.capture())
         assertEquals(true, captor.firstValue.getBoolean("value"))
+    }
+
+    @Test fun load_replacesCapacitorsCookieHandlerWithoutAnEnableCall() {
+        // A push can start the SDK before the bridge loads and the app then never calls enable() (autoEnable off):
+        // Capacitor's handler, which refuses to expose its store, has to be replaced by load() alone.
+        val original = CookieHandler.getDefault()
+        try {
+            CookieHandler.setDefault(object : CookieManager(null, CookiePolicy.ACCEPT_ALL) {
+                override fun getCookieStore(): CookieStore = throw UnsupportedOperationException()
+            })
+            val config = mock<PluginConfig> { on { configJSON } doReturn JSONObject() }
+            val plugin = spy(AcousticConnectPlugin()) { doReturn(config).whenever(it).config }
+            plugin.load()
+            assertNotNull((CookieHandler.getDefault() as CookieManager).cookieStore)
+        } finally {
+            CookieHandler.setDefault(original)
+        }
     }
 
     @Test fun callReply_rejectsWithMessageAndCode() {

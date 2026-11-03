@@ -23,6 +23,11 @@ class AcousticConnectPlugin : Plugin() {
     private lateinit var connect: AcousticConnect
 
     override fun load() {
+        // Capacitor's CapacitorCookies plugin has set its own default CookieHandler by now (core plugins load before
+        // app plugins), and that handler fails every post of the SDK (see CookieHandlerCompat). A push can have
+        // started the SDK in this process before the bridge loaded, with no call to enable() or init() to follow
+        // (autoEnable off, or an app that only checks isSdkEnabled()): replace the handler here, for every path.
+        CookieHandlerCompat.install()
         val config = NativeConfig.from(getConfig().configJSON) { Log.w(TAG, it) }
         connect = AcousticConnect(
             ConnectSdkImpl(activityProvider = { activity }),

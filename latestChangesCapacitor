@@ -35,6 +35,14 @@ Fixes
   handling still receives the tap meanwhile. Nothing is kept in manual push mode
   or when push is off. An app that starts the SDK from the config was not
   affected
+- Android: after a push had started the app's process (a killed app), the SDK
+  could not post any event once the page loaded: the posts failed and the queue
+  was only sent after the process restarted. Capacitor's cookie handler, which
+  the SDK cannot use, stayed in place when the SDK was already running before
+  the plugin loaded, and the plugin replaced it only when it set the SDK up
+  itself. It now replaces the handler when it loads, whether the app starts the
+  SDK from the config, calls `enable()` or only checks `isSdkEnabled()`, so the
+  delivered signal and the events that follow reach the collector
 
 Known Issues
 

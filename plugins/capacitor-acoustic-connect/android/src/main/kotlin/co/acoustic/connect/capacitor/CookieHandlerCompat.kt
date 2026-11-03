@@ -23,6 +23,10 @@ import java.net.URI
  *
  * [install] puts a handler in front that passes `get` and `put` to the original, so Capacitor's cookie
  * sync keeps working, and answers `getCookieStore()` with a store of its own.
+ *
+ * It is called when the plugin loads (after Capacitor has set its handler, and whether or not the app ever
+ * calls `enable()`: a push can start the SDK in the process before the bridge loads) and again before the SDK
+ * is initialised. A call after the handler is replaced does nothing.
  */
 internal object CookieHandlerCompat {
 
