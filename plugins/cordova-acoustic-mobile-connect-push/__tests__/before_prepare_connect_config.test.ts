@@ -152,7 +152,7 @@ describe('ConnectBasicConfig.properties generation', () => {
             'UseWhiteList=true', 'WhiteListParam=id', 'UseRandomSample=false', 'RandomSampleParam=',
             'ScreenshotFormat=JPG', 'PercentOfScreenshotsSize=40', 'PercentToCompressImage=80',
             'ScreenShotPixelDensity=1.5', 'LogViewLayoutOnScreenTransition=true',
-            'GetImageDataOnScreenLayout=false', 'SetGestureDetector=true', 'CaptureNativeGesturesOnWebview=false',
+            'GetImageDataOnScreenLayout=false', 'SetGestureDetector=true',
         ]) {
             expect(props).toContain(line + '\n');
         }

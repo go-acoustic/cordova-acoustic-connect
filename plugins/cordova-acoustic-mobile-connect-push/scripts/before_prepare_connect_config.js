@@ -90,7 +90,6 @@ function buildPropertiesFile(appKey, postMessageUrl, killSwitchUrl, killSwitchEn
         'LogViewLayoutOnScreenTransition=true',
         'GetImageDataOnScreenLayout=false',
         'SetGestureDetector=true',
-        'CaptureNativeGesturesOnWebview=false',
     ];
 
     return lines.join('\n') + '\n';
