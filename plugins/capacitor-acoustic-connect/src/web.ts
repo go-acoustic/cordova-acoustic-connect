@@ -20,6 +20,10 @@ export class AcousticConnectWeb extends WebPlugin implements AcousticConnectPlug
   async flushQueues(): Promise<void> {
     // Nothing to record without the native SDK.
   }
+  async logWebEvent(): Promise<{ queued: boolean }> {
+    // The page script runs on a native platform only; without the native SDK nothing is queued.
+    return { queued: false };
+  }
   async setCurrentScreenName(): Promise<void> {
     // Nothing to record without the native SDK.
   }

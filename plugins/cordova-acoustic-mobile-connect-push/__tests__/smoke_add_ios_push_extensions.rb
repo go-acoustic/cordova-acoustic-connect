@@ -305,5 +305,54 @@ Dir.mktmpdir('acoustic-smoke-push-off-') do |tmp|
   plugin_files = app4.source_build_phase.files.map { |bf| bf.file_ref&.path.to_s }.select { |f| f.include?('ConnectPlugin.swift') }
   assert plugin_files.length == 1, 'ConnectPlugin.swift is still in the Compile Sources of App, once'
 
+end
+
+# ── Web capture (ACOUSTIC_WEB_CAPTURE) ───────────────────────────────────────────
+# ConnectWebEvents.swift is compiled into App; CONNECT_WEB_CAPTURE is on the App target only while the SDK has the web
+# capture functions, the app's own conditions are kept, and nothing is written for an app without conditions and capture.
+Dir.mktmpdir('acoustic-smoke-web-capture-') do |tmp|
+  proj_path = File.join(tmp, 'App.xcodeproj')
+  proj = Xcodeproj::Project.new(proj_path)
+  app_target = proj.new_target(:application, 'App', :ios, '15.1')
+  app_target.build_configurations.each do |c|
+    c.build_settings['PRODUCT_BUNDLE_IDENTIFIER'] = BUNDLE_ID
+    c.build_settings.delete('SWIFT_ACTIVE_COMPILATION_CONDITIONS')
+  end
+  debug = app_target.build_configurations.find { |c| c.name == 'Debug' }
+  debug.build_settings['SWIFT_ACTIVE_COMPILATION_CONDITIONS'] = %w[DEBUG APP_FLAG]
+  proj.save
+
+  env = {
+    'ACOUSTIC_PROJECT_PATH'  => proj_path,
+    'ACOUSTIC_APP_TARGET'    => 'App',
+    'ACOUSTIC_APP_BUNDLE_ID' => BUNDLE_ID,
+    'ACOUSTIC_SDK_VARIANT'   => VARIANT,
+    'ACOUSTIC_PUSH_ENABLED'  => '0',
+  }
+  conditions = lambda do |name|
+    app = Xcodeproj::Project.open(proj_path).targets.find { |t| t.name == 'App' }
+    app.build_configurations.find { |c| c.name == name }.build_settings['SWIFT_ACTIVE_COMPILATION_CONDITIONS']
+  end
+
+  puts "\nWeb capture off:"
+  assert system(env, 'ruby', SCRIPT, exception: false), 'script exits 0'
+  assert conditions.call('Debug') == 'DEBUG APP_FLAG', 'the app conditions are kept, without CONNECT_WEB_CAPTURE'
+  assert conditions.call('Release').nil?, 'nothing is written where the app set no condition'
+  app = Xcodeproj::Project.open(proj_path).targets.find { |t| t.name == 'App' }
+  web = app.source_build_phase.files.map { |bf| bf.file_ref&.path.to_s }.select { |f| f.include?('ConnectWebEvents.swift') }
+  assert web.length == 1, 'ConnectWebEvents.swift is in the Compile Sources of App exactly once'
+
+  2.times do |n|
+    puts "\nWeb capture on, run #{n + 1}:"
+    assert system(env.merge('ACOUSTIC_WEB_CAPTURE' => '1'), 'ruby', SCRIPT, exception: false), 'script exits 0'
+    assert conditions.call('Debug') == 'DEBUG APP_FLAG CONNECT_WEB_CAPTURE', 'CONNECT_WEB_CAPTURE is added once, after the app conditions, nothing else'
+    assert conditions.call('Release') == '$(inherited) CONNECT_WEB_CAPTURE', 'CONNECT_WEB_CAPTURE is added with $(inherited)'
+  end
+
+  puts "\nWeb capture off again:"
+  assert system(env, 'ruby', SCRIPT, exception: false), 'script exits 0'
+  assert conditions.call('Debug') == 'DEBUG APP_FLAG', 'CONNECT_WEB_CAPTURE is taken out, the app conditions stay'
+  assert conditions.call('Release') == '$(inherited)', 'CONNECT_WEB_CAPTURE is taken out'
+
   puts "\nAll smoke tests passed.\n"
 end

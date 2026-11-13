@@ -283,7 +283,7 @@
 			mainGroup = 504EC2FB1FED79650016851F;
 			packageReferences = (
 				D4C12C0A2AAA248700AAC8A2 /* XCLocalSwiftPackageReference "CapApp-SPM" */,
-				BDAE27C3EBEC53B3E8CC33DD /* XCRemoteSwiftPackageReference "Connect-SP" */,
+				BDAE27C3EBEC53B3E8CC33DD /* XCRemoteSwiftPackageReference "ConnectDebug-SP" */,
 			);
 			productRefGroup = 504EC3051FED79650016851F /* Products */;
 			projectDirPath = "";
@@ -718,12 +718,12 @@
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		BDAE27C3EBEC53B3E8CC33DD /* XCRemoteSwiftPackageReference "Connect-SP" */ = {
+		BDAE27C3EBEC53B3E8CC33DD /* XCRemoteSwiftPackageReference "ConnectDebug-SP" */ = {
 			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/go-acoustic/Connect-SP.git";
+			repositoryURL = "https://github.com/go-acoustic/ConnectDebug-SP.git";
 			requirement = {
-				kind = exactVersion;
-				version = 2.2.2;
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.2.35;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */
@@ -731,12 +731,12 @@
 /* Begin XCSwiftPackageProductDependency section */
 		0A13615FA45B78565281567D /* Connect */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = BDAE27C3EBEC53B3E8CC33DD /* XCRemoteSwiftPackageReference "Connect-SP" */;
+			package = BDAE27C3EBEC53B3E8CC33DD /* XCRemoteSwiftPackageReference "ConnectDebug-SP" */;
 			productName = Connect;
 		};
 		25F5CC70801CD54A4649725A /* Connect */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = BDAE27C3EBEC53B3E8CC33DD /* XCRemoteSwiftPackageReference "Connect-SP" */;
+			package = BDAE27C3EBEC53B3E8CC33DD /* XCRemoteSwiftPackageReference "ConnectDebug-SP" */;
 			productName = Connect;
 		};
 		4D22ABE82AF431CB00220026 /* CapApp-SPM */ = {

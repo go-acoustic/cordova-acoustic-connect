@@ -295,9 +295,16 @@ async function iosTarget(opts) {
                     const pod = commands.parseIosPod(fs.readFileSync(path.join(host, 'ios', 'App', 'Podfile.lock'), 'utf8'));
                     return pod ? pod.pod + ' ' + pod.version : null;
                 }
-                // Swift Package Manager: the version Connect-SP resolved to, from its checkout's `version` file
-                const checkout = path.join(derivedData, 'SourcePackages', 'checkouts', 'Connect-SP', 'version');
-                return 'Connect-SP ' + fs.readFileSync(checkout, 'utf8').trim();
+                // Swift Package Manager: the version the Connect package resolved to (ConnectDebug-SP with the beta plugin, Connect-SP
+                // with the public one), from its checkout's `version` file
+                const checkouts = path.join(derivedData, 'SourcePackages', 'checkouts');
+                // Both checkouts can be there after a run with the other package: the one written last is this build's.
+                const name = ['ConnectDebug-SP', 'Connect-SP']
+                    .filter(function (n) { return fs.existsSync(path.join(checkouts, n, 'version')); })
+                    .sort(function (a, b) {
+                        return fs.statSync(path.join(checkouts, b, 'version')).mtimeMs - fs.statSync(path.join(checkouts, a, 'version')).mtimeMs;
+                    })[0];
+                return name ? name + ' ' + fs.readFileSync(path.join(checkouts, name, 'version'), 'utf8').trim() : null;
             } catch (_) { return null; }
         }
     };

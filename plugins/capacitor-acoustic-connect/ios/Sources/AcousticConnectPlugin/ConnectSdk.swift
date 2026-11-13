@@ -9,6 +9,7 @@
  */
 
 import Foundation
+import UIKit
 
 enum PushMode: String {
     case automatic
@@ -54,6 +55,10 @@ protocol ConnectSdk: AnyObject {
     /// Logs the device's current location, as the SDK reads it. `false` when the SDK does not log it (no permission, location logging off).
     func logLocation() -> Bool
     func logLocationUpdate(latitude: Double, longitude: Double, level: MonitoringLevel) -> Bool
+
+    /// Logs a tap or gesture the page script saw on an element of the page in `webView`, as the script sent it. `false` when
+    /// the SDK did not queue it, or cannot log one (an SDK older than 2.2.35, or a build without CONNECT_WEB_CAPTURE).
+    func logWebEvent(in webView: UIView, event: [String: Any]) -> Bool
     func setConfigItem(key: String, value: Any) -> Bool
     func configItem(key: String) -> Any?
     func setKillSwitch(enabled: Bool, url: String?)

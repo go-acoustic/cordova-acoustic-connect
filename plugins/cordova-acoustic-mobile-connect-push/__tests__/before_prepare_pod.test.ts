@@ -96,7 +96,7 @@ describe('variant selection', () => {
         writeConfig(DEBUG_CONFIG);
         writePodfile('OLD');
         hook(makeContext(tmpDir));
-        expect(readPodfile()).toContain("pod 'AcousticConnectDebug', '>= 2.1.51'");
+        expect(readPodfile()).toContain("pod 'AcousticConnectDebug', '>= 2.2.35'");
     });
 
     it('selects release when useRelease is true', () => {
@@ -268,7 +268,7 @@ describe("the pods of the app's other plugins", () => {
         'use_frameworks!',
         "target 'App' do",
         "\tproject 'App.xcodeproj'",
-        "\tpod 'AcousticConnectDebug', '>= 2.1.51'",
+        "\tpod 'AcousticConnectDebug', '>= 2.2.35'",
         "\tpod 'Firebase/Messaging', '11.8.0'",
         "\tpod 'SomeOtherPod', :git => 'https://example.com/some.git', :tag => '1.2.3'",
         '\t# pod \'Commented\', \'1.0\'',
@@ -288,7 +288,7 @@ describe("the pods of the app's other plugins", () => {
         writePodfile(WITH_FIREBASE);
         hook(makeContext(tmpDir));
         expect(podLines(readPodfile())).toEqual([
-            "\tpod 'AcousticConnectDebug', '>= 2.1.51'",
+            "\tpod 'AcousticConnectDebug', '>= 2.2.35'",
             "\tpod 'Firebase/Messaging', '11.8.0'",
             "\tpod 'SomeOtherPod', :git => 'https://example.com/some.git', :tag => '1.2.3'",
         ]);
@@ -337,17 +337,17 @@ describe("the pods of the app's other plugins", () => {
 
     it('puts back a pod that pods.json lists and the Podfile has already lost', () => {
         writeConfig(DEBUG_CONFIG);
-        writePodfile("target 'App' do\n\tproject 'App.xcodeproj'\n\tpod 'AcousticConnectDebug', '>= 2.1.51'\nend\n");
+        writePodfile("target 'App' do\n\tproject 'App.xcodeproj'\n\tpod 'AcousticConnectDebug', '>= 2.2.35'\nend\n");
         writePodsJson({
             libraries: {
                 'Firebase/Messaging': { name: 'Firebase/Messaging', spec: '11.8.0', count: 1 },
-                AcousticConnectDebug: { name: 'AcousticConnectDebug', spec: '>= 2.1.51', count: 1 },
+                AcousticConnectDebug: { name: 'AcousticConnectDebug', spec: '>= 2.2.35', count: 1 },
                 NoSpec: { name: 'NoSpec', spec: '', count: 1 },
             },
         });
         hook(makeContext(tmpDir));
         expect(podLines(readPodfile())).toEqual([
-            "\tpod 'AcousticConnectDebug', '>= 2.1.51'",
+            "\tpod 'AcousticConnectDebug', '>= 2.2.35'",
             "\tpod 'Firebase/Messaging', '11.8.0'",
             "\tpod 'NoSpec'",
         ]);
@@ -380,7 +380,7 @@ describe("the pods of the app's other plugins", () => {
         writeConfig(DEBUG_CONFIG);
         writePodfile('OLD');
         hook(makeContext(tmpDir));
-        expect(podLines(readPodfile())).toEqual(["\tpod 'AcousticConnectDebug', '>= 2.1.51'"]);
+        expect(podLines(readPodfile())).toEqual(["\tpod 'AcousticConnectDebug', '>= 2.2.35'"]);
     });
 
     it('finds the pods of the app target whatever it is named', () => {
@@ -406,7 +406,7 @@ describe('pods.json sync', () => {
         hook(makeContext(tmpDir));
         const libs = (readPodsJson() as any).libraries;
         expect(libs['AcousticConnectDebug']).toEqual({
-            name: 'AcousticConnectDebug', spec: '>= 2.1.51', count: 1,
+            name: 'AcousticConnectDebug', spec: '>= 2.2.35', count: 1,
         });
         expect(libs['AcousticConnect']).toBeUndefined();
     });

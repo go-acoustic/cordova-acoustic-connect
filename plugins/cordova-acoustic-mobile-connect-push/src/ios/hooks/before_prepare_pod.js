@@ -24,7 +24,7 @@
  * (in the Podfile or pods.json) are kept after them.
  *
  *   useRelease: true  (or missing) → AcousticConnect    (>= 2.1.51)
- *   useRelease: false               → AcousticConnectDebug (>= 2.1.51)
+ *   useRelease: false               → AcousticConnectDebug (>= 2.2.35, the first with the web capture functions)
  *
  * Connect.iOSVersion optionally pins a different Connect SDK version (mirrors
  * AndroidVersion in build-extras.gradle). Values below MIN_CONNECT_VERSION are
@@ -43,7 +43,7 @@ var podSources = require('./pod_sources.js');
 var RELEASE_NAME = 'AcousticConnect';
 var RELEASE_SPEC = '>= 2.1.51';
 var DEBUG_NAME   = 'AcousticConnectDebug';
-var DEBUG_SPEC   = '>= 2.1.51';
+var DEBUG_SPEC   = '>= 2.2.35';
 var MIN_IOS      = '15.1';
 var MIN_CONNECT_VERSION = '2.1.51';
 

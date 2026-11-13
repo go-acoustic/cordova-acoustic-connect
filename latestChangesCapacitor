@@ -4,6 +4,34 @@ Acoustic Connect plugin for Capacitor. Requires Capacitor 8 and Node 22 or newer
 
 New Features
 
+- Taps and gestures on page elements, on Android and iOS. A tap on an element
+  of the app's page is logged as a click and a tap on that element, and a
+  double tap, a long press, a swipe and a pinch as that gesture, as the SDK logs
+  them on a native control: with the element's DOM id (or its path from the
+  nearest element with one), its kind and its position. The plugin's page
+  script listens in the app's main frame only, passively, and reads no text or
+  field value. Android needs the Connect Android SDK 11.1.39-beta or later: set
+  `androidVersion` to it, since the default 11.1.17 logs nothing. iOS needs the
+  Connect iOS SDK 2.2.35 or later, the beta SDK, which the beta npm package links
+  by default. The release SDK (the public npm package on Swift Package Manager,
+  `useRelease: true` on CocoaPods) or an `iosVersion` below 2.2.35 logs nothing
+  on iOS until a release SDK has the functions
+- iOS, the Connect iOS SDK build: with Swift Package Manager the npm package
+  decides. The beta package links the beta SDK, `ConnectDebug-SP` from 2.2.35;
+  the public package the release SDK, `Connect-SP` from 2.1.51. With CocoaPods
+  `useRelease` decides, as on Android: by default the `AcousticConnectDebug`
+  pod 2.2.35 or newer, with `useRelease: true` the `AcousticConnect` pod 2.1.51
+  or newer
+- Migration on iOS. An app on Swift Package Manager whose rich-push extensions
+  were added with `npx acoustic-connect setup-ios-push` runs that command once
+  more after updating the plugin: it moves the extensions to the plugin's
+  package, and otherwise Xcode stops on two packages with a `Connect` module.
+  A CocoaPods app does the same after updating the plugin or changing
+  `useRelease` (it moves the extensions' pod; then `pod install`), and needs the
+  Acoustic spec repo as a Podfile source before `pod install`, as the
+  `AcousticConnectDebug` versions the plugin takes are published only there:
+  run `npx acoustic-connect setup-ios-pods`. `npx acoustic-connect doctor`
+  checks both (`ios-connect-package`, `ios-pod-sources`)
 - `logLocation()` and `logLocationUpdate(latitude, longitude, level?)`
 - Dialog events: `logDialogShowEvent`, `logDialogDismissEvent`,
   `logDialogButtonClickEvent` and `logDialogCustomEvent`. They are sent as custom
@@ -46,6 +74,9 @@ Fixes
 
 Known Issues
 
+- A swipe or a pinch that the WebView takes over to scroll or zoom the page is
+  not logged, on Android and iOS: the page sees the touch cancelled. A gesture
+  on an element that handles it itself (`touch-action: none`) is logged
 - On iOS, with the SDK handling push in automatic mode, its notification delegate
   takes the place of Capacitor's notification router, so Capacitor's push and
   local-notification events (such as `pushNotificationActionPerformed`) do not
@@ -57,8 +88,9 @@ Known Issues
   show rich media)
 - The manual push calls (`didRegisterWithToken` and the others) are checked with
   a fake SDK, not against a real push
-- `iosVersion` applies only to apps that use CocoaPods; with Swift Package
-  Manager the plugin's `Package.swift` takes the newest 2.x from 2.1.51
+- `iosVersion` and `useRelease` apply on iOS only to apps that use CocoaPods;
+  with Swift Package Manager the npm package's `Package.swift` takes the newest
+  2.x from 2.2.35 (beta package) or 2.1.51 (public package)
 - Native masking rules do not reach the page: the SDK sees the WebView as one
   control. Use `screenCaptureEnabled: false` to keep page content out of
   captures
@@ -71,5 +103,7 @@ Our environment for this release:
 - Xcode 26.5
 - MacOS 26.5
 - Capacitor 8, Node 22
-- iOS 15.1 or newer (Connect iOS SDK 2.1.51 or newer, floating)
+- iOS 15.1 or newer (Connect iOS SDK 2.2.35 or newer, the beta build, floating;
+  the release build 2.1.51 or newer in the public package, or with
+  `useRelease: true` on CocoaPods)
 - Android minSdk 26, SDK 36 (Connect Android SDK 11.1.17)

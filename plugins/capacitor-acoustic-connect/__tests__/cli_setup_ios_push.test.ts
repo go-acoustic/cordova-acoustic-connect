@@ -3,12 +3,15 @@ const { spawnSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+// The public package's Package.swift links Connect-SP (the release step rewrites it); capacitor_release.test.ts checks that one.
+const itBeta = require('../package.json').name.endsWith('-beta') ? it : it.skip;
 
 const {
   parseArgs,
   appGroupFor,
   teamFor,
   sdkVersionFrom,
+  spmPackageFrom,
   setupIosPush,
   setupIosPods,
   addPodSpecsSource,
@@ -101,20 +104,45 @@ describe('teamFor', () => {
 });
 
 describe('sdkVersionFrom', () => {
-  it('reads the pinned Connect-SP version out of Package.swift, so the extensions use the SDK of the app', () => {
-    const swift = '.package(url: "https://github.com/go-acoustic/Connect-SP.git", exact: "2.1.15")';
-    expect(sdkVersionFrom(swift)).toBe('2.1.15');
-    expect(sdkVersionFrom('.package(url: "https://github.com/go-acoustic/Connect-SP.git", from: "2.1.51")')).toBe(
-      '2.1.51',
-    );
-    expect(sdkVersionFrom(fs.readFileSync(path.join(__dirname, '..', 'Package.swift'), 'utf8'))).toMatch(
-      /^\d+\.\d+\.\d+$/,
-    );
+  itBeta(
+    'reads the ConnectDebug-SP version the plugin asks for out of Package.swift, so the extensions use the SDK of the app',
+    () => {
+      const swift = '.package(url: "https://github.com/go-acoustic/ConnectDebug-SP.git", exact: "2.2.36")';
+      expect(sdkVersionFrom(swift)).toBe('2.2.36');
+      expect(
+        sdkVersionFrom('.package(url: "https://github.com/go-acoustic/ConnectDebug-SP.git", from: "2.2.35")'),
+      ).toBe('2.2.35');
+      expect(sdkVersionFrom(fs.readFileSync(path.join(__dirname, '..', 'Package.swift'), 'utf8'))).toBe('2.2.35');
+    },
+  );
+
+  it("reads the version of the release package when asked for it, and not the other one's", () => {
+    expect(
+      sdkVersionFrom('.package(url: "https://github.com/go-acoustic/Connect-SP.git", from: "2.1.51")', 'Connect-SP'),
+    ).toBe('2.1.51');
+    expect(sdkVersionFrom('.package(url: "https://github.com/go-acoustic/Connect-SP.git", from: "2.1.51")')).toBeNull();
+    expect(
+      sdkVersionFrom(
+        '.package(url: "https://github.com/go-acoustic/ConnectDebug-SP.git", from: "2.2.35")',
+        'Connect-SP',
+      ),
+    ).toBeNull();
   });
 
   it('is null when there is no pin', () => {
     expect(sdkVersionFrom('// nothing')).toBeNull();
   });
+
+  itBeta(
+    'names the Connect package the Swift package links: the beta one here, the release one in the public package',
+    () => {
+      expect(spmPackageFrom(fs.readFileSync(path.join(__dirname, '..', 'Package.swift'), 'utf8'))).toBe(
+        'ConnectDebug-SP',
+      );
+      expect(spmPackageFrom('.product(name: "Connect", package: "Connect-SP")')).toBe('Connect-SP');
+      expect(spmPackageFrom('// nothing')).toBeNull();
+    },
+  );
 });
 
 describe('addPodSpecsSource', () => {
@@ -203,24 +231,35 @@ describe('setupIosPush', () => {
     expect(report.written).not.toContain('ConnectNSE/NotificationService.swift');
   });
 
-  it('hands the project, the group, the SDK version and the team to the script that edits the Xcode project', () => {
-    const dir = app();
-    const calls: unknown[] = [];
-    setupIosPush({
-      dir,
-      appGroup: GROUP,
-      team: 'ABCDE12345',
-      ruby: (args: unknown) => (calls.push(args), { status: 0, output: '' }),
-    });
-    expect(calls).toEqual([
-      {
-        project: path.join(dir, 'ios', 'App', 'App.xcodeproj'),
+  itBeta(
+    'hands the project, the group, the SDK version and the team to the script that edits the Xcode project',
+    () => {
+      const dir = app();
+      const calls: unknown[] = [];
+      setupIosPush({
+        dir,
         appGroup: GROUP,
-        sdkVersion: expect.stringMatching(/^\d+\.\d+\.\d+$/),
         team: 'ABCDE12345',
-        linkSdk: 'spm',
-      },
-    ]);
+        ruby: (args: unknown) => (calls.push(args), { status: 0, output: '' }),
+      });
+      expect(calls).toEqual([
+        {
+          project: path.join(dir, 'ios', 'App', 'App.xcodeproj'),
+          appGroup: GROUP,
+          sdkPackage: 'ConnectDebug-SP',
+          sdkVersion: '2.2.35',
+          team: 'ABCDE12345',
+          linkSdk: 'spm',
+        },
+      ]);
+    },
+  );
+
+  itBeta("has the script link the package of the plugin's Package.swift, whatever useRelease says", () => {
+    const dir = app({ 'capacitor.config.json': { plugins: { AcousticConnect: { useRelease: true } } } });
+    const calls: { sdkPackage: string; sdkVersion: string }[] = [];
+    setupIosPush({ dir, appGroup: GROUP, ruby: (args: never) => (calls.push(args), { status: 0, output: '' }) });
+    expect(calls.map((c) => [c.sdkPackage, c.sdkVersion])).toEqual([['ConnectDebug-SP', '2.2.35']]);
   });
 
   it('fails, with the output of the script, when the script fails', () => {
@@ -263,15 +302,13 @@ describe('setupIosPush', () => {
       return { calls, report };
     };
 
-    it('gives each extension a target block with the AcousticConnect pod, and has the script link no Swift package', () => {
+    it('gives each extension a target block with the pod of the plugin, the beta SDK, and has the script link no Swift package', () => {
       const dir = app({ 'ios/App/Podfile': PODFILE });
       const { calls, report } = run(dir);
       const podfile = read(dir, 'Podfile');
       expect(podfile).toContain(PODFILE);
       for (const name of ['ConnectNSE', 'ConnectNCE']) {
-        expect(podfile).toMatch(
-          new RegExp(`target '${name}' do\\n  pod 'AcousticConnect', '>= \\d+\\.\\d+\\.\\d+'\\nend`),
-        );
+        expect(podfile).toContain(`target '${name}' do\n  pod 'AcousticConnectDebug', '>= 2.2.35'\nend`);
       }
       expect(report.usesPods).toBe(true);
       expect(report.podfileTargets).toEqual(['ConnectNSE', 'ConnectNCE']);
@@ -315,7 +352,68 @@ describe('setupIosPush', () => {
         'capacitor.config.json': { plugins: { AcousticConnect: { iosVersion: '2.2.2' } } },
       });
       run(dir);
-      expect(read(dir, 'Podfile')).toMatch(/pod 'AcousticConnect', '>= \d+\.\d+\.\d+', '= 2\.2\.2'/);
+      expect(read(dir, 'Podfile')).toMatch(/pod 'AcousticConnectDebug', '>= 2\.1\.51', '= 2\.2\.2'/);
+    });
+
+    it("reads useRelease from the app's config first, then from the copy cap sync left, the order of the podspec", () => {
+      const dir = app({
+        'ios/App/Podfile': PODFILE,
+        'capacitor.config.json': { plugins: { AcousticConnect: { useRelease: false } } },
+        'ios/App/App/capacitor.config.json': { plugins: { AcousticConnect: { useRelease: true } } },
+      });
+      expect(run(dir).report.pod).toBe('AcousticConnectDebug');
+      const synced = app({
+        'ios/App/Podfile': PODFILE,
+        'ios/App/App/capacitor.config.json': { plugins: { AcousticConnect: { useRelease: true } } },
+      });
+      expect(run(synced).report.pod).toBe('AcousticConnect');
+    });
+
+    it('gives the extensions the release pod when useRelease is true, like the podspec', () => {
+      const dir = app({
+        'ios/App/Podfile': PODFILE,
+        'capacitor.config.json': { plugins: { AcousticConnect: { useRelease: true } } },
+      });
+      run(dir);
+      expect(read(dir, 'Podfile')).toContain("target 'ConnectNSE' do\n  pod 'AcousticConnect', '>= 2.1.51'\nend");
+      const pinned = app({
+        'ios/App/Podfile': PODFILE,
+        'capacitor.config.json': { plugins: { AcousticConnect: { useRelease: true, iosVersion: '2.2.2' } } },
+      });
+      run(pinned);
+      expect(read(pinned, 'Podfile')).toMatch(/pod 'AcousticConnect', '>= 2\.1\.51', '= 2\.2\.2'/);
+    });
+
+    it('moves a block of the other pod to the pod of the plugin, as two Connect pods cannot be in one app', () => {
+      const dir = app({
+        'ios/App/Podfile': PODFILE + "\ntarget 'ConnectNSE' do\n  pod 'AcousticConnect', '>= 2.1.51'\nend\n",
+      });
+      const { report } = run(dir);
+      const podfile = read(dir, 'Podfile');
+      expect(podfile).toContain("target 'ConnectNSE' do\n  pod 'AcousticConnectDebug', '>= 2.2.35'\nend");
+      expect(podfile).not.toMatch(/pod 'AcousticConnect'[,\n]/);
+      expect(podfile.match(/target 'ConnectNSE'/g)).toHaveLength(1);
+      expect(report.podfileTargets).toEqual(['ConnectNCE']);
+      expect(report.podfileMoved).toEqual(['ConnectNSE']);
+      expect(run(dir).report.podfileMoved).toEqual([]);
+
+      const back = app({
+        'ios/App/Podfile': PODFILE + '\ntarget \'ConnectNCE\' do\n  pod "AcousticConnectDebug"\nend\n',
+        'capacitor.config.json': { plugins: { AcousticConnect: { useRelease: true } } },
+      });
+      expect(run(back).report.podfileMoved).toEqual(['ConnectNCE']);
+      expect(read(back, 'Podfile')).toContain("target 'ConnectNCE' do\n  pod 'AcousticConnect', '>= 2.1.51'\nend");
+    });
+
+    it('leaves a block that has the pod of the plugin as it is, and moves nothing in a dry run', () => {
+      const own = PODFILE + "\ntarget 'ConnectNSE' do\n  pod 'AcousticConnectDebug', '= 2.2.36'\nend\n";
+      const dir = app({ 'ios/App/Podfile': own });
+      expect(run(dir).report.podfileMoved).toEqual([]);
+      expect(read(dir, 'Podfile')).toContain("pod 'AcousticConnectDebug', '= 2.2.36'");
+      const other = PODFILE + "\ntarget 'ConnectNSE' do\n  pod 'AcousticConnect'\nend\n";
+      const dry = app({ 'ios/App/Podfile': other });
+      expect(run(dry, { dryRun: true }).report.podfileMoved).toEqual(['ConnectNSE']);
+      expect(read(dry, 'Podfile')).toBe(other);
     });
 
     it('stops, naming iosVersion, when it is not a version', () => {

@@ -11,6 +11,7 @@
 package co.acoustic.connect.capacitor
 
 import android.util.Log
+import android.view.View
 import org.json.JSONObject
 
 /**
@@ -222,6 +223,19 @@ class AcousticConnect(
     fun getSdkVersion(reply: Reply) = reply.resolve(JSONObject().put("value", sdk.libraryVersion()))
 
     fun isSdkEnabled(reply: Reply) = reply.resolve(JSONObject().put("value", sdk.isEnabled()))
+
+    /**
+     * Logs a tap or gesture the page script (src/web-gestures.ts) saw on a page element. Resolves `{ queued }`, whether the SDK queued
+     * it; never fails: the script sends one at every touch and waits for none.
+     */
+    fun logWebEvent(webView: View?, data: JSONObject, reply: Reply) {
+        val answer = { queued: Boolean -> reply.resolve(JSONObject().put("queued", queued)) }
+        if (webView == null || !sdk.isEnabled()) return answer(false)
+        val ran = ui.run {
+            answer(runCatching { sdk.logWebEvent(webView, data) }.onFailure { Log.w(TAG, "logWebEvent threw: ${it.message}") }.getOrDefault(false))
+        }
+        if (!ran) answer(false)
+    }
 
     /** Never fails: a flush that cannot run only delays the upload. */
     fun flushQueues(reply: Reply) {

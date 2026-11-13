@@ -16,6 +16,8 @@
 #   ACOUSTIC_DEPLOYMENT_TARGET iOS deployment target            (default 15.1)
 #   ACOUSTIC_SWIFT_VERSION     Swift version                    (default 5.0)
 #   ACOUSTIC_SDK_VARIANT       AcousticConnect|AcousticConnectDebug (default AcousticConnectDebug)
+#   ACOUSTIC_WEB_CAPTURE       "1" when the SDK can log taps and gestures on page elements: the App target is
+#                              compiled with CONNECT_WEB_CAPTURE (default "0")
 #   ACOUSTIC_PUSH_ENABLED      "0" when Connect.PushEnabled is false: no ConnectNSE/ConnectNCE targets and no
 #                              embed phase are added, the plugin is still wired into the App target (default "1")
 #
@@ -36,6 +38,8 @@ APP_BUNDLE_ID      = env!('ACOUSTIC_APP_BUNDLE_ID')
 DEPLOYMENT_TARGET  = ENV.fetch('ACOUSTIC_DEPLOYMENT_TARGET', '15.1')
 SWIFT_VERSION      = ENV.fetch('ACOUSTIC_SWIFT_VERSION', '5.0')
 SDK_VARIANT        = ENV.fetch('ACOUSTIC_SDK_VARIANT', 'AcousticConnectDebug')
+WEB_CAPTURE        = ENV.fetch('ACOUSTIC_WEB_CAPTURE', '0') == '1'
+WEB_CAPTURE_CONDITION = 'CONNECT_WEB_CAPTURE'
 # Push has always been on in this plugin: only an explicit "0" turns the extensions off.
 PUSH_ENABLED       = ENV.fetch('ACOUSTIC_PUSH_ENABLED', '1') != '0'
 # Host app's <widget version="..."> from config.xml — must match the App target's own
@@ -79,6 +83,12 @@ PLUGIN_COMPILE_FILES = [
     # assumption breaks silently (wrong group, no error) if `path` ever
     # gains/loses a segment; an explicit, paired anchor fails loudly instead
     # (see the start_with? check at its point of use).
+    group_anchor: "App/Plugins",
+  },
+  {
+    # Logs the taps and gestures the page script sees on page elements.
+    path: "App/Plugins/co.acoustic.connect.push/ConnectWebEvents.swift",
+    type: 'sourcecode.swift',
     group_anchor: "App/Plugins",
   },
   {
@@ -257,6 +267,20 @@ end
 app_target.build_configurations.each do |config|
   MAC_CATALYST_SETTINGS.each { |k, v| config.build_settings[k] = v }
   config.build_settings['DEVELOPMENT_TEAM'] = DEVELOPMENT_TEAM if TEAM_SET
+
+  # ConnectWebEvents.swift calls the SDK's web capture functions only with CONNECT_WEB_CAPTURE: an SDK
+  # without them would not compile it. The app's own conditions are kept.
+  current = config.build_settings['SWIFT_ACTIVE_COMPILATION_CONDITIONS']
+  conditions = current.is_a?(Array) ? current.dup : current.to_s.split
+  conditions.delete(WEB_CAPTURE_CONDITION)
+  if WEB_CAPTURE
+    # A setting of its own would hide the project's conditions: start from them when the target has none.
+    conditions << '$(inherited)' if current.nil?
+    conditions << WEB_CAPTURE_CONDITION
+  end
+  unless current.nil? && conditions.empty?
+    config.build_settings['SWIFT_ACTIVE_COMPILATION_CONDITIONS'] = conditions.join(' ')
+  end
 
   # Defensive default only, never an overwrite — cordova-ios's own
   # App.xcodeproj template has set SWIFT_VERSION on every configuration for

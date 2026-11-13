@@ -15,6 +15,11 @@ import UIKit
 // plugin only compiles this adapter when the module is there.
 #if canImport(Connect)
 import Connect
+// The functions that log taps and gestures on page elements, for Acoustic's plugins only, in SDK 2.2.35 and later. The podspec
+// and Package.swift define CONNECT_WEB_CAPTURE only when the SDK they link is at least that version.
+#if CONNECT_WEB_CAPTURE
+@_spi(ConnectPlugins) import Connect
+#endif
 
 /// The SDK itself.
 @MainActor
@@ -99,6 +104,54 @@ final class ConnectSdkImpl: ConnectSdk {
     func logLocationUpdate(latitude: Double, longitude: Double, level: MonitoringLevel) -> Bool {
         ConnectCustomEvent().logLocationUpdate(withLatitude: latitude, longitude: longitude, level: Self.map(level))
     }
+
+    #if CONNECT_WEB_CAPTURE
+    func logWebEvent(in webView: UIView, event: [String: Any]) -> Bool {
+        guard let target = (event["target"] as? [String: Any]).flatMap(Self.webTarget),
+              let touches = Self.webTouches(event["touches"]) else {
+            return false
+        }
+        let kind = event["kind"] as? String ?? ""
+        let viewportWidth = Self.webNumber(event["viewportWidth"]) ?? 0
+        let touchedAt = Self.webNumber(event["touchedAt"]).map { Date(timeIntervalSince1970: $0 / 1_000) } ?? Date()
+        if kind == "click" {
+            return ConnectSDK.shared.logWebClick(in: webView, viewportWidth: viewportWidth, target: target,
+                                                 at: touches[0][0], touchedAt: touchedAt)
+        }
+        return ConnectSDK.shared.logWebGesture(in: webView, viewportWidth: viewportWidth, tlEvent: kind, target: target,
+                                               touches: touches, direction: event["direction"] as? String,
+                                               velocity: Self.webPoint(event["velocity"]), touchedAt: touchedAt)
+    }
+
+    private static func webTarget(_ json: [String: Any]) -> ConnectWebTarget? {
+        guard let bounds = json["bounds"] as? [String: Any] else { return nil }
+        let box = CGRect(x: webNumber(bounds["x"]) ?? .nan, y: webNumber(bounds["y"]) ?? .nan,
+                         width: webNumber(bounds["width"]) ?? .nan, height: webNumber(bounds["height"]) ?? .nan)
+        return ConnectWebTarget(id: json["id"] as? String ?? "", isDomId: json["isDomId"] as? Bool ?? false,
+                                type: json["type"] as? String ?? "", tlType: json["tlType"] as? String ?? "",
+                                bounds: box)
+    }
+
+    /// Each finger's points, or nil when there is no point at all.
+    private static func webTouches(_ json: Any?) -> [[CGPoint]]? {
+        guard let fingers = json as? [Any] else { return nil }
+        let touches = fingers.map { ($0 as? [Any] ?? []).compactMap(webPoint) }
+        return touches.isEmpty || touches.contains(where: \.isEmpty) ? nil : touches
+    }
+
+    private static func webPoint(_ json: Any?) -> CGPoint? {
+        guard let point = json as? [String: Any] else { return nil }
+        return CGPoint(x: webNumber(point["x"]) ?? .nan, y: webNumber(point["y"]) ?? .nan)
+    }
+
+    private static func webNumber(_ json: Any?) -> Double? {
+        (json as? NSNumber)?.doubleValue
+    }
+    #else
+    func logWebEvent(in webView: UIView, event: [String: Any]) -> Bool {
+        false
+    }
+    #endif
 
     func setConfigItem(key: String, value: Any) -> Bool {
         ConnectApplicationHelper.sharedInstance().setConfigurableItem(key, value: value)

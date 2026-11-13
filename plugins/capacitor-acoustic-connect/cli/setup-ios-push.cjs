@@ -12,10 +12,13 @@
  * the `xcodeproj` gem that CocoaPods brings) add the targets to the Xcode project. Running it again is safe: it never overwrites a file
  * that is there, and the project edits are idempotent.
  *
- * Both ways of linking the plugin are covered. In a Swift Package Manager app the extensions get the Connect SDK as a Swift package of the
- * Xcode project. In a CocoaPods app (ios/App/Podfile) they get it as the AcousticConnect pod: the command adds a target block for each
- * extension to the Podfile, with the same version requirement as the plugin's podspec, and `pod install` (or `npx cap sync ios`) then links
- * it. The SDK is never linked to an extension by both ways.
+ * Both ways of linking the plugin are covered, and the extensions always get the SDK build the plugin links. In a Swift Package Manager app
+ * they get the Connect SDK as a Swift package of the Xcode project, the one the plugin's Package.swift links: ConnectDebug-SP in the beta npm
+ * package, Connect-SP in the public one. In a CocoaPods app (ios/App/Podfile) they get it as the pod of the plugin's podspec (AcousticConnect
+ * with useRelease, else AcousticConnectDebug): the command adds a target block for each extension to the Podfile, with the same version
+ * requirement as the podspec, and `pod install` (or `npx cap sync ios`) then links it. The SDK is never linked to an extension by both ways.
+ * Both SDK builds vend the module Connect, so an app cannot link both: an extension an earlier run linked to the other one (by another npm
+ * package or version of the plugin, or before a change of useRelease) is moved to the plugin's.
  */
 
 const fs = require('fs');
@@ -28,6 +31,10 @@ const SCRIPT = path.join(__dirname, 'add_ios_extensions.rb');
 const PACKAGE_SWIFT = path.join(__dirname, '..', 'Package.swift');
 const EXTENSIONS = ['ConnectNSE', 'ConnectNCE'];
 const APP_GROUP = /^group\.[A-Za-z0-9.-]+[A-Za-z0-9]$/;
+/** The floor of the release pod and of an iosVersion the app names: SDK_FLOOR of the podspec. */
+const RELEASE_FLOOR = '2.1.51';
+/** The floor of the beta pod: WEB_CAPTURE_FLOOR of the podspec. */
+const DEBUG_FLOOR = '2.2.35';
 
 function parseArgs(argv) {
     const options = { dir: undefined, appGroup: undefined, team: undefined, dryRun: false };
@@ -52,15 +59,22 @@ function parseArgs(argv) {
     return options;
 }
 
-/** A setting of the plugin block of the app's capacitor.config.json; undefined when there is none or the file cannot be read. */
+/**
+ * A setting of the plugin block of the app's capacitor.config.json, else of the copy `npx cap sync` leaves in ios/App/App/ (an app with a
+ * capacitor.config.ts has only that one), the order the podspec reads them in; undefined when neither has the block or can be read.
+ */
 function pluginSetting(dir, key) {
-    try {
-        const config = JSON.parse(fs.readFileSync(path.join(dir, 'capacitor.config.json'), 'utf8'));
-        const block = config.plugins && config.plugins.AcousticConnect;
-        return block ? block[key] : undefined;
-    } catch (_) {
-        return undefined;
+    const files = [path.join(dir, 'capacitor.config.json'), path.join(dir, 'ios', 'App', 'App', 'capacitor.config.json')];
+    for (let i = 0; i < files.length; i += 1) {
+        try {
+            const config = JSON.parse(fs.readFileSync(files[i], 'utf8'));
+            const block = config.plugins && config.plugins.AcousticConnect;
+            if (block) return block[key];
+        } catch (_) {
+            // not there or not JSON: the next file
+        }
     }
+    return undefined;
 }
 
 const TEAM_ID = /^[A-Z0-9]{10}$/;
@@ -93,20 +107,39 @@ function appGroupFor(options) {
     return group;
 }
 
-/** The Connect-SP version the plugin requires at least (`from:` in Package.swift; `exact:` is read too), which the extensions use as their floor. */
-function sdkVersionFrom(packageSwift) {
-    const match = /Connect-SP[^\n]*(?:exact|from):\s*"(\d+\.\d+\.\d+)"/.exec(packageSwift);
+/**
+ * The version of the Connect package `name` (ConnectDebug-SP by default, or Connect-SP) the plugin requires at least (`from:` in Package.swift;
+ * `exact:` is read too), which the extensions use as their floor; the one of ConnectDebug-SP is also the floor of the beta pod.
+ */
+function sdkVersionFrom(packageSwift, name) {
+    const match = new RegExp('/' + (name || 'ConnectDebug-SP') + '(?:\\.git)?"[^\\n]*(?:exact|from):\\s*"(\\d+\\.\\d+\\.\\d+)"').exec(packageSwift);
     return match ? match[1] : null;
 }
 
-/** The version requirement of the AcousticConnect pod, as the plugin's podspec states it: the floor of the plugin, and iosVersion when the app names one. */
-function podRequirements(dir, sdkVersion) {
+/** The Connect package the plugin's Package.swift links: ConnectDebug-SP (the beta npm package) or Connect-SP (the public one); null for neither. */
+function spmPackageFrom(packageSwift) {
+    const match = /\.product\(name:\s*"Connect",\s*package:\s*"(Connect(?:Debug)?-SP)"\)/.exec(packageSwift || '');
+    return match ? match[1] : null;
+}
+
+/** The Connect pod of the plugin's podspec: AcousticConnect when useRelease is true, else AcousticConnectDebug. */
+function podNameFor(useRelease) {
+    return useRelease === true ? 'AcousticConnect' : 'AcousticConnectDebug';
+}
+
+/**
+ * The Connect pod and its version requirement, as the plugin's podspec states them: the release pod from the plugin floor with useRelease, else
+ * the beta pod from its floor; with an iosVersion the app names, that version, from the plugin floor.
+ */
+function sdkPod(dir) {
     const value = pluginSetting(dir, 'iosVersion');
     const pinned = typeof value === 'string' ? value.trim() : '';
     if (pinned && !/^\d+\.\d+\.\d+$/.test(pinned)) {
         throw new Error('iosVersion "' + value + '" in the plugin block is not a version: write it as x.y.z');
     }
-    return pinned ? ['>= ' + sdkVersion, '= ' + pinned] : ['>= ' + sdkVersion];
+    const name = podNameFor(pluginSetting(dir, 'useRelease'));
+    const floor = name === 'AcousticConnect' ? RELEASE_FLOOR : DEBUG_FLOOR;
+    return { name: name, requirements: pinned ? ['>= ' + RELEASE_FLOOR, '= ' + pinned] : ['>= ' + floor] };
 }
 
 const PODSPECS_SOURCE = "source 'https://github.com/go-acoustic/PodSpecs.git'";
@@ -147,29 +180,54 @@ function setupIosPods(options) {
     return { usesPods: true, podfileSource: updated !== text };
 }
 
+function podLine(pod) {
+    return "pod '" + pod.name + "', " + pod.requirements.map(function (r) { return "'" + r + "'"; }).join(', ');
+}
+
 /**
- * Adds a target block with the AcousticConnect pod to the Podfile for each extension that has none; returns the names it added. A block that is
- * there is left as it is, so running the command again changes nothing. The blocks go at the end of the file, outside the target of the app.
- * The Acoustic spec repo is added as a source as well (addPodSpecsSource).
+ * Returns the Podfile text with the Connect pod of each extension's target block that names the other Connect pod (AcousticConnect for
+ * AcousticConnectDebug, or the other way round) replaced by `pod`, and the names of those extensions. A block that has the plugin's pod, or no
+ * Connect pod, is left as it is.
  */
-function addPodfileTargets(podfile, requirements, dryRun) {
+function moveConnectPods(text, pod) {
+    const moved = [];
+    EXTENSIONS.forEach(function (extension) {
+        const block = new RegExp('^[ \\t]*target[ \\t]+[\'"]' + extension + '[\'"][ \\t]+do\\b[\\s\\S]*?^[ \\t]*end\\b', 'm').exec(text);
+        if (!block) return;
+        const line = /^([ \t]*)pod[ \t]+(['"])(AcousticConnect(?:Debug)?)\2[^\n]*$/m.exec(block[0]);
+        if (!line || line[3] === pod.name) return;
+        moved.push(extension);
+        const rewritten = block[0].replace(line[0], line[1] + podLine(pod));
+        text = text.slice(0, block.index) + rewritten + text.slice(block.index + block[0].length);
+    });
+    return { text: text, moved: moved };
+}
+
+/**
+ * Adds a target block with the plugin's Connect pod to the Podfile for each extension that has none, and moves a block that names the other
+ * Connect pod to the plugin's (moveConnectPods); returns the names it added and moved. Any other block is left as it is, so running the command
+ * again changes nothing. The blocks go at the end of the file, outside the target of the app. The Acoustic spec repo is added as a source as
+ * well (addPodSpecsSource).
+ */
+function addPodfileTargets(podfile, pod, dryRun) {
     const original = fs.readFileSync(podfile, 'utf8');
-    let text = addPodSpecsSource(original);
+    const move = moveConnectPods(addPodSpecsSource(original), pod);
+    let text = move.text;
     const added = [];
     EXTENSIONS.forEach(function (extension) {
         if (new RegExp('^\\s*target\\s+[\'"]' + extension + '[\'"]', 'm').test(text)) return;
         added.push(extension);
-        const requirement = requirements.map(function (r) { return "'" + r + "'"; }).join(', ');
-        text = text.replace(/\s*$/, '\n') + '\ntarget \'' + extension + '\' do\n  pod \'AcousticConnect\', ' + requirement + '\nend\n';
+        text = text.replace(/\s*$/, '\n') + '\ntarget \'' + extension + '\' do\n  ' + podLine(pod) + '\nend\n';
     });
     if (text !== original && !dryRun) fs.writeFileSync(podfile, text);
-    return added;
+    return { added: added, moved: move.moved };
 }
 
 function runRuby(args) {
     const env = Object.assign({}, process.env, {
         ACOUSTIC_PROJECT_PATH: args.project,
         ACOUSTIC_APP_GROUP: args.appGroup,
+        ACOUSTIC_SDK_PACKAGE: args.sdkPackage,
         ACOUSTIC_SDK_VERSION: args.sdkVersion,
         ACOUSTIC_LINK_SDK: args.linkSdk,
         ACOUSTIC_DEVELOPMENT_TEAM: args.team || ''
@@ -186,8 +244,10 @@ function setupIosPush(options) {
     }
     const podfile = path.join(iosDir, 'Podfile');
     const usesPods = fs.existsSync(podfile);
-    const sdkVersion = sdkVersionFrom(fs.readFileSync(PACKAGE_SWIFT, 'utf8'));
-    if (!sdkVersion) throw new Error('the plugin pins no Connect-SP version in its Package.swift');
+    const packageSwift = fs.readFileSync(PACKAGE_SWIFT, 'utf8');
+    const sdkPackage = spmPackageFrom(packageSwift);
+    const sdkVersion = sdkPackage && sdkVersionFrom(packageSwift, sdkPackage);
+    if (!sdkVersion) throw new Error('the plugin pins no Connect-SP or ConnectDebug-SP version in its Package.swift');
 
     const written = [];
     const kept = [];
@@ -208,17 +268,25 @@ function setupIosPush(options) {
     });
 
     const podfileSource = usesPods && !hasPodSpecsSource(fs.readFileSync(podfile, 'utf8'));
-    const pods = usesPods ? addPodfileTargets(podfile, podRequirements(options.dir, sdkVersion), options.dryRun) : [];
+    const pod = usesPods ? sdkPod(options.dir) : null;
+    const pods = usesPods ? addPodfileTargets(podfile, pod, options.dryRun) : { added: [], moved: [] };
 
     if (!options.dryRun) {
         const result = (options.ruby || runRuby)({
-            project: project, appGroup: options.appGroup, sdkVersion: sdkVersion, team: options.team, linkSdk: usesPods ? 'pods' : 'spm'
+            project: project, appGroup: options.appGroup, sdkPackage: sdkPackage, sdkVersion: sdkVersion, team: options.team,
+            linkSdk: usesPods ? 'pods' : 'spm'
         });
         if (result.status !== 0) {
             throw new Error('adding the targets to the Xcode project failed (needs ruby and the xcodeproj gem: `gem install xcodeproj`):\n' + result.output);
         }
     }
-    return { written: written, kept: kept, sdkVersion: sdkVersion, usesPods: usesPods, podfileTargets: pods, podfileSource: podfileSource };
+    return {
+        written: written, kept: kept, sdkPackage: sdkPackage, sdkVersion: sdkVersion, usesPods: usesPods, pod: pod && pod.name,
+        podfileTargets: pods.added, podfileMoved: pods.moved, podfileSource: podfileSource
+    };
 }
 
-module.exports = { parseArgs, appGroupFor, teamFor, sdkVersionFrom, podRequirements, hasPodSpecsSource, addPodSpecsSource, setupIosPods, addPodfileTargets, setupIosPush, runRuby, PLACEHOLDER };
+module.exports = {
+    parseArgs, appGroupFor, teamFor, pluginSetting, sdkVersionFrom, spmPackageFrom, podNameFor, sdkPod, hasPodSpecsSource, addPodSpecsSource, moveConnectPods, setupIosPods,
+    addPodfileTargets, setupIosPush, runRuby, PLACEHOLDER, RELEASE_FLOOR, DEBUG_FLOOR
+};

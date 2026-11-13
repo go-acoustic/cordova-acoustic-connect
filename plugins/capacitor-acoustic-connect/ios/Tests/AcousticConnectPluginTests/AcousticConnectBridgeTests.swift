@@ -1,3 +1,4 @@
+import UIKit
 import XCTest
 @testable import AcousticConnectPlugin
 
@@ -89,6 +90,12 @@ final class FakeSdk: ConnectSdk {
     func logLocationUpdate(latitude: Double, longitude: Double, level: MonitoringLevel) -> Bool {
         calls.append("logLocationUpdate")
         lastLocation = (latitude, longitude, level)
+        return accepts
+    }
+    var lastWebEvent: (webView: UIView, event: [String: Any])?
+    func logWebEvent(in webView: UIView, event: [String: Any]) -> Bool {
+        calls.append("logWebEvent(\(event["kind"] as? String ?? ""))")
+        lastWebEvent = (webView, event)
         return accepts
     }
     func setConfigItem(key: String, value: Any) -> Bool {
@@ -266,6 +273,32 @@ final class AcousticConnectBridgeTests: XCTestCase {
     func testFlushQueues_flushes() {
         XCTAssertEqual(reply { bridge.flushQueues(reply: $0) }.resolveCount, 1)
         XCTAssertEqual(sdk.calls, ["flush"])
+    }
+
+    func testLogWebEvent_hasTheSdkLogTheEventAndResolvesWhetherItWasQueued() {
+        sdk.enabled = true
+        let webView = UIView()
+        let queued = reply { bridge.logWebEvent(webView: webView, ["kind": "click"], reply: $0) }
+        XCTAssertTrue(sdk.lastWebEvent?.webView === webView)
+        sdk.accepts = false
+        let refused = reply { bridge.logWebEvent(webView: webView, ["kind": "swipe"], reply: $0) }
+
+        XCTAssertEqual(sdk.calls, ["logWebEvent(click)", "logWebEvent(swipe)"])
+        XCTAssertEqual(queued.resolved?["queued"] as? Bool, true)
+        XCTAssertEqual(refused.resolved?["queued"] as? Bool, false)
+    }
+
+    func testLogWebEvent_logsNothingAndNeverFailsWhileItCannot() {
+        let disabled = reply { bridge.logWebEvent(webView: UIView(), ["kind": "click"], reply: $0) }
+        sdk.enabled = true
+        let noWebView = reply { bridge.logWebEvent(webView: nil, ["kind": "click"], reply: $0) }
+
+        XCTAssertEqual(sdk.calls, [])
+        for answer in [disabled, noWebView] {
+            XCTAssertFalse(answer.rejected)
+            XCTAssertEqual(answer.resolveCount, 1)
+            XCTAssertEqual(answer.resolved?["queued"] as? Bool, false)
+        }
     }
 
     func testSetCurrentScreenName_setsTheTrimmedName() {
@@ -653,6 +686,7 @@ private final class StuckSdk: ConnectSdk {
     func logScreenLayout(name: String, delayMs: Int?) -> Bool { false }
     func logLocation() -> Bool { false }
     func logLocationUpdate(latitude: Double, longitude: Double, level: MonitoringLevel) -> Bool { false }
+    func logWebEvent(in webView: UIView, event: [String: Any]) -> Bool { false }
     func setConfigItem(key: String, value: Any) -> Bool { false }
     func configItem(key: String) -> Any? { nil }
     func setKillSwitch(enabled: Bool, url: String?) {}

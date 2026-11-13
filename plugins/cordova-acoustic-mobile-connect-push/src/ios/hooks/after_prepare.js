@@ -174,7 +174,7 @@ function copyExtensionSources(pluginIosDir, iosDir, appGroupIdentifier, extensio
 function copyPluginSourceFiles(pluginIosDir, iosDir) {
     const pluginId  = 'co.acoustic.connect.push';
     const pluginDst = path.join(iosDir, 'App', 'Plugins', pluginId);
-    const files     = ['ConnectPlugin.swift', 'ConnectPushLaunchHolder.swift', 'ConnectPushLaunchHook.m'];
+    const files     = ['ConnectPlugin.swift', 'ConnectWebEvents.swift', 'ConnectPushLaunchHolder.swift', 'ConnectPushLaunchHook.m'];
 
     if (!fs.existsSync(pluginDst)) fs.mkdirSync(pluginDst, { recursive: true });
     for (const fname of files) {
@@ -291,15 +291,33 @@ function patchXcframeworksScriptPhases(pbxprojPath, variant) {
 
 function podVariantFromPodsJson(iosDir) {
     const podsJsonPath = path.join(iosDir, 'pods.json');
-    if (!fs.existsSync(podsJsonPath)) return { name: 'AcousticConnectDebug', spec: '>= 2.1.51' };
+    if (!fs.existsSync(podsJsonPath)) return { name: 'AcousticConnectDebug', spec: '>= 2.2.35' };
     try {
         const libs = (JSON.parse(fs.readFileSync(podsJsonPath, 'utf8')) || {}).libraries || {};
         if (libs['AcousticConnect'])
             return { name: 'AcousticConnect', spec: libs['AcousticConnect'].spec || '>= 2.1.51' };
         if (libs['AcousticConnectDebug'])
-            return { name: 'AcousticConnectDebug', spec: libs['AcousticConnectDebug'].spec || '>= 2.1.51' };
+            return { name: 'AcousticConnectDebug', spec: libs['AcousticConnectDebug'].spec || '>= 2.2.35' };
     } catch (_) {}
-    return { name: 'AcousticConnectDebug', spec: '>= 2.1.51' };
+    return { name: 'AcousticConnectDebug', spec: '>= 2.2.35' };
+}
+
+// The first SDK with the plugin-only functions that log taps and gestures on page elements.
+const WEB_CAPTURE_MIN_VERSION = [2, 2, 35];
+
+// Whether the pod has those functions: its spec (">= x.y.z" or "= x.y.z") asks for WEB_CAPTURE_MIN_VERSION
+// or later. The release pod's default spec asks for less, so a release build has them only when the app
+// pins such a version. ConnectWebEvents.swift calls them only when compiled with CONNECT_WEB_CAPTURE,
+// which the Ruby script sets on the App target from this.
+function hasWebCapture(pod) {
+    if (!pod) return false;
+    const m = /^\s*>?=\s*(\d+)\.(\d+)\.(\d+)\s*$/.exec(pod.spec || '');
+    if (!m) return false;
+    const version = [Number(m[1]), Number(m[2]), Number(m[3])];
+    for (let i = 0; i < 3; i++) {
+        if (version[i] !== WEB_CAPTURE_MIN_VERSION[i]) return version[i] > WEB_CAPTURE_MIN_VERSION[i];
+    }
+    return true;
 }
 
 
@@ -451,41 +469,47 @@ end
 // Cordova's "already installed" path skips copying the plugin's www/ JS files
 // and regenerating cordova_plugins.js. Without cordova_plugins.js the Cordova
 // module loader never defines `window.AcousticConnect`, so all JS-bridge calls
-// (logIdentity, etc.) fail silently at runtime.
+// (logIdentity, etc.) fail silently at runtime, and the page script that logs
+// taps and gestures on page elements never runs.
+const PLUGIN_JS_MODULES = [
+    { name: 'AcousticConnect', entry: { clobbers: ['AcousticConnect'] } },
+    { name: 'WebGestures',     entry: { runs: true } },
+];
+
 function ensurePluginJsModule(iosDir, pluginIosDir) {
     const wwwDir      = path.join(iosDir, 'www');
     const pluginId    = 'co.acoustic.connect.push';
-    const moduleName  = 'AcousticConnect';
-    const srcJs       = path.join(pluginIosDir, '..', '..', 'www', moduleName + '.js');
     const dstDir      = path.join(wwwDir, 'plugins', pluginId, 'www');
-    const dstJs       = path.join(dstDir, moduleName + '.js');
     const pluginsFile = path.join(wwwDir, 'cordova_plugins.js');
 
-    // Copy AcousticConnect.js, wrapped in cordova.define() as Cordova's build
-    // system normally does. Without the wrapper the top-level require('cordova/exec')
+    // Copy each module, wrapped in cordova.define() as Cordova's build system
+    // normally does. Without the wrapper the top-level require('cordova/exec')
     // in the raw source throws a ReferenceError in the browser context and kills
     // the entire JS runtime before deviceready fires.
-    if (!fs.existsSync(dstJs)) {
-        if (!fs.existsSync(srcJs)) {
-            console.warn('[after_prepare] ensurePluginJsModule: JS source not found at ' + srcJs);
-            return;
+    const deployed = [];
+    for (const jsModule of PLUGIN_JS_MODULES) {
+        const srcJs = path.join(pluginIosDir, '..', '..', 'www', jsModule.name + '.js');
+        const dstJs = path.join(dstDir, jsModule.name + '.js');
+        if (!fs.existsSync(dstJs)) {
+            if (!fs.existsSync(srcJs)) {
+                console.warn('[after_prepare] ensurePluginJsModule: JS source not found at ' + srcJs);
+                continue;
+            }
+            if (!fs.existsSync(dstDir)) fs.mkdirSync(dstDir, { recursive: true });
+            const raw      = fs.readFileSync(srcJs, 'utf8');
+            const moduleId = pluginId + '.' + jsModule.name;
+            const wrapped  = 'cordova.define("' + moduleId + '", function(require, exports, module) {\n' +
+                             raw + '\n});\n';
+            fs.writeFileSync(dstJs, wrapped, 'utf8');
+            console.log('[after_prepare] Deployed ' + jsModule.name + '.js (cordova.define-wrapped) to platform www/plugins/');
         }
-        if (!fs.existsSync(dstDir)) fs.mkdirSync(dstDir, { recursive: true });
-        const raw     = fs.readFileSync(srcJs, 'utf8');
-        const moduleId = pluginId + '.' + moduleName;
-        const wrapped  = 'cordova.define("' + moduleId + '", function(require, exports, module) {\n' +
-                         raw + '\n});\n';
-        fs.writeFileSync(dstJs, wrapped, 'utf8');
-        console.log('[after_prepare] Deployed ' + moduleName + '.js (cordova.define-wrapped) to platform www/plugins/');
+        // The module entry Cordova would normally inject into cordova_plugins.js.
+        deployed.push(Object.assign({
+            id:       pluginId + '.' + jsModule.name,
+            file:     'plugins/' + pluginId + '/www/' + jsModule.name + '.js',
+            pluginId: pluginId,
+        }, jsModule.entry));
     }
-
-    // The module entry Cordova would normally inject into cordova_plugins.js.
-    const moduleEntry = {
-        id:       pluginId + '.' + moduleName,
-        file:     'plugins/' + pluginId + '/www/' + moduleName + '.js',
-        pluginId: pluginId,
-        clobbers: [moduleName],
-    };
 
     // Read existing cordova_plugins.js or start with empty list.
     let modules = [];
@@ -505,11 +529,10 @@ function ensurePluginJsModule(iosDir, pluginIosDir) {
         } catch (_) { /* malformed — overwrite */ }
     }
 
-    // Check if our entry is already present.
-    const alreadyPresent = modules.some(m => m.id === moduleEntry.id);
-    if (alreadyPresent) return;
-
-    modules.push(moduleEntry);
+    // Add the entries that are not there yet.
+    const missing = deployed.filter(entry => !modules.some(m => m.id === entry.id));
+    if (missing.length === 0) return;
+    modules.push(...missing);
 
     // Write the file in Cordova's standard format.
     const output = [
@@ -519,7 +542,7 @@ function ensurePluginJsModule(iosDir, pluginIosDir) {
         '});',
     ].join('\n');
     fs.writeFileSync(pluginsFile, output, 'utf8');
-    console.log('[after_prepare] Updated cordova_plugins.js with ' + moduleEntry.id);
+    console.log('[after_prepare] Updated cordova_plugins.js with ' + missing.map(m => m.id).join(', '));
 }
 
 // ---------------------------------------------------------------------------
@@ -799,6 +822,7 @@ module.exports = function (context) {
         ACOUSTIC_APP_TARGET:    projectName,
         ACOUSTIC_APP_BUNDLE_ID: appBundleId,
         ACOUSTIC_SDK_VARIANT:   pod.name,
+        ACOUSTIC_WEB_CAPTURE:   hasWebCapture(pod) ? '1' : '0',
         ACOUSTIC_APP_VERSION:   appVersion,
         ACOUSTIC_PUSH_ENABLED:  pushEnabled ? '1' : '0',
     });
@@ -868,6 +892,8 @@ module.exports._internal = {
     removeRemoteNotificationMode,
     updatePodfile,
     patchXcframeworksScriptPhases,
+    hasWebCapture,
+    ensurePluginJsModule,
     resolveConnectConfigPath,
     resolveIosDevelopmentTeam,
     resolveAppVersion,

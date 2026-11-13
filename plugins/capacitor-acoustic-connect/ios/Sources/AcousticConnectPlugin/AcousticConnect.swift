@@ -9,6 +9,7 @@
  */
 
 import Foundation
+import UIKit
 
 /// The bridge logic of the Capacitor plugin: one method per plugin method, each taking the options
 /// object of the call and answering through a `Reply`. The TypeScript API (src/api.ts) validates first; the
@@ -183,6 +184,13 @@ final class AcousticConnect {
     func flushQueues(reply: Reply) {
         sdk.flush()
         reply.resolve()
+    }
+
+    /// A tap or gesture the page script saw on a page element of `webView`. Never fails: resolves whether the SDK queued it,
+    /// never while the SDK is not enabled or there is no web view.
+    func logWebEvent(webView: UIView?, _ options: [String: Any], reply: Reply) {
+        guard let webView, sdk.isEnabled else { return reply.resolve(["queued": false]) }
+        reply.resolve(["queued": sdk.logWebEvent(in: webView, event: options)])
     }
 
     func setCurrentScreenName(_ options: [String: Any], reply: Reply) {

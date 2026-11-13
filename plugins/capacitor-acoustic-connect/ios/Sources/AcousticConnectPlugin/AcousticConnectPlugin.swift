@@ -23,6 +23,7 @@ public class AcousticConnectPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "getSdkVersion", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "isSdkEnabled", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "flushQueues", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "logWebEvent", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setCurrentScreenName", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "logCustomEvent", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "logSignal", returnType: CAPPluginReturnPromise),
@@ -81,7 +82,9 @@ public class AcousticConnectPlugin: CAPPlugin, CAPBridgedPlugin {
         Task { @MainActor [weak self] in
             guard let connect = self?.connect else {
                 return reply.reject(code: "ACOUSTIC_INTERNAL_ERROR",
-                                    message: "The Acoustic Connect iOS SDK is not linked: add the AcousticConnect pod to the app")
+                                    message: "The Acoustic Connect iOS SDK is not linked: with CocoaPods run pod install, which adds the "
+                                        + "AcousticConnectDebug pod (AcousticConnect with useRelease); with Swift Package Manager resolve the "
+                                        + "plugin's Swift package, which brings ConnectDebug-SP (Connect-SP in the public package)")
             }
             await body(connect, options, reply)
         }
@@ -109,6 +112,12 @@ public class AcousticConnectPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func flushQueues(_ call: CAPPluginCall) {
         withBridge(call) { connect, options, reply in connect.flushQueues(reply: reply) }
+    }
+
+    @objc func logWebEvent(_ call: CAPPluginCall) {
+        withBridge(call) { [weak self] connect, options, reply in
+            connect.logWebEvent(webView: self?.bridge?.webView, options, reply: reply)
+        }
     }
 
     @objc func setCurrentScreenName(_ call: CAPPluginCall) {

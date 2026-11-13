@@ -304,12 +304,22 @@ describe('iOS', () => {
       expect(find(checks, 'ios-pod-sources').status).toBe('ok');
     });
 
-    it('warns, naming the command, when the Podfile does not name it or only in a comment', () => {
+    it('fails, naming the command, when the Podfile does not name it or only in a comment: the beta pod is only there', () => {
       for (const podfile of ["platform :ios, '15.1'\n", `# ${PODSPECS}\n`]) {
         const check = find(run(ios({ 'ios/App/Podfile': podfile })), 'ios-pod-sources');
-        expect(check.status).toBe('warn');
+        expect(check.status).toBe('fail');
+        expect(check.message).toMatch(/AcousticConnectDebug/);
         expect(check.message).toMatch(/setup-ios-pods/);
       }
+    });
+
+    it('only warns with useRelease, as the release pod has its older versions on trunk', () => {
+      const check = find(
+        run(ios({ 'ios/App/Podfile': "platform :ios, '15.1'\n" }, { useRelease: true })),
+        'ios-pod-sources',
+      );
+      expect(check.status).toBe('warn');
+      expect(check.message).toMatch(/setup-ios-pods/);
     });
 
     it('skips an app that uses Swift Package Manager', () => {
@@ -319,8 +329,63 @@ describe('iOS', () => {
 
   it('skips everything about iOS when the app has no iOS project', () => {
     const checks = run(app({ 'capacitor.config.json': block() }));
-    for (const id of ['ios-entitlements', 'ios-background-mode', 'ios-resources'])
+    for (const id of ['ios-entitlements', 'ios-background-mode', 'ios-resources', 'ios-connect-package'])
       expect(find(checks, id).status).toBe('skip');
+  });
+
+  describe('the Connect package of the extensions', () => {
+    const PACKAGE = (name: string) =>
+      PBX('App/App.entitlements') +
+      ` ConnectResources.bundle repositoryURL = "https://github.com/go-acoustic/${name}.git";\n`;
+    const EXTENSION = (pod: string) => `\ntarget 'ConnectNSE' do\n  pod '${pod}', '>= 2.1.51'\nend\n`;
+
+    const spm = (name: string, cfg: Record<string, unknown> = {}) =>
+      find(run(ios({ 'ios/App/App.xcodeproj/project.pbxproj': PACKAGE(name) }, cfg)), 'ios-connect-package');
+
+    it("fails, naming the command, when the project links the other Connect package than the plugin's Package.swift, whatever useRelease says", () => {
+      const release = spm('Connect-SP');
+      expect(release.status).toBe('fail');
+      expect(release.message).toMatch(/links Connect-SP, but the plugin links ConnectDebug-SP/);
+      expect(release.message).toMatch(/npx acoustic-connect setup-ios-push/);
+      expect(spm('Connect-SP', { useRelease: true }).status).toBe('fail');
+    });
+
+    it('knows a package by the last part of its URL, so a mirror counts', () => {
+      const mirror = (url: string) =>
+        find(
+          run(
+            ios({
+              'ios/App/App.xcodeproj/project.pbxproj': PBX('App/App.entitlements') + ` repositoryURL = "${url}";\n`,
+            }),
+          ),
+          'ios-connect-package',
+        ).status;
+      expect(mirror('https://git.example.com/mirror/Connect-SP')).toBe('fail');
+      expect(mirror('https://git.example.com/mirror/ConnectDebug-SP.git')).toBe('ok');
+      expect(mirror('https://git.example.com/mirror/Connect-SP-tools.git')).toBe('skip');
+    });
+
+    it('is fine with the package of the plugin, and has nothing to look at in a project without a Connect package', () => {
+      expect(spm('ConnectDebug-SP').status).toBe('ok');
+      expect(spm('ConnectDebug-SP', { useRelease: true }).status).toBe('ok');
+      expect(find(run(ios()), 'ios-connect-package').status).toBe('skip');
+    });
+
+    it('fails when an extension block of the Podfile has the other Connect pod than the plugin', () => {
+      const podfile = (pod: string) => ({ 'ios/App/Podfile': `target 'App' do\nend\n${EXTENSION(pod)}` });
+      const release = find(run(ios(podfile('AcousticConnect'))), 'ios-connect-package');
+      expect(release.status).toBe('fail');
+      expect(release.message).toMatch(/AcousticConnectDebug/);
+      expect(release.message).toMatch(/npx acoustic-connect setup-ios-push/);
+      expect(find(run(ios(podfile('AcousticConnectDebug'))), 'ios-connect-package').status).toBe('ok');
+      expect(find(run(ios(podfile('AcousticConnect'), { useRelease: true })), 'ios-connect-package').status).toBe('ok');
+      expect(find(run(ios(podfile('AcousticConnectDebug'), { useRelease: true })), 'ios-connect-package').status).toBe(
+        'fail',
+      );
+      expect(find(run(ios({ 'ios/App/Podfile': "target 'App' do\nend\n" })), 'ios-connect-package').status).toBe(
+        'skip',
+      );
+    });
   });
 
   it('wants, for push, the aps-environment entitlement the project points to', () => {

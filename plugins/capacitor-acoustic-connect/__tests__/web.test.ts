@@ -51,6 +51,10 @@ describe('AcousticConnectWeb', () => {
     await expect(web[method](options)).resolves.toBeUndefined();
   });
 
+  it('logWebEvent queues nothing, since there is no SDK', async () => {
+    await expect(web.logWebEvent({})).resolves.toEqual({ queued: false });
+  });
+
   it('isSdkEnabled says the SDK is not enabled, since there is none', async () => {
     await expect(web.isSdkEnabled()).resolves.toEqual({ value: false });
   });
@@ -63,7 +67,9 @@ describe('AcousticConnectWeb', () => {
   });
 
   it('classifies every method of the plugin, so a new native method cannot be forgotten here', () => {
-    const covered = new Set([...DOES_NOTHING, ...UNAVAILABLE].map(([name]) => name).concat('isSdkEnabled'));
+    const covered = new Set(
+      [...DOES_NOTHING, ...UNAVAILABLE].map(([name]) => name).concat('isSdkEnabled', 'logWebEvent'),
+    );
     const own = Object.getOwnPropertyNames(AcousticConnectWeb.prototype).filter((n) => n !== 'constructor');
     expect(own.sort()).toEqual([...covered].sort());
   });

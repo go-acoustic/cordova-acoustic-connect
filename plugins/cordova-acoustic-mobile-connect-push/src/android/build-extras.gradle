@@ -86,7 +86,7 @@ def connectSdkArtifact = pushEnabled ? "io.github.go-acoustic:connect-push-fcm" 
 // AndroidVersion in ConnectConfig.json takes precedence over the Cordova
 // preference and the default pin. The default is a beta, which only the
 // GitHub-hosted tree carries, and a release under useRelease.
-def defaultSdkVersion = project.hasProperty("connectSdkVersion") ? project.connectSdkVersion : (useRelease ? "11.1.17" : "11.1.30-beta")
+def defaultSdkVersion = project.hasProperty("connectSdkVersion") ? project.connectSdkVersion : (useRelease ? "11.1.17" : "11.1.39-beta")
 def connectSdkVersion
 if (!androidVersion.isEmpty()) {
     if (androidVersion ==~ /\d+\.\d+\.\d+(-[A-Za-z0-9._-]+)?/) {
@@ -115,6 +115,21 @@ if (useRelease && connectSdkVersion.endsWith('-beta')) {
         "to use the plugin's default), or set useRelease to false."
     )
 }
+
+// The plugin finds the SDK's plugin-only web capture functions by reflection (WebEventLogger.kt), so
+// an app that minifies keeps them: R8 removes a member that nothing calls directly. An SDK without
+// them (older than 11.1.39-beta) builds as before.
+def connectWebCaptureRules = new File(layout.buildDirectory.get().asFile, 'acoustic/connect-web-capture-rules.pro')
+connectWebCaptureRules.parentFile.mkdirs()
+connectWebCaptureRules.text = '''\
+-keepclassmembers class com.acoustic.connect.android.connectmod.Connect {
+    public boolean logWebClick(...);
+    public boolean logWebGesture(...);
+}
+-keep class com.acoustic.connect.android.connectmod.model.ConnectWebTarget { public <init>(...); }
+-dontwarn com.acoustic.connect.android.connectmod.model.ConnectWebTarget
+'''
+android.buildTypes.configureEach { proguardFile connectWebCaptureRules }
 
 dependencies {
   implementation "${connectSdkArtifact}:${connectSdkVersion}"

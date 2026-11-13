@@ -36,6 +36,8 @@ const {
     otherDeclaresRemoteNotification,
     removeRemoteNotificationMode,
     patchXcframeworksScriptPhases,
+    hasWebCapture,
+    ensurePluginJsModule,
     resolveConnectConfigPath,
     resolveIosDevelopmentTeam,
     resolveAppVersion,
@@ -47,6 +49,8 @@ const {
     otherDeclaresRemoteNotification: (projectRoot: string) => boolean;
     removeRemoteNotificationMode:  (infoPlistPath: string) => boolean;
     patchXcframeworksScriptPhases: (p: string, variant?: string) => void;
+    hasWebCapture:                 (pod: { name: string; spec: string } | null) => boolean;
+    ensurePluginJsModule:          (iosDir: string, pluginIosDir: string) => void;
     resolveConnectConfigPath:      (projectRoot: string) => string;
     resolveIosDevelopmentTeam:     (projectRoot: string) => string | null;
     resolveAppVersion:             (projectRoot: string) => string;
@@ -190,6 +194,81 @@ describe('updatePodfile — NSE/NCE target insertion', () => {
 // ---------------------------------------------------------------------------
 // patchXcframeworksScriptPhases
 // ---------------------------------------------------------------------------
+
+describe('hasWebCapture — whether the pod asks for an SDK that logs taps and gestures on page elements', () => {
+    it.each([
+        ['AcousticConnectDebug', '>= 2.2.35'],
+        ['AcousticConnectDebug', '= 2.2.35'],
+        ['AcousticConnectDebug', '= 2.3.0'],
+        ['AcousticConnect', '= 3.0.0'],
+    ])('%s %s has them', (name, spec) => {
+        expect(hasWebCapture({ name, spec })).toBe(true);
+    });
+
+    it.each([
+        ['AcousticConnect', '>= 2.1.51'],
+        ['AcousticConnectDebug', '>= 2.1.51'],
+        ['AcousticConnectDebug', '= 2.2.34'],
+        ['AcousticConnectDebug', '~> 2.2'],
+        ['AcousticConnectDebug', ''],
+    ])('%s %s has not, or may not have them', (name, spec) => {
+        expect(hasWebCapture({ name, spec })).toBe(false);
+    });
+
+    it('has not without a pod', () => {
+        expect(hasWebCapture(null)).toBe(false);
+    });
+});
+
+describe('ensurePluginJsModule — the plugin JS Cordova skipped on an "already installed" prepare', () => {
+    const pluginIosDir = path.join(__dirname, '..', 'src', 'ios');
+    let iosDir: string;
+    const list = () => {
+        const src = fs.readFileSync(path.join(iosDir, 'www', 'cordova_plugins.js'), 'utf8');
+        const defM: { exports: Array<Record<string, unknown>> } = { exports: [] };
+        // eslint-disable-next-line no-new-func
+        new Function('module', src.replace(/^cordova\.define\([^,]+,\s*function\s*\([^)]*\)\s*\{/, '').replace(/\}\s*\);\s*$/, ''))(defM);
+        return [...defM.exports]; // without the `metadata` property Cordova puts on the list
+    };
+
+    beforeEach(() => {
+        iosDir = fs.mkdtempSync(path.join(os.tmpdir(), 'acoustic-js-modules-'));
+        fs.mkdirSync(path.join(iosDir, 'www'), { recursive: true });
+    });
+
+    afterEach(() => {
+        fs.rmSync(iosDir, { recursive: true, force: true });
+    });
+
+    it('deploys the bridge and the page script, and lists them as Cordova would, once', () => {
+        ensurePluginJsModule(iosDir, pluginIosDir);
+        ensurePluginJsModule(iosDir, pluginIosDir);
+
+        const dir = path.join(iosDir, 'www', 'plugins', 'co.acoustic.connect.push', 'www');
+        expect(fs.readFileSync(path.join(dir, 'WebGestures.js'), 'utf8'))
+            .toMatch(/^cordova\.define\("co\.acoustic\.connect\.push\.WebGestures", function\(require, exports, module\) \{/);
+        expect(fs.existsSync(path.join(dir, 'AcousticConnect.js'))).toBe(true);
+        expect(list()).toEqual([
+            { id: 'co.acoustic.connect.push.AcousticConnect', file: 'plugins/co.acoustic.connect.push/www/AcousticConnect.js',
+                pluginId: 'co.acoustic.connect.push', clobbers: ['AcousticConnect'] },
+            { id: 'co.acoustic.connect.push.WebGestures', file: 'plugins/co.acoustic.connect.push/www/WebGestures.js',
+                pluginId: 'co.acoustic.connect.push', runs: true },
+        ]);
+    });
+
+    it('adds the page script to a list that has only the bridge, keeping the other plugins', () => {
+        const other = { id: 'other.plugin.Thing', file: 'plugins/other.plugin/www/thing.js', pluginId: 'other.plugin' };
+        const bridge = { id: 'co.acoustic.connect.push.AcousticConnect', file: 'plugins/co.acoustic.connect.push/www/AcousticConnect.js',
+            pluginId: 'co.acoustic.connect.push', clobbers: ['AcousticConnect'] };
+        fs.writeFileSync(path.join(iosDir, 'www', 'cordova_plugins.js'),
+            "cordova.define('cordova/plugin_list', function(require, exports, module) {\nmodule.exports = " +
+            JSON.stringify([other, bridge]) + ';\nmodule.exports.metadata = {};\n});');
+
+        ensurePluginJsModule(iosDir, pluginIosDir);
+
+        expect(list().map((m) => m.id)).toEqual([other.id, bridge.id, 'co.acoustic.connect.push.WebGestures']);
+    });
+});
 
 describe('patchXcframeworksScriptPhases', () => {
     // The literal string xcode npm writes for the old single-call form.

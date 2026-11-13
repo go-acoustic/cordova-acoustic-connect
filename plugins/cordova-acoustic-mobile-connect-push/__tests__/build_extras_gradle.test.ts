@@ -47,9 +47,15 @@ describe('build-extras.gradle: where the Connect Android SDK comes from', () => 
         expect(GRADLE.indexOf('useRelease    = cfg?.Connect?.useRelease')).toBeLessThan(GRADLE.indexOf('Android_Maven'));
     });
 
-    it('pins Connect Android 11.1.30-beta by default and the 11.1.17 release under useRelease, so useRelease works without a pin', () => {
-        expect(GRADLE).toMatch(/def defaultSdkVersion = [^\n]*\(useRelease \? "11\.1\.17" : "11\.1\.30-beta"\)/);
+    it('pins Connect Android 11.1.39-beta by default and the 11.1.17 release under useRelease, so useRelease works without a pin', () => {
+        expect(GRADLE).toMatch(/def defaultSdkVersion = [^\n]*\(useRelease \? "11\.1\.17" : "11\.1\.39-beta"\)/);
         expect(GRADLE).not.toContain('11.0.21-beta');
+    });
+
+    it('keeps the web capture functions WebEventLogger.kt finds by reflection in an app that minifies', () => {
+        expect(GRADLE).toMatch(/-keepclassmembers class com\.acoustic\.connect\.android\.connectmod\.Connect \{[^}]*logWebClick\(\.\.\.\);[^}]*logWebGesture\(\.\.\.\);/);
+        expect(GRADLE).toContain('-keep class com.acoustic.connect.android.connectmod.model.ConnectWebTarget { public <init>(...); }');
+        expect(GRADLE).toContain('android.buildTypes.configureEach { proguardFile connectWebCaptureRules }');
     });
 });
 

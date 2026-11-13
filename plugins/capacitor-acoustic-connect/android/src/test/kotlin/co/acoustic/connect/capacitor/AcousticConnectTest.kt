@@ -1,5 +1,7 @@
 package co.acoustic.connect.capacitor
 
+import android.view.View
+import io.mockk.mockk
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -71,6 +73,10 @@ class FakeSdk : ConnectSdk {
         return accepts
     }
     override fun flushQueues() = record("flushQueues")
+    override fun logWebEvent(webView: View, event: JSONObject): Boolean {
+        record("logWebEvent(${event.optString("kind")})")
+        return accepts
+    }
     override fun flushImmediately() = record("flushImmediately")
     override fun logScreenview(name: String, type: ScreenViewType, referrer: String?): Boolean {
         record("logScreenview")
@@ -322,6 +328,35 @@ class AcousticConnectTest {
         assertFalse(reply { connect.isSdkEnabled(it) }.resolved!!.getBoolean("value"))
         sdk.enabled = true
         assertTrue(reply { connect.isSdkEnabled(it) }.resolved!!.getBoolean("value"))
+    }
+
+    @Test fun logWebEvent_hasTheSdkLogTheEventAndResolvesWhetherItWasQueued() {
+        sdk.enabled = true
+        val queued = reply { connect.logWebEvent(mockk<View>(), obj("""{"kind":"tap"}"""), it) }
+        sdk.accepts = false
+        val refused = reply { connect.logWebEvent(mockk<View>(), obj("""{"kind":"swipe"}"""), it) }
+
+        assertEquals(listOf("logWebEvent(tap)", "logWebEvent(swipe)"), sdk.calls)
+        assertEquals(true, queued.resolved!!.getBoolean("queued"))
+        assertEquals(false, refused.resolved!!.getBoolean("queued"))
+    }
+
+    @Test fun logWebEvent_logsNothingAndNeverFailsWhileItCannot() {
+        val disabled = reply { connect.logWebEvent(mockk<View>(), obj("""{"kind":"tap"}"""), it) }
+        sdk.enabled = true
+        val noWebView = reply { connect.logWebEvent(null, obj("""{"kind":"tap"}"""), it) }
+        uiAvailable = false
+        val noActivity = reply { connect.logWebEvent(mockk<View>(), obj("""{"kind":"tap"}"""), it) }
+        uiAvailable = true
+        sdk.throwOnCall = IllegalStateException("boom")
+        val threw = reply { connect.logWebEvent(mockk<View>(), obj("""{"kind":"tap"}"""), it) }
+
+        assertEquals(listOf("logWebEvent(tap)"), sdk.calls)
+        listOf(disabled, noWebView, noActivity, threw).forEach {
+            assertFalse(it.rejected)
+            assertEquals(1, it.resolveCount)
+            assertEquals(false, it.resolved!!.getBoolean("queued"))
+        }
     }
 
     @Test fun flushQueues_flushesOnlyWhenEnabledAndNeverFails() {

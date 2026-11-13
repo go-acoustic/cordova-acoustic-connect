@@ -9,7 +9,7 @@
  * rewritten copy to generate the Podfile.
  *
  *   useRelease: true  → AcousticConnect (>= 2.1.51)       — production / release SDK
- *   useRelease: false → AcousticConnectDebug (>= 2.1.51) — debug SDK (default)
+ *   useRelease: false → AcousticConnectDebug (>= 2.2.35) — debug SDK (default)
  *
  * This hook is iOS-only. Android always uses connect-push-fcm regardless of
  * useRelease (connect-push-fcm-debug is not published to public Maven).
@@ -35,7 +35,7 @@ var path = require('path');
 var RELEASE_NAME = 'AcousticConnect';
 var RELEASE_SPEC = '>= 2.1.51';
 var DEBUG_NAME   = 'AcousticConnectDebug';
-var DEBUG_SPEC   = '>= 2.1.51';
+var DEBUG_SPEC   = '>= 2.2.35';
 
 function escapeRegExp(value) {
     return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

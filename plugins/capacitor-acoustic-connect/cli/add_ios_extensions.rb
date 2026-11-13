@@ -11,10 +11,12 @@
 # Input, from the environment:
 #   ACOUSTIC_PROJECT_PATH     the App.xcodeproj
 #   ACOUSTIC_APP_GROUP        the App Group the extensions and the app share
-#   ACOUSTIC_SDK_VERSION      the Connect-SP version the plugin requires at least
+#   ACOUSTIC_SDK_PACKAGE      the Connect package the plugin's Package.swift links: ConnectDebug-SP (default, the beta npm package) or
+#                             Connect-SP (the public one)
+#   ACOUSTIC_SDK_VERSION      the version of that package the plugin requires at least
 #   ACOUSTIC_DEVELOPMENT_TEAM optional
 #   ACOUSTIC_LINK_SDK         'spm' (default): the extensions get the Connect SDK as a Swift package of the project;
-#                             'pods': the app uses CocoaPods, the Podfile gives them the AcousticConnect pod, and the project gets no package
+#                             'pods': the app uses CocoaPods, the Podfile gives them the Connect pod of the plugin, and the project gets no package
 
 require 'xcodeproj'
 
@@ -32,7 +34,9 @@ TEAM         = ENV['ACOUSTIC_DEVELOPMENT_TEAM'].to_s.strip
 LINK_SDK     = ENV['ACOUSTIC_LINK_SDK'].to_s.strip.empty? ? 'spm' : ENV['ACOUSTIC_LINK_SDK'].to_s.strip
 raise "ACOUSTIC_LINK_SDK must be spm or pods, not #{LINK_SDK}" unless %w[spm pods].include?(LINK_SDK)
 USE_SPM      = LINK_SDK == 'spm'
-SDK_URL      = 'https://github.com/go-acoustic/Connect-SP.git'
+SDK_PACKAGE  = ENV['ACOUSTIC_SDK_PACKAGE'].to_s.strip.empty? ? 'ConnectDebug-SP' : ENV['ACOUSTIC_SDK_PACKAGE'].to_s.strip
+raise "ACOUSTIC_SDK_PACKAGE must be ConnectDebug-SP or Connect-SP, not #{SDK_PACKAGE}" unless %w[ConnectDebug-SP Connect-SP].include?(SDK_PACKAGE)
+SDK_URL      = "https://github.com/go-acoustic/#{SDK_PACKAGE}.git"
 EXTENSIONS   = {
   'ConnectNSE' => 'NotificationService.swift',
   'ConnectNCE' => 'NotificationViewController.swift'
@@ -53,14 +57,50 @@ raise 'the app has no PRODUCT_BUNDLE_IDENTIFIER' if app_bundle_id.empty?
 
 # --- the Connect SDK, as a Swift package of the project, for the extensions -----------------------------------------------------------
 # With CocoaPods the SDK reaches the extensions through the Podfile instead, and linking the package too would put it there twice.
+# The plugin's package (SDK_PACKAGE). The other one (linked by another npm package or version of the plugin) vends the module Connect too,
+# and Xcode stops on two packages with one module: a reference to it is rewritten to the plugin's, or, when both are there, dropped, and every
+# target that linked it then links the one that stays, once. A package is known by the last path component of its URL, so a mirror counts;
+# a reference that already names the plugin's package keeps its URL.
+def connect_package_name(reference)
+  return nil unless reference.respond_to?(:repositoryURL)
+
+  reference.repositoryURL.to_s[%r{/(Connect(?:Debug)?-SP)(?:\.git)?/?\z}, 1]
+end
+
 if USE_SPM
-  package = project.root_object.package_references.find { |r| r.respond_to?(:repositoryURL) && r.repositoryURL.to_s =~ /Connect-SP/ }
+  references = project.root_object.package_references.select { |r| connect_package_name(r) }
+  package = references.find { |r| connect_package_name(r) == SDK_PACKAGE } || references.first
   unless package
     package = project.new(Xcodeproj::Project::Object::XCRemoteSwiftPackageReference)
-    package.repositoryURL = SDK_URL
     project.root_object.package_references << package
   end
+  package.repositoryURL = SDK_URL unless connect_package_name(package) == SDK_PACKAGE
   package.requirement = { 'kind' => 'upToNextMajorVersion', 'minimumVersion' => SDK_VERSION }
+  (references - [package]).each do |old|
+    project.objects.grep(Xcodeproj::Project::Object::XCSwiftPackageProductDependency).each do |dependency|
+      dependency.package = package if dependency.package == old
+    end
+    project.root_object.package_references.delete(old)
+    old.remove_from_project
+  end
+  # A target that linked Connect from both packages now has it twice: one dependency and its build file are dropped.
+  project.native_targets.each do |target|
+    seen = {}
+    target.package_product_dependencies.to_a.each do |dependency|
+      next unless dependency.package == package
+
+      key = dependency.product_name
+      unless seen.key?(key)
+        seen[key] = dependency
+        next
+      end
+      target.frameworks_build_phase.files.to_a.each do |file|
+        file.remove_from_project if file.product_ref == dependency
+      end
+      target.package_product_dependencies.delete(dependency)
+      dependency.remove_from_project
+    end
+  end
 end
 
 # --- the app: entitlements and background mode ---------------------------------------------------------------------------------------
@@ -168,4 +208,4 @@ unless TEAM.empty?
 end
 
 project.save
-puts "ConnectNSE and ConnectNCE are in #{File.basename(PROJECT_PATH)} (#{USE_SPM ? "Connect-SP #{SDK_VERSION}" : 'AcousticConnect pod'})"
+puts "ConnectNSE and ConnectNCE are in #{File.basename(PROJECT_PATH)} (#{USE_SPM ? "#{SDK_PACKAGE} #{SDK_VERSION}" : 'the Connect pod of the Podfile'})"

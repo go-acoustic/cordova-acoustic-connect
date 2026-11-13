@@ -12,11 +12,13 @@ package co.acoustic.connect.capacitor
 
 import android.app.Activity
 import android.os.Build
+import android.view.View
 import androidx.activity.ComponentActivity
 import com.acoustic.connect.android.connectmod.Connect
 import com.acoustic.connect.android.connectmod.model.ConnectScreenviewType
 import com.acoustic.connect.android.connectmod.push.PushPermissionState
 import com.acoustic.connect.android.connectmod.push.core.MobileServiceType
+import org.json.JSONObject
 
 enum class ScreenViewType { LOAD, UNLOAD }
 
@@ -76,6 +78,12 @@ interface ConnectSdk {
     fun logException(message: String, stackInfo: String, unhandled: Boolean): Boolean
     fun updateConfig(key: String, value: String, module: String): Boolean
     fun getConfigItemString(key: String, module: String): String?
+
+    /**
+     * Logs a tap or gesture the page script (src/web-gestures.ts) saw on a page element in [webView], as the
+     * script sent it; false when the SDK did not queue it, as an SDK older than 11.1.39-beta never does.
+     */
+    fun logWebEvent(webView: View, event: JSONObject): Boolean
 }
 
 /**
@@ -91,6 +99,7 @@ internal class ConnectSdkImpl(
     private fun activity(): Activity = activityProvider() ?: throw IllegalStateException("no host activity")
 
     override fun isEnabled() = Connect.isEnabled()
+    override fun logWebEvent(webView: View, event: JSONObject) = WebEventLogger.log(webView, event)
     override fun libraryVersion(): String = Connect.getLibraryVersion()
     override fun init() {
         // Before the SDK builds its HTTP client: see CookieHandlerCompat.

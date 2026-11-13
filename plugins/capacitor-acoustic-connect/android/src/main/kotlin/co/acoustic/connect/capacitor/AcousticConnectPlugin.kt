@@ -63,6 +63,7 @@ class AcousticConnectPlugin : Plugin() {
     @PluginMethod fun getSdkVersion(call: PluginCall) = connect.getSdkVersion(CallReply(call))
     @PluginMethod fun isSdkEnabled(call: PluginCall) = connect.isSdkEnabled(CallReply(call))
     @PluginMethod fun flushQueues(call: PluginCall) = connect.flushQueues(CallReply(call))
+    @PluginMethod fun logWebEvent(call: PluginCall) = connect.logWebEvent(bridge?.webView, call.dataOrEmpty(), CallReply(call))
     @PluginMethod fun setCurrentScreenName(call: PluginCall) = connect.setCurrentScreenName(call.dataOrEmpty(), CallReply(call))
     @PluginMethod fun logCustomEvent(call: PluginCall) = connect.logCustomEvent(call.dataOrEmpty(), CallReply(call))
     @PluginMethod fun logSignal(call: PluginCall) = connect.logSignal(call.dataOrEmpty(), CallReply(call))

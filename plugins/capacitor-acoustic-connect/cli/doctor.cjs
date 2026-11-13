@@ -7,14 +7,15 @@
  *
  * Checks the things of an integration that otherwise go wrong late and confusingly, at build time or on the device: the plugin block of
  * the config (key, collector URL), the Android project (minSdk, the Connect Maven tree, the Firebase file for the app's package) and the iOS
- * project (the push entitlement, the background mode, the resources of the SDK, the rich-push extensions and their App Group). Nothing is
+ * project (the push entitlement, the background mode, the resources of the SDK, the rich-push extensions, their App Group and the Connect package or
+ * pod they link). Nothing is
  * changed. The push checks fail only when pushEnabled is on, or with --require-push; without push they are skipped. A failed check makes
  * the exit code 1, a warning does not, so it can gate a build.
  */
 
 const fs = require('fs');
 const path = require('path');
-const { sdkVersionFrom, hasPodSpecsSource } = require('./setup-ios-push.cjs');
+const { sdkVersionFrom, hasPodSpecsSource, moveConnectPods, podNameFor, spmPackageFrom, RELEASE_FLOOR } = require('./setup-ios-push.cjs');
 
 const PLACEHOLDER_HOSTS = /(^|\.)example\.com$/i;
 const LOCAL_HOSTS = ['localhost', '127.0.0.1', '10.0.2.2'];
@@ -194,7 +195,7 @@ function diagnose(options) {
     // --- iOS ----------------------------------------------------------------------------------------------------------------------------
     const iosDir = path.join(dir, 'ios', 'App');
     const pbxproj = readText(path.join(iosDir, 'App.xcodeproj', 'project.pbxproj'));
-    const iosIds = ['ios-entitlements', 'ios-background-mode', 'ios-resources', 'ios-extensions', 'ios-pod-sources'];
+    const iosIds = ['ios-entitlements', 'ios-background-mode', 'ios-resources', 'ios-extensions', 'ios-pod-sources', 'ios-connect-package'];
     if (pbxproj === null) {
         iosIds.forEach(function (id) { add(id, 'skip', 'no iOS project'); });
     } else {
@@ -225,17 +226,23 @@ function diagnose(options) {
             add.apply(null, ['ios-extensions'].concat(extensionsCheck(iosDir, groupsOf(entitlements), config.iosAppGroupIdentifier)));
         }
 
-        // CocoaPods trunk is read-only from 2 December 2026: later AcousticConnect versions are only in the Acoustic spec repo, which the
-        // Podfile has to name. Without it the app keeps working on the last trunk version, and an iosVersion only on PodSpecs fails pod install.
+        // The beta pod the plugin takes by default (AcousticConnectDebug 2.2.35 and later) is only in the Acoustic spec repo, which the Podfile
+        // has to name: without it pod install fails. CocoaPods trunk is read-only from 2 December 2026, so later release versions are only there
+        // too: without it the release pod stays on the last trunk version, and an iosVersion only on PodSpecs fails pod install.
         const podfileText = readText(path.join(iosDir, 'Podfile'));
         if (podfileText === null) {
             add('ios-pod-sources', 'skip', 'the app does not use CocoaPods');
         } else if (hasPodSpecsSource(podfileText)) {
             add('ios-pod-sources', 'ok', 'ios/App/Podfile names the go-acoustic/PodSpecs source');
+        } else if (podNameFor(config.useRelease) === 'AcousticConnectDebug') {
+            add('ios-pod-sources', 'fail', 'ios/App/Podfile does not name the go-acoustic/PodSpecs source, the only one with the AcousticConnectDebug pod ' +
+                'the plugin takes (2.2.35 and later), so `pod install` fails: run `npx acoustic-connect setup-ios-pods`');
         } else {
             add('ios-pod-sources', 'warn', 'ios/App/Podfile does not name the go-acoustic/PodSpecs source, so CocoaPods cannot find Connect SDK ' +
                 'versions released after 2 December 2026: run `npx acoustic-connect setup-ios-pods`');
         }
+
+        add.apply(null, ['ios-connect-package'].concat(connectPackageCheck(pbxproj, podfileText, config.useRelease)));
 
         if (fs.existsSync(path.join(iosDir, 'Podfile'))) {
             add('ios-resources', 'skip', 'the app uses CocoaPods, where the pod brings the SDK\'s resources');
@@ -269,6 +276,42 @@ function androidVersionCheck(config) {
     return ['ok', 'androidVersion ' + text];
 }
 
+/** The plugin's own Package.swift, which names the Connect package of the npm package. */
+function pluginPackageSwift() {
+    return readText(path.join(__dirname, '..', 'Package.swift')) || '';
+}
+
+/** Whether the project file references the Swift package `name`, by the last path component of its URL (a mirror or a fork counts). */
+function referencesPackage(pbxproj, name) {
+    return new RegExp('repositoryURL\\s*=\\s*"?[^";\\s]*/' + name + '(?:\\.git)?/?"?;').test(pbxproj);
+}
+
+/**
+ * The Connect SDK the extensions link has to be the plugin's: both builds vend the module Connect, and an app with both does not build. In a
+ * Swift Package Manager app that is the package of the plugin's Package.swift (ConnectDebug-SP in the beta npm package, Connect-SP in the
+ * public one); in a CocoaPods app the pod of the podspec, which useRelease picks.
+ */
+function connectPackageCheck(pbxproj, podfileText, useRelease) {
+    const rerun = ': run `npx acoustic-connect setup-ios-push` again, which moves them';
+    if (podfileText !== null) {
+        const pod = podNameFor(useRelease);
+        const moved = moveConnectPods(podfileText, { name: pod, requirements: [] }).moved;
+        if (moved.length) return ['fail', moved.join(', ') + ' in ios/App/Podfile link the other Connect pod than the plugin (' + pod + ')' + rerun];
+        return /^[ \t]*target[ \t]+['"]ConnectN[SC]E['"]/m.test(podfileText)
+            ? ['ok', 'the extensions in ios/App/Podfile link ' + pod + ', as the plugin does']
+            : ['skip', 'ios/App/Podfile has no target of the rich-push extensions'];
+    }
+    const wanted = spmPackageFrom(pluginPackageSwift());
+    if (!wanted) return ['skip', 'the plugin\'s Package.swift names no Connect package'];
+    const other = wanted === 'Connect-SP' ? 'ConnectDebug-SP' : 'Connect-SP';
+    if (referencesPackage(pbxproj, other)) {
+        return ['fail', 'the Xcode project links ' + other + ', but the plugin links ' + wanted + ', and Xcode stops on two packages with a Connect module' + rerun];
+    }
+    return referencesPackage(pbxproj, wanted)
+        ? ['ok', 'the Xcode project links ' + wanted + ', as the plugin does']
+        : ['skip', 'the Xcode project links no Connect package'];
+}
+
 /** iosVersion: x.y.z, not below the SDK floor of the plugin; it takes effect for CocoaPods only. */
 function iosVersionCheck(config, hasIosProject, usesPods) {
     const value = config.iosVersion;
@@ -276,13 +319,13 @@ function iosVersionCheck(config, hasIosProject, usesPods) {
     const text = typeof value === 'string' ? value.trim() : '';
     const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(text);
     if (!match) return ['fail', 'iosVersion ' + JSON.stringify(value) + ' is not a version: write it as x.y.z'];
-    const pin = sdkVersionFrom(readText(path.join(__dirname, '..', 'Package.swift')) || '');
-    const floor = pin ? pin.split('.').map(Number) : [0, 0, 0];
-    if (compareVersions([Number(match[1]), Number(match[2]), Number(match[3])], floor) < 0) {
-        return ['fail', 'iosVersion ' + text + ' is below the ' + pin + ' that the plugin is built against: `pod install` cannot give it'];
+    const spmPackage = spmPackageFrom(pluginPackageSwift());
+    const pin = sdkVersionFrom(pluginPackageSwift(), spmPackage);
+    if (compareVersions([Number(match[1]), Number(match[2]), Number(match[3])], RELEASE_FLOOR.split('.').map(Number)) < 0) {
+        return ['fail', 'iosVersion ' + text + ' is below the ' + RELEASE_FLOOR + ' that the plugin needs: `pod install` cannot give it'];
     }
     if (hasIosProject && !usesPods) {
-        return ['warn', 'iosVersion ' + text + ' has no effect in a Swift Package Manager app: the plugin\'s Package.swift takes the newest 2.x from ' + pin +
+        return ['warn', 'iosVersion ' + text + ' has no effect in a Swift Package Manager app: the plugin\'s Package.swift takes the newest 2.x of ' + spmPackage + ' from ' + pin +
             '. It applies to an app that uses CocoaPods'];
     }
     return ['ok', 'iosVersion ' + text];

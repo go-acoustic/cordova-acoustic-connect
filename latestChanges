@@ -2,6 +2,19 @@ Acoustic Connect for Cordova
 
 New Features
 
+- Taps and gestures on page elements: a tap on an element of the app's page is
+  logged as a click and a tap on that element, and a double tap, a long press,
+  a swipe and a pinch as that gesture, as the SDK logs them on a native
+  control: with the element's DOM id (or its path from the nearest element
+  with one), its kind and its position. The plugin's page script listens in
+  the app's main frame only, passively, and reads no text or field value.
+  It needs the Connect Android SDK 11.1.39-beta or later and the Connect iOS
+  SDK 2.2.35 or later, the plugin's defaults: with an older SDK nothing is
+  logged, as with the `useRelease: true` defaults (Android 11.1.17, iOS
+  2.1.51 or later) unless `AndroidVersion` or `iOSVersion` pins a version
+  that has it. iOS: the
+  default `AcousticConnectDebug` pod is now 2.2.35 or later (it was 2.1.51 or
+  later)
 - `PushEnabled` in `ConnectConfig.json` — the master switch of push. `true` by
   default (push has always been on in this plugin, so existing apps keep it;
   the Capacitor plugin's `pushEnabled` is off by default). `false` builds an
@@ -20,7 +33,7 @@ New Features
 
 Fixes
 
-- Android: the default Connect Android SDK is now 11.1.30-beta (it was 11.1.17).
+- Android: the default Connect Android SDK is now 11.1.39-beta (it was 11.1.17).
   It brings the SDK's fix for an app that read as backgrounded while on screen
   and stopped posting (found in a Jetpack Compose app), and the SDK no longer
   drops a screen view UNLOAD that directly follows its own LOAD. With
@@ -45,8 +58,13 @@ Fixes
 Known Issues
 
 - Rich push cannot be end-to-end tested on the iOS Simulator — simulators don't display large icon.
-- Clicks and typing inside the page are not captured automatically — call
-  `logClickEvent`/`logTextChangeEvent` yourself. They are sent as custom events
+- A swipe or a pinch that the WebView takes over to scroll or zoom the page is
+  not logged: the page sees the touch cancelled. A gesture on an element that
+  handles it itself (`touch-action: none`) is logged
+- Typing inside the page is not captured automatically — call
+  `logTextChangeEvent` yourself; it is sent as a custom event. Clicks are
+  captured with the SDKs named under New Features; with older ones call
+  `logClickEvent`
 - Native layout masking rules do not mask text inside the WebView; use
   `ScreenCaptureEnabled: false` to keep page content out of captures
 - `layoutConfigAndroid` replaces the Android SDK's whole layout config; the
@@ -57,7 +75,7 @@ Known Issues
 - `logCustomEvent` values are nested under `data.value` on iOS but flat on
   Android, and a `logSignal` payload under `signal.data.value` on iOS but at the
   root of `signal` on Android; `logSignal` drops a top-level number on Android
-  SDKs before 11.0.24-beta (the defaults, 11.1.30-beta and 11.1.17 under
+  SDKs before 11.0.24-beta (the defaults, 11.1.39-beta and 11.1.17 under
   `useRelease`, send it)
 - On iOS `logExceptionEvent` reports `stackTrace: (null)` and carries the stack
   text in `data.stacktrace`

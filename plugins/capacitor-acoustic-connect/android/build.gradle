@@ -193,6 +193,8 @@ android {
         versionCode 1
         versionName "1.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        // WebEventLogger finds the SDK's web capture functions by reflection: an app that minifies keeps them.
+        consumerProguardFiles 'consumer-rules.pro'
     }
     buildTypes {
         release {

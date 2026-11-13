@@ -41,12 +41,18 @@ build rejects `-beta` SDK versions, so pin a release version first.
 
 ### iOS
 
-The plugin links the Connect iOS SDK (release build, `2.1.51` or newer, floating: CocoaPods and Swift Package Manager take the newest 2.x release; `iosVersion` in the plugin block pins one in an app that uses
-CocoaPods) either through Swift Package Manager or
-through CocoaPods; Capacitor 8 projects use Swift Package Manager by default.
+The plugin links the Connect iOS SDK either through Swift Package Manager or through CocoaPods; Capacitor 8 projects use Swift Package
+Manager by default. There are two builds of the SDK: the beta build (`2.2.35` or newer, the first that logs taps and gestures on page
+elements) and the release build (`2.1.51` or newer, which does not log them). Both float: CocoaPods and Swift Package Manager take the
+newest 2.x; `iosVersion` in the plugin block pins one in an app that uses CocoaPods.
 
-- **Swift Package Manager** (Capacitor's default): nothing to add; the plugin's package depends on
-  [`Connect-SP`](https://github.com/go-acoustic/Connect-SP). The SDK reads its default settings from a
+- **Swift Package Manager** (Capacitor's default): nothing to add; the npm package decides the build. The beta npm package depends on
+  [`ConnectDebug-SP`](https://github.com/go-acoustic/ConnectDebug-SP), the beta SDK; the public npm package on
+  [`Connect-SP`](https://github.com/go-acoustic/Connect-SP), the release SDK. `useRelease` has no effect on it. Both packages vend the
+  module `Connect`, and Xcode stops on an app that links both ("multiple similar targets 'Connect', 'EOCore', 'Tealeaf' appear in package
+  'connect-sp' and 'connectdebug-sp'"): rich-push extensions that an earlier version of the plugin, or the other npm package, added link
+  the other one, so after an update of the plugin run `npx acoustic-connect setup-ios-push` once more, which moves them to the plugin's
+  package (`npx acoustic-connect doctor` checks for it). The SDK reads its default settings from a
   `ConnectResources.bundle` in the root of the app, and that package ships the bundle only inside `Connect.framework`.
   Without a copy in the app root the SDK runs without its defaults and sends only part of its data (no client state,
   signals, exceptions or layout). Add a **Run Script** build phase to the app target, after "Embed Frameworks":
@@ -58,14 +64,17 @@ through CocoaPods; Capacitor 8 projects use Swift Package Manager by default.
   ```
 
   The sample app (`applications/DemoCapacitor`) has this phase.
-- **CocoaPods** (`npx cap add ios --packagemanager CocoaPods`): the `AcousticConnect` pod (`>= 2.1.51`, floating)
-  puts the bundle in place itself. The SDK needs iOS 15.1 here: raise `platform :ios` in the Podfile and the
+- **CocoaPods** (`npx cap add ios --packagemanager CocoaPods`): `useRelease` in the plugin block decides the build. The
+  `AcousticConnectDebug` pod (`>= 2.2.35`, floating), or with `useRelease: true` the release `AcousticConnect` pod (`>= 2.1.51`, which
+  logs no taps and gestures on page elements), puts the bundle in place itself. After a change of `useRelease` run `npx cap sync ios`, then
+  `npx acoustic-connect setup-ios-push` again if the app has the rich-push extensions (it moves their pod too), then `pod install`. The SDK needs iOS 15.1 here: raise `platform :ios` in the Podfile and the
   project's deployment target to `15.1`, because Capacitor's template targets 15.0.
-  CocoaPods trunk becomes read-only on 2 December 2026 and gets no later `AcousticConnect` versions; they are
-  published to the Acoustic spec repo. Add both sources at the top of `ios/App/Podfile` (keep the CDN line:
+  The `AcousticConnectDebug` versions the plugin takes are published only to the Acoustic spec repo, and CocoaPods trunk becomes
+  read-only on 2 December 2026 and gets no later `AcousticConnect` versions either. Add both sources at the top of `ios/App/Podfile`
+  before `pod install` (keep the CDN line:
   declaring any source turns off the CocoaPods default). `npx cap sync` keeps them.
   `npx acoustic-connect setup-ios-pods` adds them (so does `setup-ios-push`), `npx acoustic-connect doctor`
-  checks for them, and `pod install` warns while they are missing:
+  checks for them (it fails without them unless `useRelease` is true), and `pod install` warns while they are missing:
 
   ```ruby
   source 'https://github.com/go-acoustic/PodSpecs.git'
@@ -126,11 +135,14 @@ app's version, to bring the extensions in line; running it again changes nothing
 
 How the extensions get the Connect SDK depends on how the app links the plugin:
 
-- **Swift Package Manager** (the default): the command links the `Connect` product of `Connect-SP`, as a Swift package of the Xcode project, at the
-  version the plugin pins.
-- **CocoaPods** (`ios/App/Podfile` exists): the command adds a `target 'ConnectNSE'` and a `target 'ConnectNCE'` block with the `AcousticConnect` pod to
-  the Podfile, with the version requirement of the plugin (`>= 2.1.51`, and `= <iosVersion>` when the plugin block names one), and links no
-  package. Then run `pod install` in `ios/App` (or `npx cap sync ios`), which keeps those blocks. The app and the extensions share one
+- **Swift Package Manager** (the default): the command links the `Connect` product of the package the plugin's `Package.swift` links
+  (`ConnectDebug-SP` in the beta npm package, `Connect-SP` in the public one), as a Swift package of the Xcode project, at the version the
+  plugin pins. The other package, which an earlier run added, is moved to it, as the app cannot link both; a package is known by the last
+  part of its URL, so a mirror counts.
+- **CocoaPods** (`ios/App/Podfile` exists): the command adds a `target 'ConnectNSE'` and a `target 'ConnectNCE'` block with the pod of the plugin to
+  the Podfile (`AcousticConnectDebug` `>= 2.2.35`, or `AcousticConnect` `>= 2.1.51` with `useRelease: true`; `>= 2.1.51` and `= <iosVersion>` when the
+  plugin block names one), and links no package. A block with the other pod is moved to the plugin's. Then run `pod install` in `ios/App`
+  (or `npx cap sync ios`), which keeps those blocks. The app and the extensions share one
   copy of the SDK frameworks.
 
 What it does not cover is the Apple developer account set-up above. The extensions are built into the DemoCapacitor app (Swift Package Manager)

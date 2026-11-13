@@ -14,6 +14,8 @@ const GROUP = 'group.co.acoustic.example';
 
 const hasXcodeproj = spawnSync('ruby', ['-rxcodeproj', '-e', '1']).status === 0;
 const describeIfXcodeproj = hasXcodeproj ? describe : describe.skip;
+// The public package's Package.swift links Connect-SP (the release step rewrites it); capacitor_release.test.ts checks that one.
+const itBeta = require('../package.json').name.endsWith('-beta') ? it : it.skip;
 
 function copyApp(): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'acoustic-ext-'));
@@ -34,8 +36,10 @@ interface Target {
   settings: Record<string, string>;
   sources: string[];
   products: string[];
+  productPackages: string[];
   dependencies: string[];
   embedded: string[];
+  frameworks: string[];
 }
 interface Result {
   targets: Record<string, Target>;
@@ -56,8 +60,10 @@ function inspect(dir: string): Result {
         settings: cfg.build_settings.transform_values { |v| v.is_a?(Array) ? v.join(' ') : v.to_s },
         sources: t.source_build_phase.files.map { |f| f.file_ref ? f.file_ref.path.to_s : '' },
         products: t.package_product_dependencies.map { |d| d.product_name },
+        productPackages: t.package_product_dependencies.map { |d| d.package.respond_to?(:repositoryURL) ? d.package.repositoryURL.to_s : '' },
         dependencies: t.dependencies.map { |d| d.target ? d.target.name : '' },
-        embedded: t.copy_files_build_phases.flat_map { |p| p.files.map { |f| f.file_ref ? f.file_ref.path.to_s : '' } }
+        embedded: t.copy_files_build_phases.flat_map { |p| p.files.map { |f| f.file_ref ? f.file_ref.path.to_s : '' } },
+        frameworks: t.frameworks_build_phase.files.map { |f| f.product_ref ? f.product_ref.product_name : (f.file_ref ? f.file_ref.path.to_s : '') }
       }
       out[:embedPhases] += t.copy_files_build_phases.count { |p| p.name == 'Embed Foundation Extensions' }
     end
@@ -107,19 +113,129 @@ describeIfXcodeproj('setup-ios-push on the Xcode project of a Capacitor app', ()
     }
   });
 
-  it('links the Connect SDK into both extensions through Swift Package Manager, from the version the plugin requires', () => {
-    const dir = copyApp();
-    setup(dir);
-    const { targets, packages } = inspect(dir);
-    const pin = /Connect-SP[^\n]*(?:exact|from):\s*"([\d.]+)"/.exec(
+  const DEBUG_SP = 'https://github.com/go-acoustic/ConnectDebug-SP.git';
+  const pin = () =>
+    /ConnectDebug-SP[^\n]*(?:exact|from):\s*"([\d.]+)"/.exec(
       fs.readFileSync(path.join(__dirname, '..', 'Package.swift'), 'utf8'),
     )?.[1];
-    expect(packages.filter((p) => /Connect-SP/.test(p.url))).toEqual([
-      { url: 'https://github.com/go-acoustic/Connect-SP.git', kind: 'upToNextMajorVersion', version: pin },
-    ]);
-    expect(targets.ConnectNSE.products).toEqual(['Connect']);
-    expect(targets.ConnectNCE.products).toEqual(['Connect']);
-  });
+  const acousticPackages = (packages: Result['packages']) => packages.filter((p) => /go-acoustic\/Connect/.test(p.url));
+
+  itBeta(
+    'links the Connect SDK into both extensions through Swift Package Manager, from the package and version the plugin requires',
+    () => {
+      const dir = copyApp();
+      setup(dir);
+      const { targets, packages } = inspect(dir);
+      expect(acousticPackages(packages)).toEqual([{ url: DEBUG_SP, kind: 'upToNextMajorVersion', version: pin() }]);
+      expect(targets.ConnectNSE.products).toEqual(['Connect']);
+      expect(targets.ConnectNCE.products).toEqual(['Connect']);
+      expect(targets.ConnectNSE.productPackages).toEqual([DEBUG_SP]);
+    },
+  );
+
+  itBeta(
+    'knows the packages by the last part of their URL, so a mirror is moved too, and keeps the URL of a mirror of its own package',
+    () => {
+      const dir = copyApp();
+      setup(dir);
+      edit(
+        dir,
+        `ref = project.root_object.package_references.find { |r| r.respond_to?(:repositoryURL) && r.repositoryURL =~ /ConnectDebug-SP/ }
+       ref.repositoryURL = 'https://git.example.com/mirror/Connect-SP'`,
+      );
+      expect(setup(dir).status).toBe(0);
+      expect(acousticPackages(inspect(dir).packages)).toEqual([
+        { url: DEBUG_SP, kind: 'upToNextMajorVersion', version: pin() },
+      ]);
+      edit(
+        dir,
+        `ref = project.root_object.package_references.find { |r| r.respond_to?(:repositoryURL) && r.repositoryURL =~ /ConnectDebug-SP/ }
+       ref.repositoryURL = 'https://git.example.com/mirror/ConnectDebug-SP.git'`,
+      );
+      expect(setup(dir).status).toBe(0);
+      const packages = inspect(dir).packages.filter((p) => /Connect(Debug)?-SP/.test(p.url));
+      expect(packages).toEqual([
+        { url: 'https://git.example.com/mirror/ConnectDebug-SP.git', kind: 'upToNextMajorVersion', version: pin() },
+      ]);
+    },
+  );
+
+  /** Runs Ruby with the xcodeproj gem on the project of the app; `code` sees it as `project`, and the project is saved after. */
+  function edit(dir: string, code: string) {
+    const r = spawnSync(
+      'ruby',
+      [
+        '-rxcodeproj',
+        '-e',
+        `project = Xcodeproj::Project.open(ARGV[0])\n${code}\nproject.save`,
+        path.join(dir, 'ios', 'App', 'App.xcodeproj'),
+      ],
+      { encoding: 'utf8' },
+    );
+    if (r.status !== 0) throw new Error(r.stderr);
+  }
+
+  itBeta(
+    'moves the extensions of an earlier run from Connect-SP to ConnectDebug-SP, without adding a second package',
+    () => {
+      // Two packages that both vend the module Connect stop the build, so the release package of an earlier run is rewritten.
+      const dir = copyApp();
+      setup(dir);
+      edit(
+        dir,
+        `ref = project.root_object.package_references.find { |r| r.respond_to?(:repositoryURL) && r.repositoryURL =~ /ConnectDebug-SP/ }
+       ref.repositoryURL = 'https://github.com/go-acoustic/Connect-SP.git'
+       ref.requirement = { 'kind' => 'upToNextMajorVersion', 'minimumVersion' => '2.1.51' }`,
+      );
+      expect(acousticPackages(inspect(dir).packages)[0].url).toMatch(/\/Connect-SP\.git$/);
+      const r = setup(dir);
+      expect(r.status).toBe(0);
+      const { targets, packages } = inspect(dir);
+      expect(acousticPackages(packages)).toEqual([{ url: DEBUG_SP, kind: 'upToNextMajorVersion', version: pin() }]);
+      expect(targets.ConnectNSE.productPackages).toEqual([DEBUG_SP]);
+      expect(targets.ConnectNCE.productPackages).toEqual([DEBUG_SP]);
+      expect(fs.readFileSync(path.join(dir, 'ios', 'App', 'App.xcodeproj', 'project.pbxproj'), 'utf8')).not.toContain(
+        'Connect-SP',
+      );
+    },
+  );
+
+  itBeta(
+    'keeps one Connect package when the app links Connect-SP besides, and points every target that linked it at that one',
+    () => {
+      const dir = copyApp();
+      setup(dir);
+      edit(
+        dir,
+        `ref = project.new(Xcodeproj::Project::Object::XCRemoteSwiftPackageReference)
+       ref.repositoryURL = 'https://github.com/go-acoustic/Connect-SP.git'
+       ref.requirement = { 'kind' => 'upToNextMajorVersion', 'minimumVersion' => '2.1.51' }
+       project.root_object.package_references << ref
+       app = project.native_targets.find { |t| t.name == 'App' }
+       dep = project.new(Xcodeproj::Project::Object::XCSwiftPackageProductDependency)
+       dep.product_name = 'Connect'
+       dep.package = ref
+       app.package_product_dependencies << dep
+       nse = project.native_targets.find { |t| t.name == 'ConnectNSE' }
+       twice = project.new(Xcodeproj::Project::Object::XCSwiftPackageProductDependency)
+       twice.product_name = 'Connect'
+       twice.package = ref
+       nse.package_product_dependencies << twice
+       file = project.new(Xcodeproj::Project::Object::PBXBuildFile)
+       file.product_ref = twice
+       nse.frameworks_build_phase.files << file`,
+      );
+      expect(acousticPackages(inspect(dir).packages)).toHaveLength(2);
+      expect(inspect(dir).targets.ConnectNSE.frameworks.filter((f) => f === 'Connect')).toHaveLength(2);
+      expect(setup(dir).status).toBe(0);
+      const { targets, packages } = inspect(dir);
+      expect(acousticPackages(packages)).toEqual([{ url: DEBUG_SP, kind: 'upToNextMajorVersion', version: pin() }]);
+      expect(targets.App.productPackages.filter((url) => /go-acoustic/.test(url))).toEqual([DEBUG_SP]);
+      // ConnectNSE linked Connect from both packages: it keeps one
+      expect(targets.ConnectNSE.productPackages).toEqual([DEBUG_SP]);
+      expect(targets.ConnectNSE.frameworks.filter((f) => f === 'Connect')).toHaveLength(1);
+    },
+  );
 
   it('makes the app depend on the extensions and embed them', () => {
     const dir = copyApp();
@@ -182,13 +298,13 @@ describeIfXcodeproj('setup-ios-push on the Xcode project of a Capacitor app', ()
     expect(r.status).toBe(0);
     expect(r.output).toMatch(/pod install/);
     const { targets, packages } = inspect(dir);
-    expect(packages.filter((p) => /Connect-SP/.test(p.url))).toEqual([]);
+    expect(packages.filter((p) => /go-acoustic\/Connect/.test(p.url))).toEqual([]);
     expect(targets.ConnectNSE.products).toEqual([]);
     expect(targets.ConnectNCE.products).toEqual([]);
     expect(targets.App.embedded).toEqual(expect.arrayContaining(['ConnectNSE.appex', 'ConnectNCE.appex']));
     const podfile = fs.readFileSync(path.join(dir, 'ios', 'App', 'Podfile'), 'utf8');
-    expect(podfile).toMatch(/target 'ConnectNSE' do\n {2}pod 'AcousticConnect'/);
-    expect(podfile).toMatch(/target 'ConnectNCE' do\n {2}pod 'AcousticConnect'/);
+    expect(podfile).toMatch(/target 'ConnectNSE' do\n {2}pod 'AcousticConnectDebug'/);
+    expect(podfile).toMatch(/target 'ConnectNCE' do\n {2}pod 'AcousticConnectDebug'/);
   });
 
   it('is safe to run again: nothing is added twice', () => {

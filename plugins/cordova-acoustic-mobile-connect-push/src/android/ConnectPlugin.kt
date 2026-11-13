@@ -190,6 +190,9 @@ class ConnectPlugin : CordovaPlugin() {
                     PluginResult(PluginResult.Status.OK, Connect.getLibraryVersion())
                 ); true
             }
+            ACTION_LOG_WEB_EVENT -> {
+                handleLogWebEvent(args, callbackContext); true
+            }
             else -> {
                 callbackContext.sendPluginResult(
                     PluginResult(PluginResult.Status.INVALID_ACTION, action)
@@ -560,6 +563,24 @@ class ConnectPlugin : CordovaPlugin() {
                     t.message ?: "logIdentificationEvent failed"
                 )
             }
+        }
+    }
+
+    /**
+     * Logs a tap or gesture the page script (www/WebGestures.js) saw on a page element. Resolves
+     * whether the SDK queued it.
+     */
+    internal fun handleLogWebEvent(args: JSONArray, callbackContext: CallbackContext) {
+        val event = args.optJSONObject(0)
+        val activity = cordova.activity
+        if (event == null || activity == null) {
+            callbackContext.sendPluginResult(PluginResult(PluginResult.Status.OK, false))
+            return
+        }
+        activity.runOnUiThread {
+            callbackContext.sendPluginResult(
+                PluginResult(PluginResult.Status.OK, WebEventLogger.log(webView.view, event))
+            )
         }
     }
 
@@ -1318,6 +1339,8 @@ class ConnectPlugin : CordovaPlugin() {
         internal const val ACTION_LOG_LOCATION = "logLocation"
         internal const val ACTION_LOG_LOCATION_UPDATE = "logLocationUpdate"
         internal const val ACTION_GET_SDK_VERSION           = "getSdkVersion"
+        // Sent by www/WebGestures.js, not by the public API.
+        internal const val ACTION_LOG_WEB_EVENT             = "logWebEvent"
 
         internal const val PUSH_MODE_AUTOMATIC = "automatic"
         // Android Connect SDK only supports automatic mode.

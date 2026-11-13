@@ -63,6 +63,21 @@ app, and the Swift package ships it only inside `Connect.framework`. Add the Run
 app's Swift package graph or its Pods do not include it. Reinstall (`npx cap sync`, then resolve packages or
 `pod install`).
 
+**Xcode stops on two Connect packages ("multiple similar targets 'Connect', 'EOCore', 'Tealeaf' appear in package
+'connect-sp' and 'connectdebug-sp'"), or the build on two `Connect.framework`s.** The plugin links one SDK build (with
+Swift Package Manager the npm package's: `ConnectDebug-SP` in the beta package, `Connect-SP` in the public one; with CocoaPods
+the pod `useRelease` picks: `AcousticConnectDebug`, or `AcousticConnect` with `useRelease: true`), and the rich-push extensions
+still link the other one: an earlier version of the plugin or the other npm package added them, or `useRelease` changed since.
+Both have the module `Connect`. Run `npx cap sync ios`, then `npx acoustic-connect setup-ios-push` once more: it moves the
+extensions to the plugin's SDK. `npx acoustic-connect doctor` checks for it (`ios-connect-package`).
+
+**`pod install` cannot find the `AcousticConnectDebug` pod.** The versions the plugin takes are published only to the Acoustic
+spec repo: run `npx acoustic-connect setup-ios-pods`, which adds `go-acoustic/PodSpecs` as a source to `ios/App/Podfile`.
+
+**Taps and gestures on page elements are not logged on iOS.** They need the Connect iOS SDK 2.2.35 or later: the
+default of the beta npm package. With the public npm package on Swift Package Manager, `useRelease: true` on CocoaPods (the
+release SDK) or an `iosVersion` below 2.2.35 nothing is logged.
+
 **`pod install` says the specs "required a higher minimum deployment target".** The CocoaPods route needs iOS 15.1;
 Capacitor's template targets 15.0. Raise `platform :ios` in the Podfile and the project's deployment target to `15.1`.
 

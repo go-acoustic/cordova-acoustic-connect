@@ -1,5 +1,7 @@
 /// <reference types="@capacitor/cli" />
 
+import type { WebEvent } from './web-gestures';
+
 /** Log level of the plugin bridge. */
 export type LogLevel = 'silent' | 'error' | 'warn' | 'info' | 'verbose';
 
@@ -83,6 +85,12 @@ export interface AcousticConnectPlugin {
   /** `token` is the APNs device token as hex digits. */
   pushDidRegisterWithToken(options: { token: string }): Promise<{ value: boolean }>;
   pushDidFailToRegister(options: { error: string | null }): Promise<{ value: boolean }>;
+  /**
+   * Logs a tap or gesture the plugin's page script saw on a page element; the script calls it, not the app.
+   * Resolves whether the SDK queued it: never while it is not enabled, and never with an SDK that cannot (on
+   * Android older than 11.1.39-beta, on iOS older than 2.2.35).
+   */
+  logWebEvent(options: WebEvent): Promise<{ queued: boolean }>;
 }
 
 /** The SDK's screen-capture rules: the sections the native SDKs read, as JSON. */
@@ -106,8 +114,12 @@ export interface AcousticConnectConfig {
   /** Set `false` to start the SDK from JavaScript only, even when the two keys above are set. Defaults to `true`. */
   autoEnable?: boolean;
   /**
-   * `true` in production builds: turns the native SDK's own logging off and, on Android, builds against Maven
-   * Central only and rejects `-beta` SDK versions (set a release `connectSdkVersion` first). Defaults to `false`.
+   * `true` in production builds: turns the native SDK's own logging off; on Android builds against Maven Central only
+   * and rejects `-beta` SDK versions (set a release `connectSdkVersion` first); on iOS with CocoaPods takes the release
+   * pod `AcousticConnect` instead of the beta `AcousticConnectDebug`, which does not log taps and gestures on page
+   * elements (after a change run `npx cap sync ios`, `npx acoustic-connect setup-ios-push` again when the app has the
+   * rich-push extensions, then `pod install`). With Swift Package Manager the npm package decides instead: the beta
+   * package links `ConnectDebug-SP`, the public one `Connect-SP`. Defaults to `false`.
    */
   useRelease?: boolean;
   /**
@@ -117,9 +129,9 @@ export interface AcousticConnectConfig {
    */
   androidVersion?: string;
   /**
-   * Pins another Connect iOS SDK than the plugin's, as `x.y.z` (the Cordova plugin's `iOSVersion`), not below the plugin's own pin. Empty or left
-   * out keeps the pin. Read when `pod install` runs, so it applies to an app that uses CocoaPods; with Swift Package Manager the plugin's
-   * `Package.swift` fixes the version and this has no effect.
+   * Pins another Connect iOS SDK than the plugin's, as `x.y.z` (the Cordova plugin's `iOSVersion`), not below 2.1.51; below 2.2.35 taps and
+   * gestures on page elements are not logged. Empty or left out keeps the plugin's default (the newest 2.x). Read when `pod install` runs, so it
+   * applies to an app that uses CocoaPods; with Swift Package Manager the npm package's `Package.swift` fixes the version and this has no effect.
    */
   iosVersion?: string;
   /** The SDK's remote kill switch. Off unless set: the SDKs ship with it on. */
