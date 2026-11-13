@@ -165,7 +165,9 @@ jobs:
         run: |
           set -euo pipefail
           echo "--- Contents (first 30 entries) ---"
-          tar -tzf "$TARBALL" | head -30
+          # List to a file first: `tar | head` under pipefail fails with SIGPIPE.
+          tar -tzf "$TARBALL" > tarball-files.txt
+          head -30 tarball-files.txt
           echo "--- Size ---"
           ls -lh "$TARBALL"
 
