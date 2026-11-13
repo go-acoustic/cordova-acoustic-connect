@@ -298,6 +298,169 @@ describe('config round trip scenario', () => {
   });
 });
 
+describe('screens', () => {
+  it('names the screens as the native and React Native samples do', () => {
+    expect(core.TAB_SCREENS).toEqual({ notification: 'Push', identity: 'Identity' });
+    expect(core.SUBTAB_SCREENS).toEqual({ actions: 'Behaviour', showcase: 'Showcase', verification: 'Verification' });
+    expect(core.GESTURE_SCREEN).toBe('Gestures');
+  });
+
+  it('loads the first screen without a referrer and leaves nothing', () => {
+    expect(core.moveScreen(null, 'Push')).toEqual({
+      current: { name: 'Push', referrer: null },
+      unload: null,
+      load: { name: 'Push', referrer: null },
+    });
+  });
+
+  it('enters the next screen from the current one and leaves the current one with the referrer it was entered with', () => {
+    expect(core.moveScreen({ name: 'Identity', referrer: 'Push' }, 'Behaviour')).toEqual({
+      current: { name: 'Behaviour', referrer: 'Identity' },
+      unload: { name: 'Identity', referrer: 'Push' },
+      load: { name: 'Behaviour', referrer: 'Identity' },
+    });
+  });
+
+  it('logs nothing for a move to the current screen', () => {
+    const current = { name: 'Push', referrer: null };
+    expect(core.moveScreen(current, 'Push')).toEqual({ current, unload: null, load: null });
+  });
+
+  function trackerWith(A: Record<string, jest.Mock>) {
+    const calls: string[] = [];
+    A.logScreenViewContextLoad.mockImplementation((name: string, referrer: string | null) => {
+      calls.push(`LOAD ${name} <- ${referrer}`);
+      return Promise.resolve();
+    });
+    A.logScreenViewContextUnload.mockImplementation((name: string, referrer: string | null) => {
+      calls.push(`UNLOAD ${name} <- ${referrer}`);
+      return Promise.resolve();
+    });
+    return { tracker: core.createScreenTracker(() => A), calls };
+  }
+
+  async function settled(steps: { unload: Promise<unknown> | null; load: Promise<unknown> | null }) {
+    return { unload: await steps.unload, load: await steps.load };
+  }
+
+  it('logs nothing before the SDK is enabled, then loads the screen on display', async () => {
+    const { tracker, calls } = trackerWith(makeApi());
+    expect(tracker.show('Push')).toEqual({ unload: null, load: null });
+    expect(tracker.show('Identity')).toEqual({ unload: null, load: null });
+    expect(await settled(tracker.setEnabled(true))).toEqual({ unload: null, load: { ok: true } });
+    expect(calls).toEqual(['LOAD Identity <- null']);
+    expect(tracker.current()).toBe('Identity');
+  });
+
+  it('logs the demo walk from launch to Verification in order', async () => {
+    const { tracker, calls } = trackerWith(makeApi());
+    tracker.show('Push');
+    let last = tracker.setEnabled(true);
+    for (const name of ['Identity', 'Behaviour', 'Showcase', 'Gestures', 'Showcase', 'Verification']) {
+      last = tracker.show(name);
+    }
+    expect(tracker.show('Verification')).toEqual({ unload: null, load: null });
+    await settled(last);
+    expect(calls).toEqual([
+      'LOAD Push <- null',
+      'LOAD Identity <- Push',
+      'UNLOAD Push <- null',
+      'LOAD Behaviour <- Identity',
+      'UNLOAD Identity <- Push',
+      'LOAD Showcase <- Behaviour',
+      'UNLOAD Behaviour <- Identity',
+      'LOAD Gestures <- Showcase',
+      'UNLOAD Showcase <- Behaviour',
+      'LOAD Showcase <- Gestures',
+      'UNLOAD Gestures <- Showcase',
+      'LOAD Verification <- Showcase',
+      'UNLOAD Showcase <- Gestures',
+    ]);
+  });
+
+  it('reports an UNLOAD refused after the LOAD and goes on with the next move', async () => {
+    const A = makeApi();
+    const { tracker, calls } = trackerWith(A);
+    tracker.show('Push');
+    await settled(tracker.setEnabled(true));
+    A.logScreenViewContextUnload.mockRejectedValueOnce(new Error('returned false'));
+    expect(await settled(tracker.show('Identity'))).toEqual({
+      unload: { ok: false, message: 'returned false' },
+      load: { ok: true },
+    });
+    await settled(tracker.show('Behaviour'));
+    expect(calls).toEqual([
+      'LOAD Push <- null',
+      'LOAD Identity <- Push',
+      'LOAD Behaviour <- Identity',
+      'UNLOAD Identity <- Push',
+    ]);
+  });
+
+  it('stops logging when disabled and loads the screen on display again when re-enabled', async () => {
+    const { tracker, calls } = trackerWith(makeApi());
+    tracker.show('Push');
+    await settled(tracker.setEnabled(true));
+    expect(tracker.setEnabled(false)).toEqual({ unload: null, load: null });
+    expect(tracker.show('Identity')).toEqual({ unload: null, load: null });
+    await settled(tracker.setEnabled(true));
+    expect(calls).toEqual(['LOAD Push <- null', 'LOAD Identity <- null']);
+  });
+
+  it('names the screen on display from the tab, the sub-tab and the Gestures view', () => {
+    expect(core.screenFor({ tab: null, subtab: 'actions', gesturesOpen: false })).toBeNull();
+    expect(core.screenFor({ tab: 'notification', subtab: 'showcase', gesturesOpen: true })).toBe('Push');
+    expect(core.screenFor({ tab: 'identity', subtab: 'actions', gesturesOpen: false })).toBe('Identity');
+    expect(core.screenFor({ tab: 'behaviour', subtab: 'actions', gesturesOpen: false })).toBe('Behaviour');
+    expect(core.screenFor({ tab: 'behaviour', subtab: 'showcase', gesturesOpen: false })).toBe('Showcase');
+    expect(core.screenFor({ tab: 'behaviour', subtab: 'showcase', gesturesOpen: true })).toBe('Gestures');
+    expect(core.screenFor({ tab: 'behaviour', subtab: 'verification', gesturesOpen: true })).toBe('Verification');
+  });
+
+  it('logs what the page reports only when it changes the screen on display', async () => {
+    const A = makeApi();
+    const calls: string[] = [];
+    A.logScreenViewContextLoad.mockImplementation((name: string, referrer: string | null) => {
+      calls.push(`LOAD ${name} <- ${referrer}`);
+      return Promise.resolve();
+    });
+    A.logScreenViewContextUnload.mockImplementation((name: string, referrer: string | null) => {
+      calls.push(`UNLOAD ${name} <- ${referrer}`);
+      return Promise.resolve();
+    });
+    const screens = core.createPageScreens(() => A);
+    expect(screens.showSubtab('showcase')).toEqual({ unload: null, load: null });
+    screens.showTab('notification');
+    screens.setEnabled(true);
+    screens.showTab('behaviour');
+    screens.setGesturesOpen(true);
+    const none = { unload: null, load: null };
+    expect(screens.showSubtab('showcase')).toEqual(none);
+    expect(screens.showTab('behaviour')).toEqual(none);
+    const last = screens.setGesturesOpen(false);
+    await settled(last);
+    expect(calls).toEqual([
+      'LOAD Push <- null',
+      'LOAD Showcase <- Push',
+      'UNLOAD Push <- null',
+      'LOAD Gestures <- Showcase',
+      'UNLOAD Showcase <- Push',
+      'LOAD Showcase <- Gestures',
+      'UNLOAD Gestures <- Showcase',
+    ]);
+    expect(screens.current()).toBe('Showcase');
+  });
+
+  it('reports a plugin without the screen view calls', async () => {
+    const tracker = core.createScreenTracker(() => ({}));
+    tracker.show('Push');
+    expect(await settled(tracker.setEnabled(true))).toEqual({
+      unload: null,
+      load: { ok: false, message: 'This plugin version has no logScreenViewContextLoad' },
+    });
+  });
+});
+
 describe('gestures', () => {
   it("keeps the Android samples' screen name, thresholds and zoom limits", () => {
     expect(core.GESTURE_SCREEN).toBe('Gestures');

@@ -555,3 +555,14 @@ describe('ConnectPlugin.kt — PushEnabled', () => {
         expect(KOTLIN).not.toContain('set Connect.PushEnabled=true in ConnectConfig');
     });
 });
+
+describe('ConnectPlugin.kt — setCurrentScreenName', () => {
+    const block = KOTLIN_CODE.match(/internal fun handleSetCurrentScreenName[\s\S]*?\n {4}\}/)?.[0] ?? '';
+
+    test('names the screen and logs no screen view, as on iOS', () => {
+        expect(block).toBeTruthy();
+        expect(block).toMatch(/CODE_INVALID_ARGS/);
+        expect(block).toMatch(/Connect\.setCurrentLogicalPageName\s*\(\s*name\s*\)/);
+        expect(block).not.toMatch(/logScreenview/);
+    });
+});

@@ -29,6 +29,12 @@
         line.textContent = outcome.ok ? 'Queued' : outcome.message;
     }
 
+    var screens = Core.createPageScreens(api);
+
+    function showTab(tab) {
+        screens.showTab(tab);
+    }
+
     // Wraps one async call: the result line shows "Queued" (the SDK accepted the message) or the error.
     function run(line, call) {
         Promise.resolve()
@@ -220,13 +226,15 @@
         document.getElementById('showcaseList').classList.add('hidden');
         document.getElementById('showcaseGestures').classList.remove('hidden');
         renderGestures();
-        run(state.gesturesLine, function (a) { return a.logScreenViewContextLoad(Core.GESTURE_SCREEN, Core.GESTURE_REFERRER); });
+        var load = screens.setGesturesOpen(true).load;
+        if (load) load.then(function (outcome) { result(state.gesturesLine, outcome); });
     }
 
     function closeGestures() {
         document.getElementById('showcaseGestures').classList.add('hidden');
         document.getElementById('showcaseList').classList.remove('hidden');
-        run(state.gesturesLine, function (a) { return a.logScreenViewContextUnload(Core.GESTURE_SCREEN, Core.GESTURE_REFERRER); });
+        var unload = screens.setGesturesOpen(false).unload;
+        if (unload) unload.then(function (outcome) { result(state.gesturesLine, outcome); });
     }
 
     function onPointer(target, handlers) {
@@ -419,14 +427,13 @@
         document.querySelectorAll('.subtab-btn').forEach(function (n) { n.classList.remove('active'); });
         document.getElementById('subtab-' + name).classList.add('active');
         document.querySelector('[data-subtab="' + name + '"]').classList.add('active');
-        if (api() && typeof api().setCurrentScreenName === 'function' && state.enabled) {
-            api().setCurrentScreenName('behaviour_' + name).catch(function () {});
-        }
+        screens.showSubtab(name);
     }
 
     function setEnabled(enabled) {
         state.enabled = enabled;
         document.querySelectorAll('[data-needs-sdk]').forEach(function (b) { b.disabled = !enabled; });
+        screens.setEnabled(enabled);
     }
 
     function init() {
@@ -435,7 +442,10 @@
         });
         renderShowcase();
         renderVerification();
+        screens.showSubtab(document.querySelector('.subtab-btn.active').dataset.subtab);
+        showTab(document.querySelector('.tab-btn.active').dataset.tab);
     }
 
-    window.BehaviourUi = { init: init, setEnabled: setEnabled };
+    // showTab: the page's tab switcher (js/index.js) reports each tab shown, so the screen views follow it.
+    window.BehaviourUi = { init: init, setEnabled: setEnabled, showTab: showTab };
 }());

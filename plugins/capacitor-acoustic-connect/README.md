@@ -89,12 +89,29 @@ with `appKey` and `postMessageUrl` set, the SDK starts when the app launches.
 ```ts
 import { AcousticConnect } from 'capacitor-acoustic-connect-beta';
 
-await AcousticConnect.setCurrentScreenName('Checkout');
+await AcousticConnect.logScreenViewContextLoad('Checkout', 'Cart');
 await AcousticConnect.logCustomEvent('purchase', { total: 24.99, currency: 'EUR' });
 await AcousticConnect.logClickEvent('buyButton');
 await AcousticConnect.logTextChangeEvent('note', { text: noteField.value }); // masked unless masked: false
 const state = await AcousticConnect.push.getPermissionState(); // true, false, or null (not asked yet)
 ```
+
+**Screen views.** The whole app is one native screen, the WebView, so the SDK sees none of the page's navigation. Log each
+screen of the page (a tab, a route, a view inside one) as it is entered and left: when the user moves on, log the LOAD of
+the next screen, with the screen left as referrer, then the UNLOAD of the screen left, with the referrer it was entered with.
+Load first: on Android the SDK refuses an UNLOAD of the current screen. On Android the pattern needs the Connect Android SDK
+11.1.12-beta or later (the release 11.1.17, the plugin's default, has it): before it an UNLOAD renamed the current screen to
+the one left, and a LOAD of the screen just left was dropped as a repeat.
+
+```ts
+// From Cart (entered from Home) to Checkout:
+await AcousticConnect.logScreenViewContextLoad('Checkout', 'Cart');
+await AcousticConnect.logScreenViewContextUnload('Cart', 'Home');
+```
+
+`setCurrentScreenName(name)` only names the screen that later events are attributed to: it logs no screen view, on Android or
+iOS. On Android, versions up to 1.1.11 logged a LOAD screen view for it; an app that relied on it logs that LOAD with
+`logScreenViewContextLoad`.
 
 See also: [configuration](docs/configuration.md), [push notifications](docs/push.md), [troubleshooting](docs/troubleshooting.md) and
 [moving from the Cordova plugin](docs/migration-from-cordova.md).
@@ -300,9 +317,13 @@ flushQueues() => Promise<void>
 setCurrentScreenName(name: string) => Promise<void>
 ```
 
-| Param      | Type                |
-| ---------- | ------------------- |
-| **`name`** | <code>string</code> |
+Names the screen that later events are attributed to. It only names the screen and logs no screen view, on Android and iOS
+(on Android, versions up to 1.1.11 also logged a LOAD). A hybrid app logs each screen of its page (a tab, a route, a view inside
+one) itself: on a move, `logScreenViewContextLoad` for the next screen, then `logScreenViewContextUnload` for the one left.
+
+| Param      | Type                | Description                                                   |
+| ---------- | ------------------- | ------------------------------------------------------------- |
+| **`name`** | <code>string</code> | Screen name. Rejects with `ACOUSTIC_INVALID_ARGS` when empty. |
 
 --------------------
 
@@ -385,10 +406,12 @@ logExceptionEvent(message: string, stackInfo?: string | undefined, unhandled?: b
 logScreenViewContextLoad(logicalPageName: string, referrer?: string | null | undefined) => Promise<void>
 ```
 
-| Param                 | Type                        |
-| --------------------- | --------------------------- |
-| **`logicalPageName`** | <code>string</code>         |
-| **`referrer`**        | <code>string \| null</code> |
+Logs that a screen of the page was entered. On a move, log it before the UNLOAD of the screen left.
+
+| Param                 | Type                        | Description                                                   |
+| --------------------- | --------------------------- | ------------------------------------------------------------- |
+| **`logicalPageName`** | <code>string</code>         | Screen name. Rejects with `ACOUSTIC_INVALID_ARGS` when empty. |
+| **`referrer`**        | <code>string \| null</code> | The screen left for this one; empty or `null` means none.     |
 
 --------------------
 
@@ -399,10 +422,13 @@ logScreenViewContextLoad(logicalPageName: string, referrer?: string | null | und
 logScreenViewContextUnload(logicalPageName: string, referrer?: string | null | undefined) => Promise<void>
 ```
 
-| Param                 | Type                        |
-| --------------------- | --------------------------- |
-| **`logicalPageName`** | <code>string</code>         |
-| **`referrer`**        | <code>string \| null</code> |
+Logs that a screen of the page was left. On a move, log it after the LOAD of the next screen: the Android SDK refuses an UNLOAD
+of the current screen.
+
+| Param                 | Type                        | Description                                                                        |
+| --------------------- | --------------------------- | ---------------------------------------------------------------------------------- |
+| **`logicalPageName`** | <code>string</code>         | Screen name. Rejects with `ACOUSTIC_INVALID_ARGS` when empty.                      |
+| **`referrer`**        | <code>string \| null</code> | The referrer the screen was entered with (its LOAD's); empty or `null` means none. |
 
 --------------------
 

@@ -133,7 +133,11 @@ declare namespace AcousticConnect {
 
     /**
      * Set the logical screen name that subsequent events are attributed to.
-     * Call it on every page / route change.
+     * It only names the screen and logs no screen view, on Android and iOS.
+     * A hybrid app logs each screen of its page (a tab, a route, a view inside
+     * one) itself: on a move, logScreenViewContextLoad for the next screen,
+     * then logScreenViewContextUnload for the one left. On Android, plugin
+     * versions up to 1.1.11 also logged a LOAD screen view here.
      *
      * @rejects {AcousticError} `ACOUSTIC_INVALID_ARGS` when name is empty.
      */
@@ -281,10 +285,11 @@ declare namespace AcousticConnect {
     ): Promise<void>;
 
     /**
-     * Log that a screen was entered (a `LOAD` screen view).
+     * Log that a screen was entered (a `LOAD` screen view). On a move, log it
+     * before the `UNLOAD` of the screen left.
      *
-     * @param referrer Name of the screen that led here; empty or `null` means
-     *   none.
+     * @param referrer Name of the screen left for this one; empty or `null`
+     *   means none.
      * @rejects {AcousticError} `ACOUSTIC_INVALID_ARGS` when logicalPageName is
      *   empty or referrer is not a string.
      */
@@ -294,10 +299,12 @@ declare namespace AcousticConnect {
     ): Promise<void>;
 
     /**
-     * Log that a screen was left (an `UNLOAD` screen view).
+     * Log that a screen was left (an `UNLOAD` screen view). On a move, log it
+     * after the `LOAD` of the next screen: the Android SDK refuses an `UNLOAD`
+     * of the current screen.
      *
-     * @param referrer Name of the screen that led here; empty or `null` means
-     *   none.
+     * @param referrer The referrer the screen was entered with (its `LOAD`'s);
+     *   empty or `null` means none.
      * @rejects {AcousticError} `ACOUSTIC_INVALID_ARGS` when logicalPageName is
      *   empty or referrer is not a string.
      */

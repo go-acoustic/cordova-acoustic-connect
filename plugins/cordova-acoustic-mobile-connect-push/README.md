@@ -152,7 +152,7 @@ All analytics methods return `Promise<void>` and reject with `{ code, message }`
 |---|---|
 | `logCustomEvent(eventName, values?, level?)` | `values` is a **flat** object of string / number / boolean (the Android SDK carries strings only). `level` is a non-negative integer, default `3`. |
 | `logSignal(values, level?)` | `values` is arbitrary JSON, nested objects and arrays included. Functions, `undefined`, `NaN`/`Infinity`, dates and circular references are rejected. |
-| `setCurrentScreenName(name)` | Sets the screen name later events are attributed to. It does not emit a screen view by itself. |
+| `setCurrentScreenName(name)` | Sets the screen name later events are attributed to. It logs no screen view, on Android or iOS: log screens with the two calls below. On Android, versions up to 1.1.11 logged a LOAD screen view for it; an app that relied on it logs that LOAD with `logScreenViewContextLoad`. |
 | `logScreenViewContextLoad(name, referrer?)` | Logs that a screen was entered. `referrer` is the previous screen; empty or `null` means none. |
 | `logScreenViewContextUnload(name, referrer?)` | Logs that a screen was left. On Android the SDK drops a screen view whose screen name still has an unsent message in its queue, so unloading the screen you have just loaded rejects with `ACOUSTIC_INTERNAL_ERROR` (`returned false`). Unload the *previous* screen instead. |
 | `logClickEvent(controlId, data?)` | Sent as a `click` **custom event** carrying `controlId` plus optional flat `data`. |
@@ -163,8 +163,9 @@ All analytics methods return `Promise<void>` and reject with `{ code, message }`
 | `getSdkVersion()` | Resolves the native Connect SDK's own version. |
 
 ```js
-await AcousticConnect.setCurrentScreenName('checkout');
+// From the cart (entered from home) to checkout: load the next screen, then unload the one left.
 await AcousticConnect.logScreenViewContextLoad('checkout', 'cart');
+await AcousticConnect.logScreenViewContextUnload('cart', 'home');
 await AcousticConnect.logCustomEvent('coupon_applied', { code: 'SPRING', amount: 10 });
 await AcousticConnect.logClickEvent('btnPay', { method: 'card' });
 await AcousticConnect.logTextChangeEvent('txtEmail', { text: email });   // masked
@@ -172,6 +173,7 @@ await AcousticConnect.logTextChangeEvent('txtEmail', { text: email });   // mask
 
 Things to know:
 
+- **Log the page's screens yourself.** The whole app is one native screen, the WebView, so the SDK sees none of the page's navigation. Log each screen of the page (a tab, a route, a view inside one) as it is entered and left: when the user moves on, `logScreenViewContextLoad` for the next screen, with the screen left as referrer, then `logScreenViewContextUnload` for the screen left, with the referrer it was entered with (the Android SDK refuses an UNLOAD of the current screen, see above). On Android this needs the Connect Android SDK 11.1.12-beta or later, which the defaults are (11.1.39-beta, and 11.1.17 under `useRelease: true`): before it an UNLOAD renamed the current screen to the one left, and a LOAD of the screen just left was dropped as a repeat. `setCurrentScreenName` does not do this.
 - **Clicks and typing inside the page are not captured automatically.** The native SDK cannot see DOM events inside the WebView, so call `logClickEvent` / `logTextChangeEvent` yourself (or from your own listeners). The native control-event APIs are not used: on a device iOS rejects them for every view, and Android reports the whole WebView as the target.
 - **`logCustomEvent` and `logSignal` payloads are shaped differently on the wire per platform.** iOS nests them under `data.value` (custom event) and `signal.data.value` (signal); Android does not. Android also delivers every custom-event value as a string, iOS keeps the JSON types. Keep that in mind when you query the data.
 - **`logSignal` on Android:** Connect Android SDK versions before `11.0.24-beta` drop a number at the *top level* of the payload (strings and booleans arrive; numbers nested inside an object or array are not affected). Observed on `11.0.21-beta`; `11.1.10-beta` sends it (checked on an emulator), and so do the plugin's defaults. It matters only if you pin an older `AndroidVersion`: then nest numeric values.

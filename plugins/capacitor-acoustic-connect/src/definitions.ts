@@ -188,13 +188,33 @@ export interface AcousticConnectApi {
   getSdkVersion(): Promise<string>;
   isSdkEnabled(): Promise<boolean>;
   flushQueues(): Promise<void>;
+  /**
+   * Names the screen that later events are attributed to. It only names the screen and logs no screen view, on Android and iOS
+   * (on Android, versions up to 1.1.11 also logged a LOAD). A hybrid app logs each screen of its page (a tab, a route, a view inside
+   * one) itself: on a move, `logScreenViewContextLoad` for the next screen, then `logScreenViewContextUnload` for the one left.
+   *
+   * @param name Screen name. Rejects with `ACOUSTIC_INVALID_ARGS` when empty.
+   */
   setCurrentScreenName(name: string): Promise<void>;
   logCustomEvent(eventName: string, values?: Record<string, FlatValue>, level?: number): Promise<void>;
   logClickEvent(controlId: string, data?: Record<string, FlatValue>): Promise<void>;
   logTextChangeEvent(controlId: string, options?: TextChangeOptions): Promise<void>;
   logSignal(values: SignalValues, level?: number): Promise<void>;
   logExceptionEvent(message: string, stackInfo?: string, unhandled?: boolean): Promise<void>;
+  /**
+   * Logs that a screen of the page was entered. On a move, log it before the UNLOAD of the screen left.
+   *
+   * @param logicalPageName Screen name. Rejects with `ACOUSTIC_INVALID_ARGS` when empty.
+   * @param referrer The screen left for this one; empty or `null` means none.
+   */
   logScreenViewContextLoad(logicalPageName: string, referrer?: string | null): Promise<void>;
+  /**
+   * Logs that a screen of the page was left. On a move, log it after the LOAD of the next screen: the Android SDK refuses an UNLOAD
+   * of the current screen.
+   *
+   * @param logicalPageName Screen name. Rejects with `ACOUSTIC_INVALID_ARGS` when empty.
+   * @param referrer The referrer the screen was entered with (its LOAD's); empty or `null` means none.
+   */
   logScreenViewContextUnload(logicalPageName: string, referrer?: string | null): Promise<void>;
   /**
    * Asks the native SDK to capture the layout of the screen on display, under `name`.

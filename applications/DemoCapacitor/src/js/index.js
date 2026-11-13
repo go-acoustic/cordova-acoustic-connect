@@ -157,7 +157,7 @@ function switchTab(tab) {
     document.querySelector('[data-tab="' + tab + '"]').classList.add('active');
     const titleEl = document.getElementById('pageTitle');
     if (titleEl) titleEl.textContent = TAB_TITLES[tab] || tab;
-    AcousticConnect.setCurrentScreenName(tab + '_screen').catch(() => {});
+    if (window.BehaviourUi) window.BehaviourUi.showTab(tab);
 }
 
 // ── Notification Authorization ─────────────────────────────────────────

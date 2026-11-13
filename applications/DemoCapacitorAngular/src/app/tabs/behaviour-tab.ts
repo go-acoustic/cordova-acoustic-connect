@@ -1,4 +1,4 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, OnInit, inject, signal } from '@angular/core';
 import { AcousticService } from '../acoustic.service';
 import { BehaviourActions } from './behaviour-actions';
 import { BehaviourShowcase } from './behaviour-showcase';
@@ -23,7 +23,7 @@ type Subtab = 'actions' | 'showcase' | 'verification';
     }
   `
 })
-export class BehaviourTab {
+export class BehaviourTab implements OnInit {
   private readonly acoustic = inject(AcousticService);
   readonly subtabs: Subtab[] = ['actions', 'showcase', 'verification'];
   readonly subtab = signal<Subtab>('actions');
@@ -32,8 +32,12 @@ export class BehaviourTab {
     return s.charAt(0).toUpperCase() + s.slice(1);
   }
 
+  ngOnInit(): void {
+    this.acoustic.screens.showTab('behaviour', this.subtab());
+  }
+
   select(s: Subtab): void {
     this.subtab.set(s);
-    if (this.acoustic.sdkEnabled()) this.acoustic.setCurrentScreenName('behaviour_' + s).catch(() => undefined);
+    this.acoustic.screens.showSubtab(s);
   }
 }

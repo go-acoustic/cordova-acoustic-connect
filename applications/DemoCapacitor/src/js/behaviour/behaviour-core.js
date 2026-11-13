@@ -110,8 +110,96 @@
         }, Promise.resolve([]));
     }
 
+    // ── Current screen (tabs, Behaviour sub-tabs, the Gestures view) ─────
+    //
+    // The app is one native screen, so the page logs its own screens, named as in the native and React Native samples.
+
+    var TAB_SCREENS = { notification: 'Push', identity: 'Identity' };
+    var SUBTAB_SCREENS = { actions: 'Behaviour', showcase: 'Showcase', verification: 'Verification' };
     var GESTURE_SCREEN = 'Gestures';
-    var GESTURE_REFERRER = 'Showcase';
+
+    // Moving to another screen enters the next one with the current one as referrer, then leaves the current one (its
+    // UNLOAD keeps the referrer it was entered with): the Android SDK refuses an UNLOAD of the current screen, so the next
+    // one is loaded first. Moving to the current screen logs nothing.
+    function moveScreen(current, name) {
+        if (current && current.name === name) return { current: current, unload: null, load: null };
+        var referrer = current ? current.name : null;
+        return {
+            current: { name: name, referrer: referrer },
+            unload: current ? { name: current.name, referrer: current.referrer } : null,
+            load: { name: name, referrer: referrer }
+        };
+    }
+
+    // Keeps one current screen and logs each move while the SDK is enabled; enabling logs the move to the screen on
+    // display, and disabling forgets what was logged, so the next enable loads that screen again. `show` and `setEnabled` return the outcome ({ ok, message }) of the LOAD and of the UNLOAD, null for a
+    // call not made. An outcome never rejects, and the calls go out in order, the LOAD first.
+    function createScreenTracker(api) {
+        var shown = null;
+        var logged = null;
+        var enabled = false;
+        var queue = Promise.resolve();
+
+        function call(method, view) {
+            queue = queue.then(function () {
+                var A = api();
+                if (!A || typeof A[method] !== 'function') throw new Error('This plugin version has no ' + method);
+                return A[method](view.name, view.referrer);
+            }).then(function () { return { ok: true }; },
+                    function (e) { return { ok: false, message: errorMessage(e) }; });
+            return queue;
+        }
+
+        function sync() {
+            if (!enabled || shown === null) return { unload: null, load: null };
+            var move = moveScreen(logged, shown);
+            logged = move.current;
+            var load = move.load ? call('logScreenViewContextLoad', move.load) : null;
+            var unload = move.unload ? call('logScreenViewContextUnload', move.unload) : null;
+            return { unload: unload, load: load };
+        }
+
+        return {
+            show: function (name) { shown = name; return sync(); },
+            setEnabled: function (value) {
+                enabled = value;
+                if (!value) logged = null;
+                return sync();
+            },
+            current: function () { return shown; }
+        };
+    }
+
+    // The screen on display: a tab, on Behaviour its sub-tab, and on Showcase the Gestures view while it is open.
+    function screenFor(page) {
+        if (!page.tab) return null;
+        if (page.tab !== 'behaviour') return TAB_SCREENS[page.tab];
+        if (page.subtab === 'showcase' && page.gesturesOpen) return GESTURE_SCREEN;
+        return SUBTAB_SCREENS[page.subtab];
+    }
+
+    // What the page shows, logged through one screen tracker: the demos report the tab, the sub-tab and the Gestures
+    // view, and a report that does not change the screen on display logs nothing.
+    function createPageScreens(api) {
+        var tracker = createScreenTracker(api);
+        var page = { tab: null, subtab: 'actions', gesturesOpen: false };
+        function sync() {
+            var name = screenFor(page);
+            return name === null ? { unload: null, load: null } : tracker.show(name);
+        }
+        return {
+            showTab: function (tab, subtab) {
+                page.tab = tab;
+                if (subtab) page.subtab = subtab;
+                return sync();
+            },
+            showSubtab: function (subtab) { page.subtab = subtab; return sync(); },
+            setGesturesOpen: function (open) { page.gesturesOpen = open; return sync(); },
+            setEnabled: tracker.setEnabled,
+            current: tracker.current
+        };
+    }
+
     var GESTURE_ROWS = 40;
     var LONG_PRESS_MS = 500;
     var DOUBLE_TAP_MS = 300;
@@ -307,8 +395,9 @@
         FLAT_SIGNAL: FLAT_SIGNAL,
         CONFIG_PROBE: CONFIG_PROBE,
         DIRECT_CASES: DIRECT_CASES,
+        TAB_SCREENS: TAB_SCREENS,
+        SUBTAB_SCREENS: SUBTAB_SCREENS,
         GESTURE_SCREEN: GESTURE_SCREEN,
-        GESTURE_REFERRER: GESTURE_REFERRER,
         LONG_PRESS_MS: LONG_PRESS_MS,
         DOUBLE_TAP_MS: DOUBLE_TAP_MS,
         TAP_SLOP: TAP_SLOP,
@@ -321,6 +410,10 @@
         maskPreview: maskPreview,
         openScreen: openScreen,
         closeScreen: closeScreen,
+        moveScreen: moveScreen,
+        createScreenTracker: createScreenTracker,
+        screenFor: screenFor,
+        createPageScreens: createPageScreens,
         runDirectCases: runDirectCases,
         gestureLabel: gestureLabel,
         gestureRows: gestureRows,

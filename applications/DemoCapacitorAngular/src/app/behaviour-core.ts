@@ -99,8 +99,117 @@ export async function runDirectCases(A: AcousticConnectApi): Promise<DirectResul
   return results;
 }
 
+// The app is one native screen, so the page logs its own screens (tabs, Behaviour sub-tabs, the Gestures view), named as in the native
+// and React Native samples.
+export const TAB_SCREENS = { notification: 'Push', identity: 'Identity' };
+export const SUBTAB_SCREENS = { actions: 'Behaviour', showcase: 'Showcase', verification: 'Verification' };
 export const GESTURE_SCREEN = 'Gestures';
-export const GESTURE_REFERRER = 'Showcase';
+
+export interface ScreenView { name: string; referrer: string | null }
+export interface ScreenOutcome { ok: boolean; message?: string }
+export interface ScreenSteps { unload: Promise<ScreenOutcome> | null; load: Promise<ScreenOutcome> | null }
+
+/**
+ * Moving to another screen enters the next one with the current one as referrer, then leaves the current one (its UNLOAD keeps the
+ * referrer it was entered with): the Android SDK refuses an UNLOAD of the current screen, so the next one is loaded first. Moving to the
+ * current screen logs nothing.
+ */
+export function moveScreen(current: ScreenView | null, name: string): { current: ScreenView; unload: ScreenView | null; load: ScreenView | null } {
+  if (current && current.name === name) return { current, unload: null, load: null };
+  const referrer = current ? current.name : null;
+  return {
+    current: { name, referrer },
+    unload: current ? { name: current.name, referrer: current.referrer } : null,
+    load: { name, referrer }
+  };
+}
+
+type ScreenApi = Pick<AcousticConnectApi, 'logScreenViewContextLoad' | 'logScreenViewContextUnload'>;
+
+/**
+ * Keeps one current screen and logs each move while the SDK is enabled; enabling logs the move to the screen on display, and disabling
+ * forgets what was logged, so the next enable loads that screen again. `show` and
+ * `setEnabled` return the outcome of the LOAD and of the UNLOAD, null for a call not made. An outcome never rejects, and the calls go out
+ * in order, the LOAD first.
+ */
+export function createScreenTracker(api: () => ScreenApi | null | undefined) {
+  let shown: string | null = null;
+  let logged: ScreenView | null = null;
+  let enabled = false;
+  let queue: Promise<ScreenOutcome> = Promise.resolve({ ok: true });
+
+  const call = (method: keyof ScreenApi, view: ScreenView): Promise<ScreenOutcome> => {
+    queue = queue.then(async () => {
+      const A = api();
+      if (!A || typeof A[method] !== 'function') throw new Error('This plugin version has no ' + method);
+      await A[method](view.name, view.referrer);
+    }).then(() => ({ ok: true }), (e) => ({ ok: false, message: errorMessage(e) }));
+    return queue;
+  };
+
+  const sync = (): ScreenSteps => {
+    if (!enabled || shown === null) return { unload: null, load: null };
+    const move = moveScreen(logged, shown);
+    logged = move.current;
+    const load = move.load ? call('logScreenViewContextLoad', move.load) : null;
+    const unload = move.unload ? call('logScreenViewContextUnload', move.unload) : null;
+    return { unload, load };
+  };
+
+  return {
+    show(name: string): ScreenSteps {
+      shown = name;
+      return sync();
+    },
+    setEnabled(value: boolean): ScreenSteps {
+      enabled = value;
+      if (!value) logged = null;
+      return sync();
+    },
+    current: (): string | null => shown
+  };
+}
+
+export interface PageState { tab: string | null; subtab: string; gesturesOpen: boolean }
+
+/** The screen on display: a tab, on Behaviour its sub-tab, and on Showcase the Gestures view while it is open. */
+export function screenFor(page: PageState): string | null {
+  if (!page.tab) return null;
+  if (page.tab !== 'behaviour') return TAB_SCREENS[page.tab as keyof typeof TAB_SCREENS];
+  if (page.subtab === 'showcase' && page.gesturesOpen) return GESTURE_SCREEN;
+  return SUBTAB_SCREENS[page.subtab as keyof typeof SUBTAB_SCREENS];
+}
+
+/**
+ * What the page shows, logged through one screen tracker: the screens report the tab, the sub-tab and the Gestures view, and a report that
+ * does not change the screen on display logs nothing.
+ */
+export function createPageScreens(api: () => ScreenApi | null | undefined) {
+  const tracker = createScreenTracker(api);
+  const page: PageState = { tab: null, subtab: 'actions', gesturesOpen: false };
+  const sync = (): ScreenSteps => {
+    const name = screenFor(page);
+    return name === null ? { unload: null, load: null } : tracker.show(name);
+  };
+  return {
+    showTab(tab: string, subtab?: string): ScreenSteps {
+      page.tab = tab;
+      if (subtab) page.subtab = subtab;
+      return sync();
+    },
+    showSubtab(subtab: string): ScreenSteps {
+      page.subtab = subtab;
+      return sync();
+    },
+    setGesturesOpen(open: boolean): ScreenSteps {
+      page.gesturesOpen = open;
+      return sync();
+    },
+    setEnabled: tracker.setEnabled,
+    current: tracker.current
+  };
+}
+
 const GESTURE_ROWS = 40;
 export const LONG_PRESS_MS = 500;
 export const DOUBLE_TAP_MS = 300;

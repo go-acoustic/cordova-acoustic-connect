@@ -71,6 +71,11 @@ with `ACOUSTIC_PUSH_MODE_NOT_MANUAL` in any other mode and on Android. See the p
 - **Screen views.** The SDK records the activity's own screen (`Home`) and refuses a manual `load` with the same name. An `unload` of the screen that is
   current is refused too (Behaviour › Actions › Log Screen Unload shows it): load the next screen first, then unload the one you leave
   (Behaviour › Showcase › Screen view chain does).
+- **The page's screens.** The app is one native screen, so the page logs its own, one current screen at a time (`createPageScreens` in
+  `behaviour-core.ts`, `AcousticService.screens`): `Push`, `Identity`, and on Behaviour `Behaviour` (Actions), `Showcase`
+  (`Gestures` while that screen is open) and `Verification`, the names of the native and React Native samples. Moving on loads the next screen,
+  with the screen left as referrer, then unloads the screen left, as above. The Showcase SDK card's `disable` stops them, and its `enable` logs the screen on
+  display again.
 - **Settings.** The module name for `setConfigItem` and `getConfigItem` on Android is `EOCore`.
 - **`Script error.` in the console (Android).** The Connect Android SDK runs scripts in the WebView that look for Tealeaf's `TLT` and `tlBridge`; the plugin
   gives the page inert stand-ins, which removes the `TLT` and `tlBridge` messages, but an `ErrorEvent` `Script error.` can still reach Angular's error handler at

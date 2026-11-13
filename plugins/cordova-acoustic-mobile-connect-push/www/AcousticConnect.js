@@ -314,6 +314,10 @@ var AcousticConnect = {
 
     /**
      * Set the logical screen name that subsequent events are attributed to.
+     * It only names the screen and logs no screen view, on Android and iOS
+     * (on Android, versions up to 1.1.11 also logged a LOAD). A hybrid app logs
+     * each screen itself: logScreenViewContextLoad for the next screen, then
+     * logScreenViewContextUnload for the one left.
      * @param {string} name
      * @returns {Promise<void>}
      */
@@ -458,18 +462,20 @@ var AcousticConnect = {
     },
 
     /**
-     * Log that a screen was entered (a `LOAD` screen view).
+     * Log that a screen was entered (a `LOAD` screen view), before the
+     * `UNLOAD` of the screen left.
      * @param {string} logicalPageName e.g. 'Login'
-     * @param {string|null} [referrer] Name of the screen that led here.
+     * @param {string|null} [referrer] Name of the screen left for this one.
      * @returns {Promise<void>}
      */
     logScreenViewContextLoad:
         screenViewContext('logScreenViewContextLoad', 'logScreenViewContextLoad'),
 
     /**
-     * Log that a screen was left (an `UNLOAD` screen view).
+     * Log that a screen was left (an `UNLOAD` screen view), after the `LOAD`
+     * of the next screen: the Android SDK refuses an `UNLOAD` of the current one.
      * @param {string} logicalPageName e.g. 'Login'
-     * @param {string|null} [referrer] Name of the screen that led here.
+     * @param {string|null} [referrer] The referrer the screen was entered with.
      * @returns {Promise<void>}
      */
     logScreenViewContextUnload:

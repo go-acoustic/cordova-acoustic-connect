@@ -80,9 +80,19 @@ describe('the Angular sample shows the screens of DemoCapacitor', () => {
     expect(own.slice(core.FEATURES.length)).toEqual(['sdk', 'push-manual']);
   });
 
-  it('has the gesture screen name, thresholds and zoom limits of DemoCapacitor', () => {
+  it('has the screen names of DemoCapacitor', () => {
+    const literal = (screens: Record<string, string>) =>
+      '{ ' +
+      Object.entries(screens)
+        .map(([key, name]) => `${key}: '${name}'`)
+        .join(', ') +
+      ' }';
+    expect(ts).toContain(`TAB_SCREENS = ${literal(core.TAB_SCREENS)}`);
+    expect(ts).toContain(`SUBTAB_SCREENS = ${literal(core.SUBTAB_SCREENS)}`);
     expect(ts).toContain(`GESTURE_SCREEN = '${core.GESTURE_SCREEN}'`);
-    expect(ts).toContain(`GESTURE_REFERRER = '${core.GESTURE_REFERRER}'`);
+  });
+
+  it('has the gesture thresholds and zoom limits of DemoCapacitor', () => {
     for (const name of ['LONG_PRESS_MS', 'DOUBLE_TAP_MS', 'TAP_SLOP', 'SWIPE_THRESHOLD', 'MIN_ZOOM', 'MAX_ZOOM']) {
       expect(ts).toContain(`${name} = ${core[name]}`);
     }

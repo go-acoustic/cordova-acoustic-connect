@@ -24,11 +24,17 @@ export class HomePage implements OnInit {
 
   ngOnInit(): void {
     this.acoustic.showVersionInfo();
+    this.showScreen(this.tab());
     void this.acoustic.waitForSdk();
   }
 
   select(tab: Tab): void {
     this.tab.set(tab);
-    this.acoustic.setCurrentScreenName(tab + '_screen').catch(() => undefined);
+    this.showScreen(tab);
+  }
+
+  /** The Behaviour tab reports itself, with its active sub-tab, when it opens. */
+  private showScreen(tab: Tab): void {
+    if (tab !== 'behaviour') this.acoustic.screens.showTab(tab);
   }
 }

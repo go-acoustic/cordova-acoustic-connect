@@ -53,6 +53,15 @@ Fixes
   `push.didReceiveResponse` now pass the notification or the tapped action to
   the SDK. They resolve `true` when the SDK took it and `false` when it refused
   it; before they resolved `true` without doing anything
+- Android: `setCurrentScreenName` now only names the screen that later events
+  are attributed to, as on iOS and as the README says. It used to log a LOAD
+  screen view as well: an app that relied on that logs the LOAD with
+  `logScreenViewContextLoad`. Log each screen of the page (a tab, a route, a
+  view inside one) with `logScreenViewContextLoad` when it is entered and
+  `logScreenViewContextUnload` when it is left, the LOAD of the next screen
+  first, as the Demo app now does. On Android this needs the Connect Android
+  SDK 11.1.12-beta or later, which the defaults are (11.1.39-beta, and 11.1.17
+  under `useRelease: true`)
 
 
 Known Issues

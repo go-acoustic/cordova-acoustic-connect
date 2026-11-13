@@ -83,6 +83,7 @@ class FakeSdk : ConnectSdk {
         lastScreen = listOf(name, type, referrer)
         return accepts
     }
+    override fun setCurrentLogicalPageName(name: String) = record("setCurrentLogicalPageName($name)")
     var lastLayout: List<Any?>? = null
     override fun logScreenLayout(name: String, delayMs: Int?): Boolean {
         record("logScreenLayout")
@@ -371,9 +372,10 @@ class AcousticConnectTest {
 
     // events
 
-    @Test fun setCurrentScreenName_logsALoadScreenViewAndNeverFails() {
+    @Test fun setCurrentScreenName_namesTheScreenWithoutAScreenViewAndNeverFails() {
         assertEquals(1, reply { connect.setCurrentScreenName(obj("""{"name":" home "}"""), it) }.resolveCount)
-        assertEquals(listOf("home", ScreenViewType.LOAD, null), sdk.lastScreen)
+        assertEquals(listOf("setCurrentLogicalPageName(home)"), sdk.calls)
+        assertNull(sdk.lastScreen)
         sdk.throwOnCall = IllegalStateException("boom")
         assertEquals(1, reply { connect.setCurrentScreenName(obj("""{"name":"home"}"""), it) }.resolveCount)
         uiAvailable = false

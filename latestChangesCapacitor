@@ -71,6 +71,14 @@ Fixes
   itself. It now replaces the handler when it loads, whether the app starts the
   SDK from the config, calls `enable()` or only checks `isSdkEnabled()`, so the
   delivered signal and the events that follow reach the collector
+- Android: `setCurrentScreenName` now only names the screen that later events
+  are attributed to, as on iOS. It used to log a LOAD screen view as well: an
+  app that relied on that logs the LOAD with `logScreenViewContextLoad`. Log
+  each screen of the page (a tab, a route, a view inside one) with
+  `logScreenViewContextLoad` when it is entered and
+  `logScreenViewContextUnload` when it is left, the LOAD of the next screen
+  first, as the sample apps now do. On Android this needs the Connect Android
+  SDK 11.1.12-beta or later; the default, 11.1.17, has it
 
 Known Issues
 

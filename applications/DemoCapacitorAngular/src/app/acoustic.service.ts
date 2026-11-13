@@ -3,6 +3,7 @@ import { Capacitor } from '@capacitor/core';
 import type { FlatValue, SignalValues, TextChangeOptions } from 'capacitor-acoustic-connect-beta';
 import { AcousticConnect } from 'capacitor-acoustic-connect-beta';
 import { DEMO_ENABLE } from './acoustic-demo.config';
+import { createPageScreens } from './behaviour-core';
 
 const SDK_WAIT_TRIES = 30;
 const SDK_WAIT_MS = 1000;
@@ -20,6 +21,8 @@ export class AcousticService {
   readonly versionInfo = signal('capacitor-acoustic-connect');
   /** The plugin itself, for code that takes it as an argument (behaviour-core.ts). */
   readonly plugin = AcousticConnect;
+  /** The page's screen views (behaviour-core.ts): the tabs report what they show; `setCurrentScreenName` only names the screen. */
+  readonly screens = createPageScreens(() => AcousticConnect);
 
   /** The plugin starts the SDK from capacitor.config.json when the app launches; wait until it reports enabled. */
   async waitForSdk(): Promise<void> {
@@ -27,6 +30,7 @@ export class AcousticService {
       try {
         if (await AcousticConnect.isSdkEnabled()) {
           this.sdkEnabled.set(true);
+          this.screens.setEnabled(true);
           return;
         }
       } catch {
@@ -46,9 +50,9 @@ export class AcousticService {
       .catch(() => undefined); // the native version is a bonus, and unavailable in a browser
   }
 
-  // SDK
-  enable = () => AcousticConnect.enable(DEMO_ENABLE.appKey, DEMO_ENABLE.postURL);
-  disable = () => AcousticConnect.disable();
+  // SDK. Enabling and disabling also start and stop the page's screen views.
+  enable = () => AcousticConnect.enable(DEMO_ENABLE.appKey, DEMO_ENABLE.postURL).then(() => void this.screens.setEnabled(true));
+  disable = () => AcousticConnect.disable().then(() => void this.screens.setEnabled(false));
   getSdkVersion = () => AcousticConnect.getSdkVersion();
   isSdkEnabled = () => AcousticConnect.isSdkEnabled();
   setLogLevel = (level: 'silent' | 'error' | 'warn' | 'info' | 'verbose') => AcousticConnect.setLogLevel(level);

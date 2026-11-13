@@ -246,13 +246,13 @@ class AcousticConnect(
     }
 
     /**
-     * Logs a LOAD screen view directly: `resumeConnect` would re-inject the JavaScript interface while
-     * the page is live and make the WebView reload. Never fails once the name is valid.
+     * Names the screen later events are attributed to and logs no screen view, as on iOS: a page logs its own screens with
+     * `logScreenViewContextLoad` / `logScreenViewContextUnload`. Never fails once the name is valid.
      */
     fun setCurrentScreenName(data: JSONObject, reply: Reply) {
         val name = text(data, "name").trim()
         if (name.isBlank()) return reply.reject(CODE_INVALID_ARGS, "setCurrentScreenName: name is required")
-        ui.run { runCatching { sdk.logScreenview(name, ScreenViewType.LOAD, null) }.onFailure { Log.w(TAG, "setCurrentScreenName threw: ${it.message}") } }
+        ui.run { runCatching { sdk.setCurrentLogicalPageName(name) }.onFailure { Log.w(TAG, "setCurrentScreenName threw: ${it.message}") } }
         reply.resolve()
     }
 

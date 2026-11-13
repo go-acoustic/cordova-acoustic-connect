@@ -608,9 +608,9 @@ class ConnectPlugin : CordovaPlugin() {
     }
 
     /**
-     * Updates the logical screen name reported to the Connect SDK.
-     * Call this on every tab/page navigation so the server sees distinct
-     * screen identifiers (e.g. "notification_screen", "identity_screen").
+     * Names the screen later events are attributed to and logs no screen view,
+     * as on iOS: a page logs its own screens with logScreenViewContextLoad /
+     * logScreenViewContextUnload.
      */
     internal fun handleSetCurrentScreenName(args: JSONArray, callbackContext: CallbackContext) {
         val name = args.optString(0, "").trim()
@@ -624,11 +624,7 @@ class ConnectPlugin : CordovaPlugin() {
         }
         activity.runOnUiThread {
             try {
-                // Use logScreenview (type-2 event queued directly) instead of
-                // resumeConnect, which calls Logger.a() internally, triggers
-                // addJavascriptInterface while the page is live, and causes a
-                // WebView reload → deviceready re-fires → infinite blinking loop.
-                Connect.logScreenview(activity, name, ConnectScreenviewType.LOAD, null)
+                Connect.setCurrentLogicalPageName(name)
                 callbackContext.success()
             } catch (t: Throwable) {
                 Log.w(TAG, "setCurrentScreenName threw: ${t.message}")

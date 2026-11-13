@@ -67,6 +67,9 @@ interface ConnectSdk {
     fun flushImmediately()
     fun logScreenview(name: String, type: ScreenViewType, referrer: String?): Boolean
 
+    /** Names the screen later events are attributed to; logs no screen view. */
+    fun setCurrentLogicalPageName(name: String)
+
     /** Captures the layout of the screen on display; `delayMs` null captures now. */
     fun logScreenLayout(name: String, delayMs: Int?): Boolean
 
@@ -207,6 +210,8 @@ internal class ConnectSdkImpl(
             if (type == ScreenViewType.LOAD) ConnectScreenviewType.LOAD else ConnectScreenviewType.UNLOAD,
             referrer,
         )
+
+    override fun setCurrentLogicalPageName(name: String) = Connect.setCurrentLogicalPageName(name)
 
     override fun logScreenLayout(name: String, delayMs: Int?): Boolean {
         val host = activity()

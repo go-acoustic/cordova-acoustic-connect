@@ -1,9 +1,9 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, OnDestroy, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { AcousticService } from '../acoustic.service';
 import {
-  CONFIG_PROBE, CUSTOM_EVENT, DirectResult, FEATURES, FLAT_SIGNAL, GESTURE_REFERRER, GESTURE_SCREEN, MAX_DEPTH, NESTED_SIGNAL, closeScreen,
-  errorMessage, gestureLabel, gestureRows, maskPreview, openScreen, runDirectCases
+  CONFIG_PROBE, CUSTOM_EVENT, DirectResult, FEATURES, FLAT_SIGNAL, MAX_DEPTH, NESTED_SIGNAL, ScreenOutcome,
+  closeScreen, errorMessage, gestureLabel, gestureRows, maskPreview, openScreen, runDirectCases
 } from '../behaviour-core';
 import { createGestureHandlers } from './behaviour-gestures';
 
@@ -133,7 +133,7 @@ interface Line { ok: boolean; text: string }
     }
   `
 })
-export class BehaviourShowcase {
+export class BehaviourShowcase implements OnDestroy {
   readonly acoustic = inject(AcousticService);
   readonly enabled = this.acoustic.sdkEnabled;
   readonly features = FEATURES;
@@ -227,12 +227,21 @@ export class BehaviourShowcase {
     this.lines.update(({ 'gestures-screen': screenLine, ...rest }) => rest);
     this.handlers = this.newGestureHandlers();
     this.gestures.set(true);
-    this.run('gestures-screen', () => this.acoustic.screenLoad(GESTURE_SCREEN, GESTURE_REFERRER));
+    this.screenLine(this.acoustic.screens.setGesturesOpen(true).load);
   }
 
   closeGestures(): void {
     this.gestures.set(false);
-    this.run('gestures-screen', () => this.acoustic.screenUnload(GESTURE_SCREEN, GESTURE_REFERRER));
+    this.screenLine(this.acoustic.screens.setGesturesOpen(false).unload);
+  }
+
+  /** Leaving the sub-tab or the tab closes the Gestures view; the screen it left for is already logged. */
+  ngOnDestroy(): void {
+    this.acoustic.screens.setGesturesOpen(false);
+  }
+
+  private screenLine(step: Promise<ScreenOutcome> | null): void {
+    step?.then((outcome) => this.line('gestures-screen', outcome.ok, outcome.ok ? 'Queued' : outcome.message ?? 'failed'));
   }
 
   /** Each "next" screen loads with the previous one as referrer. */
