@@ -17,12 +17,12 @@
   },
   "dependencies": {
     "@capacitor/core": "^8.0.0",
-    "capacitor-acoustic-connect-beta": "1.1.13",
+    "capacitor-acoustic-connect-beta": "1.1.14",
     "@capacitor/ios": "^8.0.0",
     "@capacitor/android": "^8.0.0"
   },
   "devDependencies": {
-    "@capacitor/cli": "^8.0.0",
+    "@capacitor/cli": "^8.6.2",
     "vite": "^7.3.8"
   },
   "author": "",
