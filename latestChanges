@@ -15,14 +15,6 @@ New Features
   that has it. iOS: the
   default `AcousticConnectDebug` pod is now 2.2.35 or later (it was 2.1.51 or
   later)
-- `PushEnabled` in `ConnectConfig.json` — the master switch of push. `true` by
-  default (push has always been on in this plugin, so existing apps keep it;
-  the Capacitor plugin's `pushEnabled` is off by default). `false` builds an
-  analytics-only app: Android takes the `connect` artifact with no Firebase, iOS
-  enables the SDK without push and adds no `ConnectNSE`/`ConnectNCE` extensions,
-  no App Group or `aps-environment` entitlement and no `remote-notification`
-  background mode (a plugin or `config.xml` that declares it keeps it). The
-  `push.*` calls then reject with `ACOUSTIC_PUSH_DISABLED`
 - iOS: the plugin adds the Acoustic CocoaPods spec repo,
   `https://github.com/go-acoustic/PodSpecs.git`, ahead of the CocoaPods sources
   in the app's Podfile, and keeps the sources that other plugins declare after
@@ -39,9 +31,11 @@ Fixes
   drops a screen view UNLOAD that directly follows its own LOAD. With
   `useRelease: true` the default stays the 11.1.17 release, which has neither
   change yet: betas do not reach Maven Central
-- iOS: the hook that rewrites the Podfile kept only the Connect pod and dropped
-  the pods that the app's other plugins declare. It now keeps them, and restores
-  the ones an earlier run lost from `pods.json`
+- Android: the plugin no longer writes `CaptureNativeGesturesOnWebview=false`
+  into `ConnectBasicConfig.properties`. The Connect Android SDK never read that
+  key and deprecated it in 11.1.37-beta, which also stops logging an empty
+  gesture for a touch over a WebView (the default 11.1.39-beta has it; 11.1.17
+  under `useRelease: true` does not)
 - iOS: tapping a push notification that launched a killed app now runs its
   action (open URL, open dialer) in automatic push mode. The tap used to be
   lost: the SDK takes over notification handling only when your app calls
