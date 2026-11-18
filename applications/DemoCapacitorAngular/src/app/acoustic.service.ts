@@ -3,7 +3,7 @@ import { Capacitor } from '@capacitor/core';
 import type { FlatValue, SignalValues, TextChangeOptions } from 'capacitor-acoustic-connect-beta';
 import { AcousticConnect } from 'capacitor-acoustic-connect-beta';
 import { DEMO_ENABLE } from './acoustic-demo.config';
-import { createPageScreens } from './behaviour-core';
+import { ScreenSteps, createPageScreens, loggedLine } from './behaviour-core';
 
 const SDK_WAIT_TRIES = 30;
 const SDK_WAIT_MS = 1000;
@@ -23,6 +23,11 @@ export class AcousticService {
   readonly plugin = AcousticConnect;
   /** The page's screen views (behaviour-core.ts): the tabs report what they show; `setCurrentScreenName` only names the screen. */
   readonly screens = createPageScreens(() => AcousticConnect);
+  /** The Behaviour sub-tab on display and the views opened on Showcase and on Verification, kept here so they outlive the components. */
+  readonly subtab = signal<'actions' | 'showcase' | 'verification'>('actions');
+  readonly views = signal<Record<string, string[]>>({ showcase: [], verification: [] });
+  /** What the screen tracker did for the case view just opened (a refused name still opens the view, with the refusal shown there). */
+  readonly caseLoad = signal<{ ok: boolean; text: string } | null>(null);
 
   /** The plugin starts the SDK from capacitor.config.json when the app launches; wait until it reports enabled. */
   async waitForSdk(): Promise<void> {
@@ -41,6 +46,27 @@ export class AcousticService {
     this.sdkNotStarted.set(true);
   }
 
+  /** Opens a view on top of a sub-tab's stack: the screen move is logged, and the view on top is what the sub-tab shows. */
+  openView(subtab: 'showcase' | 'verification', name: string): ScreenSteps {
+    const steps = this.screens.open(subtab, name);
+    this.caseLoad.set(null);
+    this.views.update((v) => ({ ...v, [subtab]: this.screens.stack(subtab) }));
+    return steps;
+  }
+
+  /** Opens the view of a case on Verification, named exactly as the case. */
+  enterCase(name: string): void {
+    this.openView('verification', name).load?.then((outcome) => this.caseLoad.set({ ok: outcome.ok, text: loggedLine(outcome) }));
+  }
+
+  /** Leaves the view on top of a sub-tab's stack. */
+  closeView(subtab: 'showcase' | 'verification'): ScreenSteps {
+    const steps = this.screens.back(subtab);
+    this.caseLoad.set(null);
+    this.views.update((v) => ({ ...v, [subtab]: this.screens.stack(subtab) }));
+    return steps;
+  }
+
   /** The plugin and, under it, the native Connect SDK's own version for the running platform. */
   showVersionInfo(): void {
     const label = this.platform === 'android' ? 'Android' : this.platform === 'ios' ? 'iOS' : 'web';
@@ -51,7 +77,10 @@ export class AcousticService {
   }
 
   // SDK. Enabling and disabling also start and stop the page's screen views.
-  enable = () => AcousticConnect.enable(DEMO_ENABLE.appKey, DEMO_ENABLE.postURL).then(() => void this.screens.setEnabled(true));
+  enable = () =>
+    DEMO_ENABLE.appKey === 'YOUR_CONNECT_APP_KEY_HERE'
+      ? Promise.reject(new Error('set appKey and postURL in DEMO_ENABLE (acoustic-demo.config.ts) first'))
+      : AcousticConnect.enable(DEMO_ENABLE.appKey, DEMO_ENABLE.postURL).then(() => void this.screens.setEnabled(true));
   disable = () => AcousticConnect.disable().then(() => void this.screens.setEnabled(false));
   getSdkVersion = () => AcousticConnect.getSdkVersion();
   isSdkEnabled = () => AcousticConnect.isSdkEnabled();

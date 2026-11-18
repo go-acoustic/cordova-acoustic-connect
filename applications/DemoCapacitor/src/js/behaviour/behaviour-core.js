@@ -36,10 +36,14 @@
         audience: [
             { name: 'Account Name', value: 'Acme Corp' },
             { name: 'Account ID', value: '4815162342' }
-        ]
+        ],
+        cart: { items: 3, total: 24.99, coupon: null }
     };
 
     var FLAT_SIGNAL = { signalType: 'pageview', pageCategory: 'behaviour-demo' };
+
+    // The level the sample UI contract's signal and custom event buttons log at, as in the React Native samples.
+    var SIGNAL_LEVEL = 1;
 
     // An item no SDK module reads, so writing it changes no behaviour.
     var CONFIG_PROBE = { key: 'DemoConfigProbe', value: 'roundtrip', module: 'EOCore' };
@@ -170,19 +174,26 @@
         };
     }
 
-    // The screen on display: a tab, on Behaviour its sub-tab, and on Showcase the Gestures view while it is open.
+    // The screen on display: a tab, on Behaviour its sub-tab, and on a sub-tab with views open the one on top of its stack.
     function screenFor(page) {
         if (!page.tab) return null;
         if (page.tab !== 'behaviour') return TAB_SCREENS[page.tab];
-        if (page.subtab === 'showcase' && page.gesturesOpen) return GESTURE_SCREEN;
+        var stack = page.stacks && page.stacks[page.subtab];
+        if (stack && stack.length) return stack[stack.length - 1];
         return SUBTAB_SCREENS[page.subtab];
     }
 
-    // What the page shows, logged through one screen tracker: the demos report the tab, the sub-tab and the Gestures
-    // view, and a report that does not change the screen on display logs nothing.
+    // What the page shows, logged through one screen tracker: the demos report the tab, the sub-tab and the views opened on
+    // Showcase and on Verification (the Gestures screen, the detail chain, Screen Views and its case views), each sub-tab with its
+    // own stack of view names, kept while another tab or sub-tab is shown. A report that does not change the screen on display
+    // logs nothing.
     function createPageScreens(api) {
         var tracker = createScreenTracker(api);
-        var page = { tab: null, subtab: 'actions', gesturesOpen: false };
+        var page = { tab: null, subtab: 'actions', stacks: { showcase: [], verification: [] } };
+        function stackOf(subtab) {
+            if (!page.stacks[subtab]) throw new Error('No views are opened on ' + subtab);
+            return page.stacks[subtab];
+        }
         function sync() {
             var name = screenFor(page);
             return name === null ? { unload: null, load: null } : tracker.show(name);
@@ -194,7 +205,9 @@
                 return sync();
             },
             showSubtab: function (subtab) { page.subtab = subtab; return sync(); },
-            setGesturesOpen: function (open) { page.gesturesOpen = open; return sync(); },
+            open: function (subtab, name) { stackOf(subtab).push(name); return sync(); },
+            back: function (subtab) { stackOf(subtab).pop(); return sync(); },
+            stack: function (subtab) { return stackOf(subtab).slice(); },
             setEnabled: tracker.setEnabled,
             current: tracker.current
         };
@@ -249,18 +262,184 @@
         return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom * factor));
     }
 
+    // ── Views of the sample UI contract (Showcase detail chain, Screen Views, case views) ──
+
+    var SCREEN_VIEWS_SCREEN = 'Screen Views';
+    var DETAIL_SCREEN = 'Showcase detail';
+    var SCREEN_VIEW_LOG_LIMIT = 12;
+    var LONG_NAME = 'Lot 4815 '.repeat(34).slice(0, 300);
+
+    // The screen name cases of the React Native samples (screenViewCases.ts): `navigable` ones open a view through the page's
+    // screen tracker, `direct` ones are sent with logScreenViewContextLoad to keep the exact string (the empty and the null name
+    // are only reachable that way).
+    var SCREEN_VIEW_CASES = [
+        { id: 'catalog',          label: 'Catalog',                 name: 'Catalog',                                  navigable: true,  direct: false },
+        { id: 'product_details',  label: 'Product Details',         name: 'Product Details',                          navigable: true,  direct: false },
+        { id: 'bid_confirmation', label: 'Bid Confirmation',        name: 'Bid Confirmation',                         navigable: true,  direct: false },
+        { id: 'checkout',         label: 'Checkout',                name: 'Checkout',                                 navigable: true,  direct: false },
+        { id: 'reserved_chars',   label: 'URL-reserved characters', name: 'Order #4815 & Refund?ref=a/b',             navigable: true,  direct: true },
+        { id: 'non_ascii',        label: 'Non-ASCII + emoji',       name: 'Płatności ✓ 🛒',                           navigable: true,  direct: true },
+        { id: 'long',             label: '300-character name',      name: LONG_NAME,                                  navigable: true,  direct: true },
+        { id: 'url_shaped',       label: 'Already URL-shaped',      name: 'https://app.example.com/looks-like-a-url', navigable: true,  direct: true },
+        { id: 'whitespace',       label: 'Whitespace only',         name: '   ',                                      navigable: true,  direct: true },
+        { id: 'empty',            label: 'Empty name',              name: '',                                         navigable: false, direct: true },
+        { id: 'null',             label: 'Null name',               name: null,                                       navigable: false, direct: true }
+    ];
+
+    var NAV_CASES = SCREEN_VIEW_CASES.filter(function (c) { return c.navigable; });
+    var DIRECT_SCREEN_CASES = SCREEN_VIEW_CASES.filter(function (c) { return c.direct; });
+
+    // Every direct case in the order of "Send all": the empty name first, the null name last.
+    function directSendOrder() {
+        function only(id) { return DIRECT_SCREEN_CASES.filter(function (c) { return c.id === id; }); }
+        var rest = DIRECT_SCREEN_CASES.filter(function (c) { return c.id !== 'empty' && c.id !== 'null'; });
+        return only('empty').concat(rest, only('null'));
+    }
+
+    function caseById(id) {
+        return SCREEN_VIEW_CASES.filter(function (c) { return c.id === id; })[0];
+    }
+
+    // The case a view named so shows.
+    function caseByName(name) {
+        return NAV_CASES.filter(function (c) { return c.name === name; })[0];
+    }
+
+    // The case pushed on top of another: the first navigable one with another id.
+    function nextCase(id) {
+        return NAV_CASES.filter(function (c) { return c.id !== id; })[0];
+    }
+
+    function detailScreen(depth) {
+        return depth <= 1 ? DETAIL_SCREEN : DETAIL_SCREEN + ' ' + depth;
+    }
+
+    // The depth of a detail view named so, null for another name.
+    function detailDepth(name) {
+        if (name === DETAIL_SCREEN) return 1;
+        var match = /^Showcase detail (\d+)$/.exec(name);
+        var depth = match ? parseInt(match[1], 10) : 0;
+        return depth >= 2 && depth <= MAX_DEPTH ? depth : null;
+    }
+
+    // What a name on a view stack shows: the Gestures screen, a detail view, Screen Views or the view of a case.
+    function viewFor(name) {
+        if (name === GESTURE_SCREEN) return { kind: 'gestures' };
+        if (name === SCREEN_VIEWS_SCREEN) return { kind: 'screen-views' };
+        var depth = detailDepth(name);
+        if (depth) return { kind: 'detail', depth: depth };
+        var testCase = caseByName(name);
+        return testCase ? { kind: 'case', testCase: testCase } : null;
+    }
+
+    // Resolves { ok } or { ok: false, message } for a call, whichever way it ends.
+    function attempt(call) {
+        return Promise.resolve()
+            .then(call)
+            .then(function () { return { ok: true }; },
+                  function (e) { return { ok: false, message: errorMessage(e) }; });
+    }
+
+    // One direct screen view with the case's exact name: the entry for the result log.
+    function sendScreenView(A, testCase) {
+        return attempt(function () { return A.logScreenViewContextLoad(testCase.name, DIRECT_REFERRER); })
+            .then(function (outcome) {
+                return { id: testCase.id, ok: outcome.ok, shown: describeName(testCase.name), message: outcome.message };
+            });
+    }
+
+    // Sends every direct case in order, one after another; `onEntry` gets each entry as it is known.
+    function sendAllScreenViews(A, onEntry) {
+        return directSendOrder().reduce(function (previous, testCase) {
+            return previous.then(function (entries) {
+                return sendScreenView(A, testCase).then(function (entry) {
+                    onEntry(entry);
+                    return entries.concat([entry]);
+                });
+            });
+        }, Promise.resolve([]));
+    }
+
+    // The result log, latest first.
+    function addScreenViewEntry(log, entry) {
+        return [entry].concat(log).slice(0, SCREEN_VIEW_LOG_LIMIT);
+    }
+
+    // ── Result texts of the sample UI contract (the React Native samples' texts) ──
+
+    var TAP_CONTROL_ID = 'btn_showcase_tap';
+    var EXCEPTION_MESSAGE = 'Showcase: handled exception';
+
+    function tapsLine(count) {
+        return 'taps: ' + count + ' · control id: ' + TAP_CONTROL_ID;
+    }
+
+    function customEventLine(outcome) {
+        return outcome.ok
+            ? '✓ queued ' + CUSTOM_EVENT.name + ' — read customEvent in the posted message'
+            : '✗ ' + outcome.message;
+    }
+
+    function signalLine(label, payload, outcome) {
+        return (outcome.ok ? '✓ ' : '✗ ') + label + ' — ' + (outcome.ok ? JSON.stringify(payload) : outcome.message);
+    }
+
+    // The error a page catches and reports, with the stack the engine gives it.
+    function handledException() {
+        try {
+            throw new Error(EXCEPTION_MESSAGE);
+        } catch (error) {
+            return { message: error.message, stack: error.stack || '' };
+        }
+    }
+
+    function exceptionLine(outcome) {
+        return outcome.ok ? '✓ queued exception "' + EXCEPTION_MESSAGE + '"' : '✗ ' + outcome.message;
+    }
+
+    // The plugin resolves nothing from disable() and enable(), so a resolved call reads as `true`.
+    function captureLine(method, outcome) {
+        var tail = method === 'disable' ? ' — now navigate and check for further layout captures' : '';
+        return method + '() returned ' + outcome.ok + (outcome.ok ? tail : ' — ' + outcome.message);
+    }
+
+    var IDENTITY_EXPECTED = {
+        defaulted: 'expect loginMethod: email',
+        explicit: 'expect registrationMethod: email'
+    };
+
+    function identityLine(kind, outcome) {
+        return (outcome.ok ? '✓ ' : '✗ ') + kind + ' — ' + (outcome.ok ? IDENTITY_EXPECTED[kind] : outcome.message);
+    }
+
+    // The entry of the result log: `✓ catalog → Catalog`, a refusal with its error after a colon.
+    function screenViewLine(entry) {
+        return (entry.ok ? '✓ ' : '✗ ') + entry.id + ' → ' + entry.shown + (entry.ok ? '' : ': ' + entry.message);
+    }
+
+    function reloggedLine(outcome) {
+        return outcome.ok ? '✓ re-logged directly' : '✗ re-logged directly: ' + outcome.message;
+    }
+
+    // What the page's screen tracker did for the view just opened: a refused name still opens the view.
+    function loggedLine(outcome) {
+        return outcome.ok ? '✓ logged by navigation' : '✗ not logged by navigation: ' + outcome.message;
+    }
+
     // ── Showcase features ───────────────────────────────────────────────
 
     var FEATURES = [
-        { id: 'taps',         title: 'Taps',                 description: 'Count taps and log each one as a click event.' },
+        { id: 'taps',         title: 'Taps',                 description: 'Count taps. The page logs nothing: the plugin logs each tap as a click with the control id.' },
         { id: 'gestures',     title: 'Gestures',             description: 'Long press, double tap, swipe and pinch targets and a scrollable list, with nothing logged by the page.' },
         { id: 'text',         title: 'Text entry',           description: 'Log typing masked (default) or in plain text.' },
+        { id: 'text-capture', title: 'Text entry and masking', description: 'Typing into a field is captured by the plugin: the page logs nothing. A value matching a masking rule in ConnectConfig.json is redacted before it leaves the device.' },
         { id: 'custom-event', title: 'Custom event',         description: 'One event with string, boolean and number values.' },
         { id: 'signal',       title: 'Signals',              description: 'Nested and flat signal payloads.' },
         { id: 'exception',    title: 'Exception',            description: 'A handled exception with a stack text.' },
-        { id: 'screen-view',  title: 'Screen view',          description: 'Load and unload screens with a referrer chain, or an exact name.' },
+        { id: 'screen-view',  title: 'Screen view',          description: 'Open a detail screen chain with a referrer chain, or send direct names.' },
         { id: 'identity',     title: 'Identity',             description: 'Default signal type versus an explicit one.' },
-        { id: 'config',       title: 'Config item',          description: 'Set and read a native SDK configuration item at runtime.' }
+        { id: 'config',       title: 'Config item',          description: 'Set and read a native SDK configuration item at runtime.' },
+        { id: 'capture',      title: 'Runtime capture control', description: 'disable() stops the capture; navigate a few screens and check that no further layout messages arrive, then enable() again.' }
     ];
 
     // ── Verification scenarios ──────────────────────────────────────────
@@ -393,8 +572,17 @@
         CUSTOM_EVENT: CUSTOM_EVENT,
         NESTED_SIGNAL: NESTED_SIGNAL,
         FLAT_SIGNAL: FLAT_SIGNAL,
+        SIGNAL_LEVEL: SIGNAL_LEVEL,
         CONFIG_PROBE: CONFIG_PROBE,
         DIRECT_CASES: DIRECT_CASES,
+        SCREEN_VIEWS_SCREEN: SCREEN_VIEWS_SCREEN,
+        DETAIL_SCREEN: DETAIL_SCREEN,
+        SCREEN_VIEW_LOG_LIMIT: SCREEN_VIEW_LOG_LIMIT,
+        SCREEN_VIEW_CASES: SCREEN_VIEW_CASES,
+        NAV_CASES: NAV_CASES,
+        DIRECT_SCREEN_CASES: DIRECT_SCREEN_CASES,
+        TAP_CONTROL_ID: TAP_CONTROL_ID,
+        EXCEPTION_MESSAGE: EXCEPTION_MESSAGE,
         TAB_SCREENS: TAB_SCREENS,
         SUBTAB_SCREENS: SUBTAB_SCREENS,
         GESTURE_SCREEN: GESTURE_SCREEN,
@@ -415,6 +603,27 @@
         screenFor: screenFor,
         createPageScreens: createPageScreens,
         runDirectCases: runDirectCases,
+        directSendOrder: directSendOrder,
+        caseById: caseById,
+        caseByName: caseByName,
+        nextCase: nextCase,
+        detailScreen: detailScreen,
+        detailDepth: detailDepth,
+        viewFor: viewFor,
+        attempt: attempt,
+        sendScreenView: sendScreenView,
+        sendAllScreenViews: sendAllScreenViews,
+        addScreenViewEntry: addScreenViewEntry,
+        tapsLine: tapsLine,
+        customEventLine: customEventLine,
+        signalLine: signalLine,
+        handledException: handledException,
+        exceptionLine: exceptionLine,
+        captureLine: captureLine,
+        identityLine: identityLine,
+        screenViewLine: screenViewLine,
+        reloggedLine: reloggedLine,
+        loggedLine: loggedLine,
         gestureLabel: gestureLabel,
         gestureRows: gestureRows,
         swipeName: swipeName,

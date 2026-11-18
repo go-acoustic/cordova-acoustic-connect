@@ -9,7 +9,10 @@ method of the plugin and every push call. Not a production app.
   with **Actions** (quick calls), **Showcase** (a card per feature, including the SDK calls and the iOS manual push calls, and the Gestures screen opened by `btn_open_gestures`:
   targets `gesture_long_press`, `gesture_double_tap`, `gesture_swipe` and `gesture_pinch_zoom`, the status line `tv_gestures_last` and the list `gesture_scroll_list`;
   it logs the screen view `Gestures`, and the targets log nothing) and **Verification** (scenarios with the
-  expected result, to check against the collector).
+  expected result, to check against the collector). The controls of the sample UI contract (CA-159374) carry the fixed ids of the React Native samples
+  (`Examples/shared`): `btn_open_showcase` and `btn_open_verification` on the sub-tab buttons, on Showcase `btn_showcase_tap`, the two `field_showcase_*` fields, the custom event,
+  signal and exception buttons, `btn_capture_disable` / `btn_capture_enable` (which refuses while `DEMO_ENABLE` in `acoustic-demo.config.ts` holds the placeholder key) and `btn_showcase_open_detail` (the detail chain), on Verification the identity buttons
+  and `btn_open_screen_views`, which opens Screen Views and a view per case. Their stacks of views live in `AcousticService.views`, so each outlives the tab.
 - `src/app/behaviour-core.ts`: the payloads and scenarios, the same list as `DemoCapacitor/src/js/behaviour/behaviour-core.js`.
 
 For the Vite and plain JavaScript sample, and the wire verification (e2e), see [`../DemoCapacitor`](../DemoCapacitor).
@@ -70,12 +73,13 @@ with `ACOUSTIC_PUSH_MODE_NOT_MANUAL` in any other mode and on Android. See the p
 
 - **Screen views.** The SDK records the activity's own screen (`Home`) and refuses a manual `load` with the same name. An `unload` of the screen that is
   current is refused too (Behaviour › Actions › Log Screen Unload shows it): load the next screen first, then unload the one you leave
-  (Behaviour › Showcase › Screen view chain does).
+  (Behaviour › Showcase › Open a detail screen does).
 - **The page's screens.** The app is one native screen, so the page logs its own, one current screen at a time (`createPageScreens` in
   `behaviour-core.ts`, `AcousticService.screens`): `Push`, `Identity`, and on Behaviour `Behaviour` (Actions), `Showcase`
   (`Gestures` while that screen is open) and `Verification`, the names of the native and React Native samples. Moving on loads the next screen,
-  with the screen left as referrer, then unloads the screen left, as above. The Showcase SDK card's `disable` stops them, and its `enable` logs the screen on
-  display again.
+  with the screen left as referrer, then unloads the screen left, as above. The views opened on Showcase and on Verification (the Gestures screen, the detail chain,
+  Screen Views and its case views) are a stack per sub-tab, and the one on top is the screen on display. The Showcase SDK card's `disable` and the capture
+  control's `btn_capture_disable` stop them, and `enable` logs the screen on display again; `enable` takes the key and collector URL of `acoustic-demo.config.ts`.
 - **Settings.** The module name for `setConfigItem` and `getConfigItem` on Android is `EOCore`.
 - **`Script error.` in the console (Android).** The Connect Android SDK runs scripts in the WebView that look for Tealeaf's `TLT` and `tlBridge`; the plugin
   gives the page inert stand-ins, which removes the `TLT` and `tlBridge` messages, but an `ErrorEvent` `Script error.` can still reach Angular's error handler at

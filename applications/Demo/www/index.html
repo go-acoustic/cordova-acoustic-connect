@@ -60,8 +60,8 @@
 
             <div class="subtab-bar" role="tablist" aria-label="Behaviour sections">
                 <button class="subtab-btn active" data-subtab="actions" role="tab">Actions</button>
-                <button class="subtab-btn" data-subtab="showcase" role="tab">Showcase</button>
-                <button class="subtab-btn" data-subtab="verification" role="tab">Verification</button>
+                <button class="subtab-btn" id="btn_open_showcase" data-subtab="showcase" role="tab">Showcase</button>
+                <button class="subtab-btn" id="btn_open_verification" data-subtab="verification" role="tab">Verification</button>
             </div>
 
             <div id="subtab-actions" class="subtab-content active">
@@ -107,8 +107,9 @@
 
             <!-- Verification: one card per scenario, with what to do and what the collector must show -->
             <div id="subtab-verification" class="subtab-content">
-                <p class="behaviour-body">Run a scenario, send the app to the background, then check the collector against the expected result.</p>
+                <p class="behaviour-body" id="verificationIntro">Run a scenario, send the app to the background, then check the collector against the expected result.</p>
                 <div id="verificationList"></div>
+                <div id="verificationView" class="hidden"></div>
             </div>
 
         </div>

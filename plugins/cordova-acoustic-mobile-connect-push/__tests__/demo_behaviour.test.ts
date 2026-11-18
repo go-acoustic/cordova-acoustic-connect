@@ -64,6 +64,7 @@ describe('payloads', () => {
                 { name: 'Account Name', value: 'Acme Corp' },
                 { name: 'Account ID', value: '4815162342' },
             ],
+            cart: { items: 3, total: 24.99, coupon: null },
         });
         expect(core.FLAT_SIGNAL).toEqual({ signalType: 'pageview', pageCategory: 'behaviour-demo' });
     });
@@ -365,14 +366,14 @@ describe('screens', () => {
         expect(calls).toEqual(['LOAD Push <- null', 'LOAD Identity <- null']);
     });
 
-    it('names the screen on display from the tab, the sub-tab and the Gestures view', () => {
-        expect(core.screenFor({ tab: null, subtab: 'actions', gesturesOpen: false })).toBeNull();
-        expect(core.screenFor({ tab: 'notification', subtab: 'showcase', gesturesOpen: true })).toBe('Push');
-        expect(core.screenFor({ tab: 'identity', subtab: 'actions', gesturesOpen: false })).toBe('Identity');
-        expect(core.screenFor({ tab: 'behaviour', subtab: 'actions', gesturesOpen: false })).toBe('Behaviour');
-        expect(core.screenFor({ tab: 'behaviour', subtab: 'showcase', gesturesOpen: false })).toBe('Showcase');
-        expect(core.screenFor({ tab: 'behaviour', subtab: 'showcase', gesturesOpen: true })).toBe('Gestures');
-        expect(core.screenFor({ tab: 'behaviour', subtab: 'verification', gesturesOpen: true })).toBe('Verification');
+    it('names the screen on display from the tab, the sub-tab and the view on top of the stack of the sub-tab', () => {
+        expect(core.screenFor({ tab: null, subtab: 'actions', stacks: {} })).toBeNull();
+        expect(core.screenFor({ tab: 'notification', subtab: 'showcase', stacks: { showcase: ['Gestures'] } })).toBe('Push');
+        expect(core.screenFor({ tab: 'identity', subtab: 'actions', stacks: {} })).toBe('Identity');
+        expect(core.screenFor({ tab: 'behaviour', subtab: 'actions', stacks: {} })).toBe('Behaviour');
+        expect(core.screenFor({ tab: 'behaviour', subtab: 'showcase', stacks: { showcase: [] } })).toBe('Showcase');
+        expect(core.screenFor({ tab: 'behaviour', subtab: 'showcase', stacks: { showcase: ['Gestures'] } })).toBe('Gestures');
+        expect(core.screenFor({ tab: 'behaviour', subtab: 'verification', stacks: { showcase: ['Gestures'], verification: [] } })).toBe('Verification');
     });
 
     it('logs what the page reports only when it changes the screen on display', async () => {
@@ -391,11 +392,11 @@ describe('screens', () => {
         screens.showTab('notification');
         screens.setEnabled(true);
         screens.showTab('behaviour');
-        screens.setGesturesOpen(true);
+        screens.open('showcase', 'Gestures');
         const none = { unload: null, load: null };
         expect(screens.showSubtab('showcase')).toEqual(none);
         expect(screens.showTab('behaviour')).toEqual(none);
-        const last = screens.setGesturesOpen(false);
+        const last = screens.back('showcase');
         await settled(last);
         expect(calls).toEqual([
             'LOAD Push <- null',
@@ -550,8 +551,13 @@ describe('Demo page wiring', () => {
     });
 
     it('has the containers the renderer fills', () => {
-        for (const id of ['showcaseList', 'showcaseDetail', 'showcaseGestures', 'verificationList']) {
+        for (const id of ['showcaseList', 'showcaseDetail', 'showcaseGestures', 'verificationList', 'verificationIntro', 'verificationView']) {
             expect(html).toContain('id="' + id + '"');
         }
+    });
+
+    it('has the hub buttons of the sample UI contract on the Showcase and Verification sub-tab buttons', () => {
+        expect(html).toMatch(/<button class="subtab-btn" id="btn_open_showcase" data-subtab="showcase"/);
+        expect(html).toMatch(/<button class="subtab-btn" id="btn_open_verification" data-subtab="verification"/);
     });
 });
