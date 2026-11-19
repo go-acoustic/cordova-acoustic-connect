@@ -2,8 +2,14 @@ Acoustic Connect for Capacitor
 
 Acoustic Connect plugin for Capacitor. Requires Capacitor 8 and Node 22 or newer.
 
-New Features
+New features
 
+- Tested on iOS 27.0 and Android 17 (API 37): end-to-end tests ran on 1.2.0
+  on an iOS 27.0 simulator and on an Android 17 emulator, the latter with
+  Connect Android SDK 11.2.1-beta, not the plugin's default. They found no
+  plugin defect, and no plugin code change was needed. Apps built with the
+  iOS 27 SDK (Xcode 27) must adopt the UIKit scene life cycle, or they fail
+  to launch on iOS 27. This is an Apple requirement
 - Taps and gestures on page elements, on Android and iOS. A tap on an element
   of the app's page is logged as a click and a tap on that element, and a
   double tap, a long press, a swipe and a pinch as that gesture, as the SDK logs
@@ -41,7 +47,7 @@ New Features
   (`ios-pod-sources`), and `pod install` prints a warning until it is there.
   Apps that use Swift Package Manager need nothing
 
-Fixes
+Bug fixes
 
 - iOS: tapping a push notification that launched a killed app now runs its
   action (open URL, open dialer) in automatic push mode when the SDK is started
@@ -70,7 +76,19 @@ Fixes
   first, as the sample apps now do. On Android this needs the Connect Android
   SDK 11.1.12-beta or later; the default, 11.1.17, has it
 
-Known Issues
+Our environment for this release
+
+- Xcode 26.5
+- MacOS 26.5
+- Capacitor 8, Node 22
+- iOS 15.1 to 26.x (Connect iOS SDK 2.2.35 or newer, the beta build, floating;
+  the release build 2.1.51 or newer in the public package, or with
+  `useRelease: true` on CocoaPods); also tested on iOS 27.0 (simulator,
+  run with Xcode 27)
+- Android minSdk 26, SDK 36 (Connect Android SDK 11.1.17); also tested on
+  API 37 (Android 17, emulator) with Connect Android SDK 11.2.1-beta
+
+Known issues
 
 - A swipe or a pinch that the WebView takes over to scroll or zoom the page is
   not logged, on Android and iOS: the page sees the touch cancelled. A gesture
@@ -95,13 +113,3 @@ Known Issues
 - With Swift Package Manager the app needs a Run Script build phase that copies
   `ConnectResources.bundle` into the app root; without it the SDK sends only part
   of its data (see the README)
-
-Our environment for this release:
-
-- Xcode 26.5
-- MacOS 26.5
-- Capacitor 8, Node 22
-- iOS 15.1 or newer (Connect iOS SDK 2.2.35 or newer, the beta build, floating;
-  the release build 2.1.51 or newer in the public package, or with
-  `useRelease: true` on CocoaPods)
-- Android minSdk 26, SDK 36 (Connect Android SDK 11.1.17)

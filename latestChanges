@@ -1,7 +1,13 @@
 Acoustic Connect for Cordova
 
-New Features
+New features
 
+- Tested on iOS 27.0 and Android 17 (API 37): end-to-end tests ran on 1.2.0
+  on an iOS 27.0 simulator and on an Android 17 emulator, the latter with
+  Connect Android SDK 11.2.1-beta, not the plugin's default. They found no
+  plugin defect, and no plugin code change was needed. Apps built with the
+  iOS 27 SDK (Xcode 27) must adopt the UIKit scene life cycle, or they fail
+  to launch on iOS 27. This is an Apple requirement
 - Taps and gestures on page elements: a tap on an element of the app's page is
   logged as a click and a tap on that element, and a double tap, a long press,
   a swipe and a pinch as that gesture, as the SDK logs them on a native
@@ -23,14 +29,16 @@ New Features
   `pod install` fails, the plugin runs it once more with `--repo-update`, which
   finds versions published since the spec repos were last updated
 
-Fixes
+Bug fixes
 
 - Android: the default Connect Android SDK is now 11.1.39-beta (it was 11.1.17).
   It brings the SDK's fix for an app that read as backgrounded while on screen
   and stopped posting (found in a Jetpack Compose app), and the SDK no longer
-  drops a screen view UNLOAD that directly follows its own LOAD. With
-  `useRelease: true` the default stays the 11.1.17 release, which has neither
-  change yet: betas do not reach Maven Central
+  drops a screen view UNLOAD that directly follows its own LOAD. It also
+  shows the WebView as a grey area in screenshots, as on iOS: an app's screen
+  is one WebView, so its screenshots are grey. With `useRelease: true` the
+  default stays the 11.1.17 release, which has none of these changes yet:
+  betas do not reach Maven Central
 - Android: the plugin no longer writes `CaptureNativeGesturesOnWebview=false`
   into `ConnectBasicConfig.properties`. The Connect Android SDK never read that
   key and deprecated it in 11.1.37-beta, which also stops logging an empty
@@ -57,8 +65,16 @@ Fixes
   SDK 11.1.12-beta or later, which the defaults are (11.1.39-beta, and 11.1.17
   under `useRelease: true`)
 
+Our environment for this release
 
-Known Issues
+- Xcode 26.2
+- MacOS 26.0.1
+- iOS 15.1 to 26.x; also tested on iOS 27.0 (simulator, run with Xcode 27)
+- Android minSdk 26, SDK 36 (Connect Android SDK 11.1.39-beta by default,
+  11.1.17 with `useRelease: true`); also tested on API 37 (Android 17,
+  emulator) with Connect Android SDK 11.2.1-beta
+
+Known issues
 
 - Rich push cannot be end-to-end tested on the iOS Simulator — simulators don't display large icon.
 - A swipe or a pinch that the WebView takes over to scroll or zoom the page is
@@ -66,9 +82,11 @@ Known Issues
   handles it itself (`touch-action: none`) is logged
 - Typing inside the page is not captured automatically — call
   `logTextChangeEvent` yourself; it is sent as a custom event. Clicks are
-  captured with the SDKs named under New Features; with older ones call
+  captured with the SDKs named under New features; with older ones call
   `logClickEvent`
-- Native layout masking rules do not mask text inside the WebView; use
+- Native layout masking rules do not mask text inside the WebView. On
+  Android with an SDK before 11.1.38-beta, such as 11.1.17 under
+  `useRelease: true`, screenshots still show the page: use
   `ScreenCaptureEnabled: false` to keep page content out of captures
 - `layoutConfigAndroid` replaces the Android SDK's whole layout config; the
   effect of layout rules on Android has not been verified
@@ -82,10 +100,3 @@ Known Issues
   `useRelease`, send it)
 - On iOS `logExceptionEvent` reports `stackTrace: (null)` and carries the stack
   text in `data.stacktrace`
-
-Our environment for this release:
-
-- Xcode 26.2
-- MacOS 26.0.1
-- iOS 15.1 to 26.x
-- Android minSdk 26, SDK 36

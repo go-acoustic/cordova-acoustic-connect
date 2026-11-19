@@ -96,7 +96,7 @@ describe('the docs and the release notes on the iOS launch tap', () => {
 
   it('the Capacitor release notes have the fix, and carry no ticket keys', () => {
     const notes = releaseNotes();
-    expect(notes).toMatch(/Fixes\n\n- iOS: tapping a push notification that launched a killed app/);
+    expect(notes).toMatch(/Bug fixes\n\n- iOS: tapping a push notification that launched a killed app/);
     expect(notes).not.toMatch(/\b[A-Z]{2,}-\d+\b/);
   });
 });
